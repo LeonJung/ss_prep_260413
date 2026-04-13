@@ -1,0 +1,39 @@
+# rtde_dummy.yaml — Config for RTDE + ur_server_dummy testing.
+# Server simulates UR firmware (gravity auto-compensated, no friction comp needed).
+
+# --- Firmware compensation switches ---
+friction_comp: true          # Server handles friction (like UR firmware)
+gravity_comp_internal: true  # Server handles gravity (like UR firmware)
+
+# --- Torque safety limits [Nm] (full range for dummy server) ---
+torque_limit: [330.0, 330.0, 150.0, 56.0, 56.0, 56.0]
+
+# --- PD gains (same as dummy.yaml — works with server dynamics) ---
+leader:
+  KP_USER:   [40.0, 40.0, 30.0, 15.0, 15.0, 8.0]
+  KD_USER:   [6.0,  6.0,  4.0,  2.0,  2.0,  1.0]
+  KP_HOLD:   [200.0, 200.0, 150.0, 60.0, 60.0, 30.0]
+  KD_HOLD:   [20.0,  20.0,  12.0,  6.0,  6.0,  3.0]
+  KP_BI:     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  KD_BI:     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  OVERFORCE_USER:       [20.0, 20.0, 15.0, 8.0, 8.0, 4.0]
+  OVERFORCE_CONSTRAINT: [80.0, 80.0, 50.0, 25.0, 25.0, 15.0]
+
+follower:
+  KP_TRACK:  [100.0, 100.0, 80.0, 40.0, 40.0, 20.0]
+  KD_TRACK:  [10.0,  10.0,  8.0,  4.0,  4.0,  2.0]
+  KP_HOLD:   [200.0, 200.0, 150.0, 60.0, 60.0, 30.0]
+  KD_HOLD:   [20.0,  20.0,  12.0,  6.0,  6.0,  3.0]
+  OVERFORCE_CONSTRAINT: [80.0, 80.0, 50.0, 25.0, 25.0, 15.0]
+
+friction:
+  Fc:  [12.5, 15.8, 11.9, 2.06, 2.01, 2.76]
+  Fv:  [7.1,  16.1, 5.7,  2.95, 1.14, 1.88]
+  k:   [50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+
+init_motion:
+  enabled: false
+  duration: 3.0
+  dwell_time: 1.0
+
+timestep: 0.002

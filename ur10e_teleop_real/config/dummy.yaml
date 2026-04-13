@@ -1,0 +1,42 @@
+# dummy.yaml — Config for dummy robot client testing (no real hardware)
+# Friction and gravity must be computed in code (no firmware to do it).
+
+# --- Firmware compensation switches ---
+friction_comp: false          # No firmware — code must compute friction compensation
+gravity_comp_internal: false  # No firmware — code must add tau_grav
+
+# --- Torque safety limits [Nm] (UR10e peak ratings for simulation) ---
+torque_limit: [330.0, 330.0, 150.0, 56.0, 56.0, 56.0]
+
+# --- PD gains (same as MuJoCo sim, works well with dummy dynamics) ---
+leader:
+  KP_USER:   [40.0, 40.0, 30.0, 15.0, 15.0, 8.0]
+  KD_USER:   [6.0,  6.0,  4.0,  2.0,  2.0,  1.0]
+  KP_HOLD:   [200.0, 200.0, 150.0, 60.0, 60.0, 30.0]
+  KD_HOLD:   [20.0,  20.0,  12.0,  6.0,  6.0,  3.0]
+  KP_BI:     [400.0, 400.0, 300.0, 100.0, 100.0, 50.0]
+  KD_BI:     [25.0,  25.0,  18.0,  8.0,  8.0,  4.0]
+  OVERFORCE_USER:       [20.0, 20.0, 15.0, 8.0, 8.0, 4.0]
+  OVERFORCE_CONSTRAINT: [80.0, 80.0, 50.0, 25.0, 25.0, 15.0]
+
+follower:
+  KP_TRACK:  [100.0, 100.0, 80.0, 40.0, 40.0, 20.0]
+  KD_TRACK:  [10.0,  10.0,  8.0,  4.0,  4.0,  2.0]
+  KP_HOLD:   [200.0, 200.0, 150.0, 60.0, 60.0, 30.0]
+  KD_HOLD:   [20.0,  20.0,  12.0,  6.0,  6.0,  3.0]
+  OVERFORCE_CONSTRAINT: [80.0, 80.0, 50.0, 25.0, 25.0, 15.0]
+
+# --- Friction model parameters (joint-side, UR5e-based estimates for UR10e) ---
+friction:
+  Fc:  [12.5, 15.8, 11.9, 2.06, 2.01, 2.76]
+  Fv:  [7.1,  16.1, 5.7,  2.95, 1.14, 1.88]
+  k:   [50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+
+# --- Init motion ---
+init_motion:
+  enabled: false   # Dummy doesn't need slow init (starts at HOME)
+  duration: 3.0
+  dwell_time: 1.0
+
+# --- Control loop ---
+timestep: 0.002  # 500 Hz

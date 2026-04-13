@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  Follower scene: UR10E + a small immovable box placed on the end-effector
+  side of the robot.
+
+  With the menagerie-based ur10e.xml the home-pose EEF is at approximately
+  (-0.174, +0.691, +0.694) in world frame — i.e. the arm extends in +Y and
+  the EEF sits ~69 cm above the floor.  The box is placed at
+  (0.0, +0.55, +0.30) so that:
+
+    - it is within the arm's reachable workspace (distance from base
+      ≈ 0.63 m, well inside the UR10E ~1.3 m reach),
+    - it sits ~39 cm below the home EEF, so when the user drives the EEF
+      downward (via the '[' key in leader_sim.py) the follower hits it,
+    - it is slightly closer to the base in +Y than the EEF itself, so the
+      arm can approach it without pulling back.
+
+  The box body has NO free joint, so it is welded to the world frame — the
+  robot will collide with it and feel contact forces, but the box itself
+  cannot be pushed, tipped, or translated.
+-->
+<mujoco model="ur10e_follower_scene">
+
+  <include file="ur10e.xml"/>
+
+  <worldbody>
+    <!-- Immovable box for contact / force-feedback testing -->
+    <body name="target_box" pos="0.0 0.55 0.30">
+      <geom name="box_geom" type="box" size="0.06 0.06 0.06"
+            rgba="0.9 0.3 0.1 1"
+            contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
+    </body>
+  </worldbody>
+
+</mujoco>

@@ -1,0 +1,56 @@
+# Migration: openarm_teleop/config/right_arm.yaml (inferred)
+#
+# UR10E bilateral/unilateral control parameters per joint.
+# Friction model: tau_f = Fc * tanh(k * dq) + Fv * dq + Fo
+#
+# These are initial conservative values.
+# Tune by system identification on actual hardware.
+
+control_params:
+  shoulder_pan_joint:    # joint 0 – largest inertia ~7.8 kg
+    Kp: 50.0             # position gain [Nm/rad]
+    Kd:  8.0             # velocity gain [Nm·s/rad]
+    Fc:  8.0             # Coulomb friction [Nm]
+    k:  10.0             # friction transition sharpness [s/rad]
+    Fv:  1.5             # viscous friction [Nm·s/rad]
+    Fo:  0.0             # friction bias [Nm]
+
+  shoulder_lift_joint:   # joint 1 – gravity loaded
+    Kp: 50.0
+    Kd:  8.0
+    Fc: 10.0
+    k:  10.0
+    Fv:  2.0
+    Fo:  0.0
+
+  elbow_joint:           # joint 2 – medium inertia ~3.9 kg
+    Kp: 30.0
+    Kd:  4.0
+    Fc:  5.0
+    k:  10.0
+    Fv:  0.8
+    Fo:  0.0
+
+  wrist_1_joint:         # joint 3 – low inertia ~1.96 kg
+    Kp: 15.0
+    Kd:  2.0
+    Fc:  2.0
+    k:  15.0
+    Fv:  0.3
+    Fo:  0.0
+
+  wrist_2_joint:         # joint 4
+    Kp: 15.0
+    Kd:  2.0
+    Fc:  2.0
+    k:  15.0
+    Fv:  0.3
+    Fo:  0.0
+
+  wrist_3_joint:         # joint 5 – smallest inertia ~0.2 kg
+    Kp:  8.0
+    Kd:  1.0
+    Fc:  1.0
+    k:  20.0
+    Fv:  0.1
+    Fo:  0.0

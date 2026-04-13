@@ -1,0 +1,53 @@
+# real_ur.yaml — Config for actual UR hardware
+# UR firmware handles friction and gravity internally via direct_torque().
+
+# --- Firmware compensation switches ---
+friction_comp: true          # UR firmware friction compensation (direct_torque friction_comp=True)
+gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_grav in code)
+
+# --- Torque safety limits [Nm] (conservative for real hardware) ---
+torque_limit: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+
+# --- Per-robot HOME positions [rad] ---
+# Leader (UR3e, reverse-mounted) and Follower (UR10e) have different homes
+# that produce visually similar poses.
+leader_home:   [2.24, -1.2808, 2.16, -0.8848, 2.24, 0.0]
+follower_home: [-2.24, -1.8608, -2.16, -2.2568, -2.24, 0.0]
+
+# --- Joint mirroring (for reverse-mounted leader) ---
+# Joints 0,2,4 are sign-flipped due to reversed installation direction.
+# When leader joint moves +delta, follower should move -delta on these joints.
+joint_mirror:
+  sign: [-1, 1, -1, 1, -1, 1]
+
+# --- Auto-homing on start ---
+auto_home_on_start: true
+homing_duration: 5.0          # seconds (quintic spline, slow for safety)
+homing_contact_threshold: 0.3  # fraction of OVERFORCE_CONSTRAINT to detect collision during homing
+
+# --- PD gains ---
+leader:
+  KP_USER:   [40.0, 40.0, 30.0, 15.0, 15.0, 8.0]
+  KD_USER:   [6.0,  6.0,  4.0,  2.0,  2.0,  1.0]
+  KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
+  KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
+  KP_BI:     [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
+  KD_BI:     [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
+  OVERFORCE_USER:       [8.0, 8.0, 8.0, 5.0, 5.0, 5.0]
+  OVERFORCE_CONSTRAINT: [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+
+follower:
+  KP_TRACK:  [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
+  KD_TRACK:  [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
+  KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
+  KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
+  OVERFORCE_CONSTRAINT: [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+
+# --- Friction model (used only when friction_comp: false) ---
+friction:
+  Fc:  [12.5, 15.8, 11.9, 2.06, 2.01, 2.76]
+  Fv:  [7.1,  16.1, 5.7,  2.95, 1.14, 1.88]
+  k:   [50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+
+# --- Control loop ---
+timestep: 0.002  # 500 Hz

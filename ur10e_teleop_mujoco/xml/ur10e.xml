@@ -1,0 +1,210 @@
+<?xml version="1.0"?>
+<!--
+  UR10E MJCF model with high-fidelity meshes from Google DeepMind's
+  mujoco_menagerie (https://github.com/google-deepmind/mujoco_menagerie/,
+  subdirectory universal_robots_ur10e/).  Original assets are BSD-licensed
+  by the ROS Industrial Consortium; see assets/ for the mesh files.
+
+  Patches relative to the upstream menagerie ur10e.xml:
+
+    * The root body is renamed "base" → "base_link" so that it matches the
+      ROS2 UR description convention used throughout this project
+      (ur10e_description, ur10e_teleop_real, and the Python sim code's
+      ROBOT_BODIES list).  The body's quat="0 0 0 -1" (180° Z) is kept so
+      that the mesh/body frames stay internally consistent; the Python
+      HOME_QPOS is set accordingly (-π/2 on joint 0).
+
+    * An empty "flange" body is inserted as a fixed child of wrist_3_link,
+      with the "eef" site (formerly "attachment_site") inside it.  This
+      gives the drag-detection code a body to track as the end-effector
+      and provides the IK target site expected by leader_sim.py.
+
+    * The upstream <general> position-servo actuators (gainprm=5000 style)
+      are replaced with <motor> torque actuators (gear=1, ctrllimited),
+      because leader_sim.py / follower_sim.py write joint torques into
+      data.ctrl[:N].  The upstream joint damping defaults from the
+      size2/3/4 classes are preserved.
+
+    * A floor geom and two lights are included inline so ur10e.xml is a
+      self-contained scene (matches the behaviour of ur10e_follower_scene.xml
+      which includes this file).
+-->
+<mujoco model="ur10e">
+  <compiler angle="radian" meshdir="../assets/ur10e" autolimits="true"/>
+
+  <option timestep="0.002" integrator="implicitfast"/>
+
+  <default>
+    <default class="ur10e">
+      <material specular="0.5" shininess="0.25"/>
+      <joint axis="0 1 0" range="-6.28319 6.28319" armature="0.1"/>
+      <default class="size4">
+        <joint damping="10"/>
+      </default>
+      <default class="size3">
+        <joint damping="5"/>
+        <default class="size3_limited">
+          <joint range="-3.1415 3.1415"/>
+        </default>
+      </default>
+      <default class="size2">
+        <joint damping="2"/>
+      </default>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="capsule" group="3"/>
+        <default class="eef_collision">
+          <geom type="cylinder"/>
+        </default>
+      </default>
+      <site size="0.001" rgba="0.5 0.5 0.5 0.3" group="4"/>
+    </default>
+  </default>
+
+  <asset>
+    <material class="ur10e" name="black"     rgba="0.033 0.033 0.033 1"/>
+    <material class="ur10e" name="jointgray" rgba="0.278 0.278 0.278 1"/>
+    <material class="ur10e" name="linkgray"  rgba="0.82 0.82 0.82 1"/>
+    <material class="ur10e" name="urblue"    rgba="0.49 0.678 0.8 1"/>
+
+    <texture type="skybox" builtin="gradient"
+             rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge"
+             rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8"
+             width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true"
+              texrepeat="5 5" reflectance="0.2"/>
+
+    <mesh file="base_0.obj"/>
+    <mesh file="base_1.obj"/>
+    <mesh file="shoulder_0.obj"/>
+    <mesh file="shoulder_1.obj"/>
+    <mesh file="shoulder_2.obj"/>
+    <mesh file="upperarm_0.obj"/>
+    <mesh file="upperarm_1.obj"/>
+    <mesh file="upperarm_2.obj"/>
+    <mesh file="upperarm_3.obj"/>
+    <mesh file="forearm_0.obj"/>
+    <mesh file="forearm_1.obj"/>
+    <mesh file="forearm_2.obj"/>
+    <mesh file="forearm_3.obj"/>
+    <mesh file="wrist1_0.obj"/>
+    <mesh file="wrist1_1.obj"/>
+    <mesh file="wrist1_2.obj"/>
+    <mesh file="wrist2_0.obj"/>
+    <mesh file="wrist2_1.obj"/>
+    <mesh file="wrist2_2.obj"/>
+    <mesh file="wrist3.obj"/>
+  </asset>
+
+  <worldbody>
+    <!-- Scene lights + floor (so ur10e.xml is a self-contained scene) -->
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <light name="spotlight" mode="targetbodycom" target="wrist_2_link" pos="0 -1 2"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- ============================================================== -->
+    <!-- UR10E robot                                                      -->
+    <!-- base_link renamed from menagerie's "base" for ROS2 convention.   -->
+    <!-- The 180° Z quat is preserved; HOME_QPOS compensates on joint 0.  -->
+    <!-- ============================================================== -->
+    <body name="base_link" quat="0 0 0 -1" childclass="ur10e">
+      <inertial mass="4.0" pos="0 0 0"
+                diaginertia="0.0061063308908 0.0061063308908 0.01125"/>
+      <geom mesh="base_0" material="black"     class="visual"/>
+      <geom mesh="base_1" material="jointgray" class="visual"/>
+      <body name="shoulder_link" pos="0 0 0.181">
+        <inertial pos="0 0 0" mass="7.778"
+                  diaginertia="0.0314743 0.0314743 0.0218756"/>
+        <joint name="shoulder_pan_joint" class="size4" axis="0 0 1"/>
+        <geom mesh="shoulder_0" material="urblue"    class="visual"/>
+        <geom mesh="shoulder_1" material="black"     class="visual"/>
+        <geom mesh="shoulder_2" material="jointgray" class="visual"/>
+        <geom class="collision" size="0.078 0.08" pos="0 0 -0.05"/>
+        <body name="upper_arm_link" pos="0 0.176 0" quat="1 0 1 0">
+          <inertial pos="0 0 0.3065" mass="12.93"
+                    diaginertia="0.423074 0.423074 0.0363656"/>
+          <joint name="shoulder_lift_joint" class="size4"/>
+          <geom mesh="upperarm_0" material="black"     class="visual"/>
+          <geom mesh="upperarm_1" material="jointgray" class="visual"/>
+          <geom mesh="upperarm_2" material="urblue"    class="visual"/>
+          <geom mesh="upperarm_3" material="linkgray"  class="visual"/>
+          <geom class="collision" pos="0 -0.05 0" quat="1 1 0 0" size="0.078 0.08"/>
+          <geom class="collision" size="0.06 0.3" pos="0 0 0.3"/>
+          <body name="forearm_link" pos="0 -0.137 0.613">
+            <inertial pos="0 0 0.2855" mass="3.87"
+                      diaginertia="0.11059 0.11059 0.0108844"/>
+            <joint name="elbow_joint" class="size3_limited"/>
+            <geom mesh="forearm_0" material="urblue"    class="visual"/>
+            <geom mesh="forearm_1" material="black"     class="visual"/>
+            <geom mesh="forearm_2" material="jointgray" class="visual"/>
+            <geom mesh="forearm_3" material="linkgray"  class="visual"/>
+            <geom class="collision" pos="0 0.08 0" quat="1 1 0 0" size="0.058 0.065"/>
+            <geom class="collision" size="0.043 0.28" pos="0 0 0.29"/>
+            <body name="wrist_1_link" pos="0 0 0.571" quat="1 0 1 0">
+              <inertial pos="0 0.135 0" quat="0.5 0.5 -0.5 0.5" mass="1.96"
+                        diaginertia="0.0055125 0.00510825 0.00510825"/>
+              <joint name="wrist_1_joint" class="size2"/>
+              <geom mesh="wrist1_0" material="black"     class="visual"/>
+              <geom mesh="wrist1_1" material="urblue"    class="visual"/>
+              <geom mesh="wrist1_2" material="jointgray" class="visual"/>
+              <geom class="collision" pos="0 0.06 0" quat="1 1 0 0" size="0.05 0.07"/>
+              <body name="wrist_2_link" pos="0 0.135 0">
+                <inertial pos="0 0 0.12" quat="0.5 0.5 -0.5 0.5" mass="1.96"
+                          diaginertia="0.0055125 0.00510825 0.00510825"/>
+                <joint name="wrist_2_joint" axis="0 0 1" class="size2"/>
+                <geom mesh="wrist2_0" material="black"     class="visual"/>
+                <geom mesh="wrist2_1" material="urblue"    class="visual"/>
+                <geom mesh="wrist2_2" material="jointgray" class="visual"/>
+                <geom class="collision" size="0.046 0.065" pos="0 0 0.05"/>
+                <geom class="collision" pos="0 0.028 0.12" quat="1 1 0 0" size="0.046 0.043"/>
+                <body name="wrist_3_link" pos="0 0 0.12">
+                  <inertial pos="0 0.092 0" quat="0 1 -1 0" mass="0.202"
+                            diaginertia="0.000204525 0.000144346 0.000144346"/>
+                  <joint name="wrist_3_joint" class="size2"/>
+                  <geom material="linkgray" mesh="wrist3" class="visual"/>
+                  <geom class="eef_collision" pos="0 0.097 0" quat="1 1 0 0" size="0.046 0.02"/>
+
+                  <!-- Empty flange body so the Python drag-detection /
+                       ROBOT_BODIES list has a body to track, and so the
+                       EEF site sits inside it.  The site pose matches
+                       menagerie's original "attachment_site" location. -->
+                  <body name="flange" pos="0 0 0">
+                    <site name="eef" pos="0 0.1 0" quat="-1 1 0 0"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Pure-torque actuators (ctrl[i] = applied torque in Nm).  Replaces
+       menagerie's <general> position servos so that leader_sim.py and
+       follower_sim.py, which write torques into data.ctrl, work correctly.
+       ctrlrange values are the UR10E peak torque limits per joint. -->
+  <actuator>
+    <motor name="a_shoulder_pan"  joint="shoulder_pan_joint"
+           gear="1" ctrllimited="true" ctrlrange="-330 330"/>
+    <motor name="a_shoulder_lift" joint="shoulder_lift_joint"
+           gear="1" ctrllimited="true" ctrlrange="-330 330"/>
+    <motor name="a_elbow"         joint="elbow_joint"
+           gear="1" ctrllimited="true" ctrlrange="-150 150"/>
+    <motor name="a_wrist_1"       joint="wrist_1_joint"
+           gear="1" ctrllimited="true" ctrlrange="-56 56"/>
+    <motor name="a_wrist_2"       joint="wrist_2_joint"
+           gear="1" ctrllimited="true" ctrlrange="-56 56"/>
+    <motor name="a_wrist_3"       joint="wrist_3_joint"
+           gear="1" ctrllimited="true" ctrlrange="-56 56"/>
+  </actuator>
+
+  <keyframe>
+    <key name="home"
+         qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"
+         ctrl="0 0 0 0 0 0"/>
+  </keyframe>
+</mujoco>
