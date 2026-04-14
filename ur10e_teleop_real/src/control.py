@@ -37,12 +37,24 @@ UR_SECONDARY_PORT = 30002
 #   - When mode register (int_register_0) != 1, applies zero torque.
 #   - PC must write mode=0 before disconnect to release the arm.
 URSCRIPT_TORQUE_CONTROL = """\
+global cmd_torque = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+global torque_active = False
+
+thread torque_thread():
+  textmsg("[rtde_torque_ctrl] torque_thread START")
+  while torque_active:
+    direct_torque(cmd_torque)
+  end
+  textmsg("[rtde_torque_ctrl] torque_thread EXIT")
+  stopj(4.0)
+end
+
 def rtde_torque_ctrl():
-  textmsg("[rtde_torque_ctrl] START")
-  zero_tau = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  textmsg("[rtde_torque_ctrl] main START")
+  th_handle = 0
+  last_mode = -1
   iter_count = 0
   seen_active = False
-  last_mode = -1
   while True:
     mode = read_input_integer_register(0)
     if mode != last_mode:
@@ -50,26 +62,33 @@ def rtde_torque_ctrl():
       last_mode = mode
     end
     if mode == 1:
-      tau0 = read_input_float_register(0)
-      tau1 = read_input_float_register(1)
-      tau2 = read_input_float_register(2)
-      tau3 = read_input_float_register(3)
-      tau4 = read_input_float_register(4)
-      tau5 = read_input_float_register(5)
-      tau = [tau0, tau1, tau2, tau3, tau4, tau5]
+      cmd_torque = [read_input_float_register(0),
+                    read_input_float_register(1),
+                    read_input_float_register(2),
+                    read_input_float_register(3),
+                    read_input_float_register(4),
+                    read_input_float_register(5)]
+      if not torque_active:
+        torque_active = True
+        th_handle = run torque_thread()
+        textmsg("[rtde_torque_ctrl] torque_thread RUN")
+      end
       if not seen_active:
-        textmsg("[rtde_torque_ctrl] first active cmd, tau0=", tau0)
+        textmsg("[rtde_torque_ctrl] first active cmd, tau0=", cmd_torque[0])
         seen_active = True
       end
-      direct_torque(tau)
     else:
-      direct_torque(zero_tau)
+      if torque_active:
+        torque_active = False
+        textmsg("[rtde_torque_ctrl] torque_active=False")
+      end
     end
     iter_count = iter_count + 1
     if iter_count == 500:
-      textmsg("[rtde_torque_ctrl] 500 iters  mode=", mode)
+      textmsg("[rtde_torque_ctrl] 500 iters mode=", mode)
       iter_count = 0
     end
+    sync()
   end
 end
 
