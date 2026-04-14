@@ -38,54 +38,56 @@ UR_SECONDARY_PORT = 30002
 #   - PC must write mode=0 before disconnect to release the arm.
 URSCRIPT_TORQUE_CONTROL = """\
 global cmd_torque = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-global torque_active = False
+global cmd_mode = 0
 
 thread torque_thread():
   textmsg("[rtde_torque_ctrl] torque_thread START")
-  while torque_active:
-    direct_torque(cmd_torque)
+  first_dt = True
+  dt_count = 0
+  while True:
+    local_tau = cmd_torque
+    local_mode = cmd_mode
+    if local_mode == 1:
+      direct_torque(local_tau)
+      if first_dt:
+        textmsg("[rtde_torque_ctrl] thread: first direct_torque OK tau0=", local_tau[0])
+        first_dt = False
+      end
+      dt_count = dt_count + 1
+      if dt_count == 500:
+        textmsg("[rtde_torque_ctrl] thread: 500 direct_torque calls tau0=", local_tau[0])
+        dt_count = 0
+      end
+    else:
+      direct_torque([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    end
   end
-  textmsg("[rtde_torque_ctrl] torque_thread EXIT")
-  stopj(4.0)
 end
 
 def rtde_torque_ctrl():
-  textmsg("[rtde_torque_ctrl] main START")
-  th_handle = 0
+  textmsg("[rtde_torque_ctrl] main START — launching thread")
+  run torque_thread()
+  textmsg("[rtde_torque_ctrl] main: thread launched")
   last_mode = -1
   iter_count = 0
-  seen_active = False
   while True:
-    mode = read_input_integer_register(0)
-    if mode != last_mode:
-      textmsg("[rtde_torque_ctrl] mode changed to ", mode)
-      last_mode = mode
+    m = read_input_integer_register(0)
+    cmd_mode = m
+    if m != last_mode:
+      textmsg("[rtde_torque_ctrl] main: mode=", m)
+      last_mode = m
     end
-    if mode == 1:
+    if m == 1:
       cmd_torque = [read_input_float_register(0),
                     read_input_float_register(1),
                     read_input_float_register(2),
                     read_input_float_register(3),
                     read_input_float_register(4),
                     read_input_float_register(5)]
-      if not torque_active:
-        torque_active = True
-        th_handle = run torque_thread()
-        textmsg("[rtde_torque_ctrl] torque_thread RUN")
-      end
-      if not seen_active:
-        textmsg("[rtde_torque_ctrl] first active cmd, tau0=", cmd_torque[0])
-        seen_active = True
-      end
-    else:
-      if torque_active:
-        torque_active = False
-        textmsg("[rtde_torque_ctrl] torque_active=False")
-      end
     end
     iter_count = iter_count + 1
     if iter_count == 500:
-      textmsg("[rtde_torque_ctrl] 500 iters mode=", mode)
+      textmsg("[rtde_torque_ctrl] main: 500 iters mode=", m)
       iter_count = 0
     end
     sync()
