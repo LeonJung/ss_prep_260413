@@ -328,6 +328,9 @@ class LeaderReal(Node):
         # Ignore reset topic during startup grace period (latched replay protection)
         startup_time = time.time()
         RESET_STARTUP_GRACE = 2.0
+        # 1Hz diagnostic log
+        last_diag_t = 0.0
+        q_prev_diag = q_init.copy()
 
         # Auto-homing on start
         if self.cfg.get('auto_home_on_start', False):
@@ -464,6 +467,27 @@ class LeaderReal(Node):
                 if self._pub_tick >= self._PUB_EVERY:
                     self._pub_tick = 0
                     self._publish_state(q, dq, tau_contact)
+
+                # 1Hz diagnostic log
+                if now - last_diag_t >= 1.0:
+                    last_diag_t = now
+                    dq_sample = q - q_prev_diag
+                    q_prev_diag = q.copy()
+                    # Gather URControl stats if available
+                    status_str = ''
+                    if hasattr(self.robot, 'read_status'):
+                        st = self.robot.read_status()
+                        status_str = (
+                            f' robot_mode={st["robot_mode"]}'
+                            f' safety={st["safety_mode"]}'
+                            f' recv={st["recv_count"]}'
+                            f' writes={st["write_count"]}')
+                    tau_max = float(np.abs(tau).max())
+                    self.get_logger().info(
+                        f'[DIAG] mode={_state_name(cur_state)} '
+                        f'|tau|max={tau_max:.2f}Nm '
+                        f'|dq_1s|max={float(np.abs(dq_sample).max()):.4f}rad'
+                        f'{status_str}')
 
                 prev_state = cur_state
 

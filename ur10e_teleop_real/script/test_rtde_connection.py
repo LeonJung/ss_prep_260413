@@ -80,6 +80,15 @@ def main():
     print(f'  actual_qd = {dq.round(4).tolist()}')
     dist_from_home = np.max(np.abs(q - home))
     print(f'  dist from HOME = {dist_from_home:.4f} rad')
+    status = robot.read_status()
+    print(f'  robot_mode  = {status["robot_mode"]}  '
+          f'safety_mode = {status["safety_mode"]}')
+    print(f'  recv_count  = {status["recv_count"]}  '
+          f'write_count = {status["write_count"]}')
+    if status['robot_mode'] != 7:
+        print('  *** WARNING: robot_mode != RUNNING(7) — '
+              'torque commands will not move the robot! ***')
+        print('  Check: UR pendant → Remote Control enabled? Brakes released?')
 
     # ---- Step 3: Homing (if far from home) ----
     if dist_from_home > 0.05:
@@ -128,6 +137,8 @@ def main():
     FREQ = 0.5
     DUR = 3.0
     max_err = 0.0
+    max_tau = 0.0
+    q_start = q.copy()
     q_home = q.copy()
     t0 = time.time()
     while time.time() - t0 < DUR:
@@ -140,8 +151,21 @@ def main():
         robot.write_torque(tau)
         err = abs(q_now[0] - q_des[0])
         max_err = max(max_err, err)
+        max_tau = max(max_tau, float(np.abs(tau).max()))
         time.sleep(0.002)
+    q_end, _ = robot.read_joint_state()
+    joint0_travel = float(abs(q_end[0] - q_start[0]))
+    joint_max_delta = float(np.max(np.abs(q_end - q_start)))
     print(f'  max tracking error (joint 0) = {max_err:.4f} rad')
+    print(f'  max |tau| sent               = {max_tau:.2f} Nm')
+    print(f'  joint 0 delta                = {joint0_travel:.4f} rad')
+    print(f'  max joint delta (any)        = {joint_max_delta:.4f} rad')
+    if joint_max_delta < 0.005:
+        print('  *** WARNING: NO joint moved despite torques being sent! ***')
+        print('  Likely causes:')
+        print('    1. URScript not running on UR (check pendant log)')
+        print('    2. UR not in Remote Control mode')
+        print('    3. Robot brakes not released / not RUNNING mode')
 
     # ---- Step 6: Return to home ----
     print('[6/6] Returning to HOME...')

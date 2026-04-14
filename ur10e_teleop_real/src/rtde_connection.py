@@ -195,34 +195,58 @@ class RTDEConnection:
         ptype, resp = self._recv_packet()
         if ptype == RTDE_REQUEST_PROTOCOL_VERSION and resp:
             accepted = resp[0]
+            print(f'[RTDE] protocol v{RTDE_PROTOCOL_VERSION} '
+                  f'{"accepted" if accepted == 1 else "REJECTED"} '
+                  f'(response byte = {accepted})')
             return accepted == 1
+        print(f'[RTDE] protocol negotiation FAILED '
+              f'(ptype={ptype}, resp={resp!r})')
         return False
 
     def _setup_output_recipe(self) -> int:
         variables = ','.join(name for name, _ in self._output_recipe)
+        print(f'[RTDE] setup output recipe: {variables}')
         payload = struct.pack('>d', 500.0)  # output frequency
         payload += variables.encode('utf-8')
         self._send_packet(RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS, payload)
         ptype, resp = self._recv_packet()
         if ptype == RTDE_CONTROL_PACKAGE_SETUP_OUTPUTS and resp:
             recipe_id = resp[0]
+            types_str = resp[1:].decode('utf-8', errors='replace')
+            print(f'[RTDE] output recipe_id={recipe_id}  types="{types_str}"')
+            if 'NOT_FOUND' in types_str or 'IN_USE' in types_str:
+                print(f'[RTDE] WARNING: some output variables rejected by UR!')
             return recipe_id
+        print(f'[RTDE] output recipe setup FAILED '
+              f'(ptype={ptype}, resp={resp!r})')
         return -1
 
     def _setup_input_recipe(self) -> int:
         variables = ','.join(name for name, _ in self._input_recipe)
+        print(f'[RTDE] setup input recipe: {variables}')
         self._send_packet(RTDE_CONTROL_PACKAGE_SETUP_INPUTS, variables.encode('utf-8'))
         ptype, resp = self._recv_packet()
         if ptype == RTDE_CONTROL_PACKAGE_SETUP_INPUTS and resp:
             recipe_id = resp[0]
+            types_str = resp[1:].decode('utf-8', errors='replace')
+            print(f'[RTDE] input  recipe_id={recipe_id}  types="{types_str}"')
+            if 'NOT_FOUND' in types_str or 'IN_USE' in types_str:
+                print(f'[RTDE] WARNING: some input variables rejected by UR!')
             return recipe_id
+        print(f'[RTDE] input recipe setup FAILED '
+              f'(ptype={ptype}, resp={resp!r})')
         return -1
 
     def _start_streaming(self) -> bool:
         self._send_packet(RTDE_CONTROL_PACKAGE_START, b'')
         ptype, resp = self._recv_packet()
         if ptype == RTDE_CONTROL_PACKAGE_START and resp:
-            return resp[0] == 1
+            ok = resp[0] == 1
+            print(f'[RTDE] start streaming {"OK" if ok else "REJECTED"} '
+                  f'(response byte = {resp[0]})')
+            return ok
+        print(f'[RTDE] start streaming FAILED '
+              f'(ptype={ptype}, resp={resp!r})')
         return False
 
     # ---- Low-level packet I/O ----------------------------------------------

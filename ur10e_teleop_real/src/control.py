@@ -38,20 +38,37 @@ UR_SECONDARY_PORT = 30002
 #   - PC must write mode=0 before disconnect to release the arm.
 URSCRIPT_TORQUE_CONTROL = """\
 def rtde_torque_ctrl():
-  textmsg("rtde_torque_ctrl started")
+  textmsg("[rtde_torque_ctrl] START")
   zero_tau = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  iter_count = 0
+  seen_active = False
+  last_mode = -1
   while True:
     mode = read_input_integer_register(0)
+    if mode != last_mode:
+      textmsg("[rtde_torque_ctrl] mode changed to ", mode)
+      last_mode = mode
+    end
     if mode == 1:
-      tau = [read_input_float_register(0),
-             read_input_float_register(1),
-             read_input_float_register(2),
-             read_input_float_register(3),
-             read_input_float_register(4),
-             read_input_float_register(5)]
+      tau0 = read_input_float_register(0)
+      tau1 = read_input_float_register(1)
+      tau2 = read_input_float_register(2)
+      tau3 = read_input_float_register(3)
+      tau4 = read_input_float_register(4)
+      tau5 = read_input_float_register(5)
+      tau = [tau0, tau1, tau2, tau3, tau4, tau5]
+      if not seen_active:
+        textmsg("[rtde_torque_ctrl] first active cmd, tau0=", tau0)
+        seen_active = True
+      end
       direct_torque(tau)
     else:
       direct_torque(zero_tau)
+    end
+    iter_count = iter_count + 1
+    if iter_count == 500:
+      textmsg("[rtde_torque_ctrl] 500 iters  mode=", mode)
+      iter_count = 0
     end
   end
 end
@@ -67,6 +84,31 @@ end
 
 rtde_stop()
 """
+
+# UR robot_mode enum (from UR documentation)
+_ROBOT_MODE_NAMES = {
+    -1: 'UNKNOWN',
+    0: 'NO_CONTROLLER', 1: 'DISCONNECTED', 2: 'CONFIRM_SAFETY',
+    3: 'BOOTING', 4: 'POWER_OFF', 5: 'POWER_ON', 6: 'IDLE',
+    7: 'RUNNING', 8: 'BACKDRIVE', 9: 'UPDATING_FIRMWARE',
+}
+
+_SAFETY_MODE_NAMES = {
+    -1: 'UNKNOWN',
+    1: 'NORMAL', 2: 'REDUCED', 3: 'PROTECTIVE_STOP',
+    4: 'RECOVERY', 5: 'SAFEGUARD_STOP', 6: 'SYSTEM_EMERGENCY_STOP',
+    7: 'ROBOT_EMERGENCY_STOP', 8: 'VIOLATION', 9: 'FAULT',
+    10: 'VALIDATE_JOINT_ID', 11: 'UNDEFINED_SAFETY_MODE',
+}
+
+
+def _robot_mode_name(m):
+    return _ROBOT_MODE_NAMES.get(m, f'?{m}?')
+
+
+def _safety_mode_name(m):
+    return _SAFETY_MODE_NAMES.get(m, f'?{m}?')
+
 
 _ROBOT_PARAMS = {
     'ur10e': {
@@ -105,6 +147,12 @@ class URControl:
         self._tau_contact = np.zeros(N)
         self._timestamp = 0.0
         self._connected = False
+        self._robot_mode = -1
+        self._safety_mode = -1
+        self._recv_count = 0
+        # write_torque stats
+        self._write_count = 0
+        self._last_tau = np.zeros(N)
 
         self._recv_thread = None
         self._stop_event = threading.Event()
@@ -130,6 +178,30 @@ class URControl:
         print(f'[URControl] Connected to {self.robot_name} at '
               f'{self._conn.host}:{self._conn.port}')
 
+        # Wait for first state packet to confirm stream is alive
+        t0 = time.time()
+        while self._recv_count == 0 and time.time() - t0 < 2.0:
+            time.sleep(0.05)
+        if self._recv_count == 0:
+            print('[URControl] WARNING: no RTDE state packets received yet')
+        else:
+            with self._lock:
+                q_now = self._q.copy()
+                mode = self._robot_mode
+                safety = self._safety_mode
+            print(f'[URControl] first packet received '
+                  f'(recv_count={self._recv_count})')
+            print(f'[URControl] actual_q     = {q_now.round(4).tolist()}')
+            print(f'[URControl] robot_mode   = {mode} ({_robot_mode_name(mode)})')
+            print(f'[URControl] safety_mode  = {safety} '
+                  f'({_safety_mode_name(safety)})')
+            if mode != 7:
+                print(f'[URControl] WARNING: robot not in RUNNING mode '
+                      f'(need mode=7 for torque control; current={mode})')
+            if safety != 1:
+                print(f'[URControl] WARNING: safety_mode != NORMAL '
+                      f'(current={safety})')
+
         # Upload URScript torque control loop to UR controller.
         # Without this, torques written to RTDE registers are never applied
         # — the robot would stay idle.
@@ -138,14 +210,26 @@ class URControl:
             # so the script starts in a safe state.
             try:
                 self._conn.send_input(np.zeros(N), control_mode=0)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f'[URControl] initial zero-tau send failed: {e}')
+            print(f'[URControl] uploading URScript torque loop '
+                  f'({len(URSCRIPT_TORQUE_CONTROL)} bytes) '
+                  f'→ {self._conn.host}:{self._secondary_port}')
             if self._send_urscript(URSCRIPT_TORQUE_CONTROL):
-                print(f'[URControl] URScript torque loop uploaded '
-                      f'→ {self._conn.host}:{self._secondary_port}')
+                print('[URControl] URScript upload OK '
+                      '(check UR pendant log for "[rtde_torque_ctrl] START")')
+                # Give UR a moment to start the script and see if robot_mode
+                # changes (running a URScript program sets mode to RUNNING=7)
+                time.sleep(0.8)
+                with self._lock:
+                    mode_after = self._robot_mode
+                print(f'[URControl] robot_mode after upload = {mode_after} '
+                      f'({_robot_mode_name(mode_after)})')
             else:
-                print('[URControl] WARNING: URScript upload failed — '
+                print('[URControl] WARNING: URScript upload FAILED — '
                       'robot will NOT respond to torque commands.')
+        else:
+            print('[URControl] URScript upload skipped (dummy/localhost)')
 
         return True
 
@@ -216,7 +300,33 @@ class URControl:
         """Send torque command to robot via RTDE input data package."""
         if not self._connected:
             return False
-        return self._conn.send_input(tau, control_mode=1)
+        ok = self._conn.send_input(tau, control_mode=1)
+        # Log every ~500 writes (=1s at 500Hz) + first call
+        self._write_count += 1
+        self._last_tau = np.asarray(tau).copy()
+        if self._write_count == 1:
+            print(f'[URControl] first write_torque  tau='
+                  f'{self._last_tau.round(3).tolist()}  ok={ok}')
+        elif self._write_count % 500 == 0:
+            with self._lock:
+                mode = self._robot_mode
+                safety = self._safety_mode
+                recv = self._recv_count
+            print(f'[URControl] writes={self._write_count}  '
+                  f'|tau|max={np.abs(self._last_tau).max():.2f}  '
+                  f'recv={recv}  robot_mode={mode}  safety={safety}')
+        return ok
+
+    def read_status(self) -> dict:
+        """Return robot_mode, safety_mode, recv_count, write_count."""
+        with self._lock:
+            return {
+                'robot_mode': self._robot_mode,
+                'safety_mode': self._safety_mode,
+                'recv_count': self._recv_count,
+                'write_count': self._write_count,
+                'last_tau': self._last_tau.copy(),
+            }
 
     # ---- Background receive thread -----------------------------------------
 
@@ -234,3 +344,8 @@ class URControl:
                         self._current[:] = data['actual_current']
                     if 'timestamp' in data:
                         self._timestamp = data['timestamp']
+                    if 'robot_mode' in data:
+                        self._robot_mode = data['robot_mode']
+                    if 'safety_mode' in data:
+                        self._safety_mode = data['safety_mode']
+                    self._recv_count += 1
