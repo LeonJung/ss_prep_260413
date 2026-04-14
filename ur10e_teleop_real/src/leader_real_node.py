@@ -324,7 +324,10 @@ class LeaderReal(Node):
         self.get_logger().info(
             f'q_user initialized to actual: {q_init.round(4).tolist()}')
         overforce_cooldown = 0.0
-        last_reset_counter = 0
+        last_reset_counter = self._reset_counter
+        # Ignore reset topic during startup grace period (latched replay protection)
+        startup_time = time.time()
+        RESET_STARTUP_GRACE = 2.0
 
         # Auto-homing on start
         if self.cfg.get('auto_home_on_start', False):
@@ -351,14 +354,20 @@ class LeaderReal(Node):
                     h_t_start = self._mode_t_start
                     h_duration = self._mode_duration
 
-                # Reset requests
+                # Reset requests → trigger smooth HOMING (not instant q_user jump)
                 cur_reset = self._reset_counter
                 if cur_reset != last_reset_counter:
                     last_reset_counter = cur_reset
-                    if cur_state == MODE_ACTIVE:
-                        q_user[:] = self.HOME_QPOS
+                    if now - startup_time < RESET_STARTUP_GRACE:
+                        # Ignore latched replay during startup grace period
                         self.get_logger().info(
-                            'reset request → q_user reset to home')
+                            f'reset ignored during startup grace '
+                            f'(counter={cur_reset})')
+                    elif cur_state == MODE_ACTIVE:
+                        homing_dur = self.cfg.get('homing_duration', 5.0)
+                        self._publish_mode(MODE_HOMING, now, homing_dur)
+                        self.get_logger().info(
+                            f'reset request → HOMING ({homing_dur}s)')
 
                 # State transitions
                 if cur_state != prev_state:

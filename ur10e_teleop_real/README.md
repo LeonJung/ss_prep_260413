@@ -185,10 +185,39 @@ zip -r teleop_logs.zip log/teleop_YYYYMMDD_HHMMSS/
 
 ## UR Robot Prerequisites
 
-- UR controller ON, **Remote Control** mode
-- Firmware >= **5.22.0** (required for `direct_torque()`)
+- UR controller ON, **Remote Control** mode (pendant 모드 아님!)
+- Firmware >= **5.22.0** (required for `direct_torque()`) — 5.25 tested
+- 로봇 초기화 (브레이크 해제, 전원 on)
 - Network: PC와 UR이 같은 subnet (예: 192.168.1.x)
 - IP 확인: UR pendant > Settings > Network
+- 30002 포트 (Secondary Interface) 접근 가능해야 함 — `control.py` 가
+  연결 시 URScript 토크 제어 루프를 자동 업로드하는 데 사용
+
+### URScript 자동 업로드
+
+`URControl.connect()` 가 UR Secondary Interface(port 30002)에 아래와 같은
+스크립트를 전송해 controller 위에서 실행시킵니다:
+
+```urscript
+def rtde_torque_ctrl():
+  while True:
+    mode = read_input_integer_register(0)
+    if mode == 1:
+      tau = [read_input_float_register(0), ...]
+      direct_torque(tau)        # firmware 5.22+ 토크 제어
+    else:
+      direct_torque([0,...,0])  # safe idle
+    end
+  end
+end
+rtde_torque_ctrl()
+```
+
+이 스크립트가 없으면 RTDE input register 에 토크값을 써도 **로봇은 1도 움직이지
+않습니다** (register 만 업데이트되고 실행되지 않음). Pendant 에 Play 버튼 누를 필요
+없이 PC 연결만으로 자동으로 토크 제어 모드로 진입합니다.
+
+disconnect 시에는 `stopj(2.0)` 을 보내 안전 정지합니다.
 
 ## Config Switching
 

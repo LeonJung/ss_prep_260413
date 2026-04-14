@@ -12,6 +12,7 @@ Usage:
     robot.disconnect()
 """
 
+import socket
 import threading
 import time
 
@@ -22,6 +23,50 @@ from rtde_connection import RTDEConnection
 N = 6
 
 HOME_QPOS = np.array([-1.5708, -1.5708, 1.5708, -1.5708, -1.5708, 0.0])
+
+# UR Secondary Interface port (accepts URScript text, runs on controller)
+UR_SECONDARY_PORT = 30002
+
+# URScript uploaded to the UR controller at connect() time.
+# Reads torque commands from RTDE input registers and applies via direct_torque().
+# REQUIREMENTS:
+#   - UR e-Series firmware >= 5.22 (for direct_torque)
+#   - UR in Remote Control mode
+#   - Robot initialized (brakes released)
+# SAFETY:
+#   - When mode register (int_register_0) != 1, applies zero torque.
+#   - PC must write mode=0 before disconnect to release the arm.
+URSCRIPT_TORQUE_CONTROL = """\
+def rtde_torque_ctrl():
+  textmsg("rtde_torque_ctrl started")
+  zero_tau = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  while True:
+    mode = read_input_integer_register(0)
+    if mode == 1:
+      tau = [read_input_float_register(0),
+             read_input_float_register(1),
+             read_input_float_register(2),
+             read_input_float_register(3),
+             read_input_float_register(4),
+             read_input_float_register(5)]
+      direct_torque(tau)
+    else:
+      direct_torque(zero_tau)
+    end
+  end
+end
+
+rtde_torque_ctrl()
+"""
+
+URSCRIPT_STOP = """\
+def rtde_stop():
+  textmsg("rtde_stop")
+  stopj(2.0)
+end
+
+rtde_stop()
+"""
 
 _ROBOT_PARAMS = {
     'ur10e': {
@@ -43,7 +88,9 @@ class URControl:
     """
 
     def __init__(self, robot_ip: str = '127.0.0.1', robot_name: str = 'ur10e',
-                 timestep: float = 0.002, port: int = 30004, **kwargs):
+                 timestep: float = 0.002, port: int = 30004,
+                 upload_urscript: bool = None,
+                 secondary_port: int = UR_SECONDARY_PORT, **kwargs):
         params = _ROBOT_PARAMS[robot_name]
         self.robot_name = robot_name
         self.timestep = timestep
@@ -62,6 +109,12 @@ class URControl:
         self._recv_thread = None
         self._stop_event = threading.Event()
 
+        # URScript upload: auto-disable for dummy server (localhost)
+        if upload_urscript is None:
+            upload_urscript = robot_ip not in ('127.0.0.1', 'localhost')
+        self._upload_urscript = upload_urscript
+        self._secondary_port = secondary_port
+
     def connect(self) -> bool:
         if not self._conn.connect():
             print(f'[URControl] Failed to connect to {self._conn.host}:{self._conn.port}')
@@ -76,9 +129,36 @@ class URControl:
 
         print(f'[URControl] Connected to {self.robot_name} at '
               f'{self._conn.host}:{self._conn.port}')
+
+        # Upload URScript torque control loop to UR controller.
+        # Without this, torques written to RTDE registers are never applied
+        # — the robot would stay idle.
+        if self._upload_urscript:
+            # Initialize mode register to 0 (zero torque) BEFORE uploading,
+            # so the script starts in a safe state.
+            try:
+                self._conn.send_input(np.zeros(N), control_mode=0)
+            except Exception:
+                pass
+            if self._send_urscript(URSCRIPT_TORQUE_CONTROL):
+                print(f'[URControl] URScript torque loop uploaded '
+                      f'→ {self._conn.host}:{self._secondary_port}')
+            else:
+                print('[URControl] WARNING: URScript upload failed — '
+                      'robot will NOT respond to torque commands.')
+
         return True
 
     def disconnect(self) -> bool:
+        # Safe stop: zero torque first, then halt the URScript
+        if self._connected:
+            try:
+                self._conn.send_input(np.zeros(N), control_mode=0)
+                time.sleep(0.05)
+            except Exception:
+                pass
+            if self._upload_urscript:
+                self._send_urscript(URSCRIPT_STOP)
         self._stop_event.set()
         if self._recv_thread:
             self._recv_thread.join(timeout=2.0)
@@ -86,6 +166,29 @@ class URControl:
         self._connected = False
         print(f'[URControl] Disconnected from {self.robot_name}')
         return True
+
+    # ---- URScript upload (UR Secondary Interface) --------------------------
+
+    def _send_urscript(self, script: str, timeout: float = 3.0) -> bool:
+        """Upload URScript text to UR Secondary Interface (port 30002).
+
+        UR controller accepts raw URScript text on this port and immediately
+        runs it, replacing any currently executing program.
+        """
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((self._conn.host, self._secondary_port))
+            payload = script.encode('utf-8')
+            if not payload.endswith(b'\n'):
+                payload += b'\n'
+            sock.sendall(payload)
+            sock.close()
+            return True
+        except Exception as e:
+            print(f'[URControl] URScript send failed '
+                  f'({self._conn.host}:{self._secondary_port}): {e}')
+            return False
 
     def read_joint_state(self) -> tuple:
         """Returns (q [N], dq [N])."""
