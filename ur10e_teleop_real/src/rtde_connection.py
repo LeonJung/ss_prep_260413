@@ -31,11 +31,11 @@ RTDE_CONTROL_PACKAGE_SETUP_INPUTS  = 73  # 'I'
 RTDE_CONTROL_PACKAGE_START  = 83  # 'S'
 RTDE_CONTROL_PACKAGE_PAUSE  = 80  # 'P'
 
-# Packet types (server → client)
-RTDE_DATA_PACKAGE = 85  # 'U' — output data from robot
-
-# Input data packet (client → server)
-RTDE_DATA_PACKAGE_INPUT = 73  # reuse 'I' type for input data
+# Data package (both directions: server→client for state, client→server for input)
+# Per RTDE protocol, ALL data packages use type 'U' regardless of direction.
+# Type 'I' is exclusively for SETUP_INPUTS (recipe configuration), not data.
+RTDE_DATA_PACKAGE = 85  # 'U'
+RTDE_DATA_PACKAGE_INPUT = RTDE_DATA_PACKAGE  # same type — direction inferred by sender
 
 # Protocol version
 RTDE_PROTOCOL_VERSION = 2
