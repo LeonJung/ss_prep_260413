@@ -41,17 +41,20 @@ def main():
     parser = argparse.ArgumentParser(description='Minimal-motion RTDE torque test')
     parser.add_argument('--robot-ip', default='127.0.0.1')
     parser.add_argument('--robot-port', type=int, default=30004)
-    parser.add_argument('--amp', type=float, default=0.5,
-                        help='Joint 0 torque amplitude in Nm (default 0.5)')
-    parser.add_argument('--freq', type=float, default=0.3,
-                        help='Sinusoid frequency in Hz (default 0.3)')
-    parser.add_argument('--duration', type=float, default=5.0,
+    parser.add_argument('--amp', type=float, default=5.0,
+                        help='Joint 0 torque amplitude in Nm (default 5.0)')
+    parser.add_argument('--freq', type=float, default=1.0,
+                        help='Sinusoid frequency in Hz (default 1.0)')
+    parser.add_argument('--duration', type=float, default=4.0,
                         help='Sinusoid duration in seconds')
+    parser.add_argument('--joint', type=int, default=0,
+                        help='Which joint to excite (default 0 = shoulder_pan)')
     args = parser.parse_args()
 
-    # Very conservative torque limits. We only want TINY motion.
-    TORQUE_LIMIT = np.array([2.0, 2.0, 2.0, 0.5, 0.5, 0.5])
-    # Light velocity damping on all joints (prevents drift, not aggressive)
+    # Torque limits: allow enough on the excited joint to overcome friction;
+    # keep wrist joints very small (EM-brake safety if damping fights motion).
+    TORQUE_LIMIT = np.array([8.0, 8.0, 6.0, 1.0, 1.0, 1.0])
+    # Light velocity damping on all joints (prevents drift only)
     KD = np.array([0.5, 0.5, 0.5, 0.2, 0.2, 0.2])
 
     print('=' * 60)
@@ -97,30 +100,35 @@ def main():
             print('  Aborting motion phase for safety.')
             return 1
 
-        # ---- Phase 2: tiny sinusoid on joint 0 only ----
-        print(f'[3/4] Sinusoid on JOINT 0 ONLY (amp={args.amp} Nm, {args.duration}s)...')
+        # ---- Phase 2: sinusoid on the selected joint only ----
+        j = args.joint
+        print(f'[3/4] Sinusoid on JOINT {j} ONLY '
+              f'(amp={args.amp} Nm, freq={args.freq} Hz, {args.duration}s)...')
         print('  (Other joints: velocity damping only)')
         q_start = q0.copy()
-        max_joint0_delta = 0.0
+        max_j_delta = 0.0
         max_tau_sent = 0.0
+        max_tau_j_sent = 0.0
         t0 = time.time()
         while time.time() - t0 < args.duration:
             t = time.time() - t0
             q_now, dq_now = robot.read_joint_state()
-            # Joint 0: pure sinusoidal torque (no position feedback)
+            # Target joint: pure sinusoidal torque (no position feedback)
             tau_sin = args.amp * math.sin(2 * math.pi * args.freq * t)
             # All joints: velocity damping (prevents drift)
             tau = -KD * dq_now
-            tau[0] += tau_sin
+            tau[j] += tau_sin
             tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
             robot.write_torque(tau)
-            delta = abs(q_now[0] - q_start[0])
-            max_joint0_delta = max(max_joint0_delta, delta)
+            delta = abs(q_now[j] - q_start[j])
+            max_j_delta = max(max_j_delta, delta)
             max_tau_sent = max(max_tau_sent, float(np.abs(tau).max()))
+            max_tau_j_sent = max(max_tau_j_sent, float(abs(tau[j])))
             time.sleep(0.002)
-        print(f'  max |tau| sent       = {max_tau_sent:.3f} Nm')
-        print(f'  joint 0 max delta    = {max_joint0_delta:.4f} rad '
-              f'({math.degrees(max_joint0_delta):.2f} deg)')
+        print(f'  max |tau| sent overall = {max_tau_sent:.3f} Nm')
+        print(f'  max |tau| on joint {j}  = {max_tau_j_sent:.3f} Nm')
+        print(f'  joint {j} max delta     = {max_j_delta:.4f} rad '
+              f'({math.degrees(max_j_delta):.2f} deg)')
 
         # ---- Phase 3: zero-torque hold again (damp out motion) ----
         print('[4/4] Damping phase 2s (arm settles)...')
@@ -144,12 +152,12 @@ def main():
     print('=' * 60)
     print('  RESULT')
     print('=' * 60)
-    if max_joint0_delta < 0.001:
-        print('  Joint 0 did NOT move (< 1 mrad). direct_torque may be ineffective.')
-    elif max_joint0_delta < 0.05:
-        print(f'  Joint 0 moved {max_joint0_delta:.4f} rad — SMALL, direct_torque WORKS.')
+    if max_j_delta < 0.001:
+        print(f'  Joint {j} did NOT move (< 1 mrad). Try higher --amp.')
+    elif max_j_delta < 0.05:
+        print(f'  Joint {j} moved {max_j_delta:.4f} rad — SMALL, direct_torque WORKS.')
     else:
-        print(f'  Joint 0 moved {max_joint0_delta:.4f} rad — LARGE, tune down gains.')
+        print(f'  Joint {j} moved {max_j_delta:.4f} rad ({math.degrees(max_j_delta):.1f} deg) — reduce --amp for next test.')
     return 0
 
 
