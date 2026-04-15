@@ -5,8 +5,10 @@
 friction_comp: true          # UR firmware friction compensation (direct_torque friction_comp=True)
 gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_grav in code)
 
-# --- Torque safety limits [Nm] (conservative for real hardware) ---
-torque_limit: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+# --- Torque safety limits [Nm] (per-joint, tuned from real-hw measurements) ---
+# Joint 0,1 shoulders need ~15 Nm to overcome static friction.
+# Wrist joints have tiny friction + low inertia → easily runaway.
+torque_limit: [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]
 
 # --- Per-robot HOME positions [rad] ---
 # Leader (UR3e, reverse-mounted) and Follower (UR10e) have different homes
