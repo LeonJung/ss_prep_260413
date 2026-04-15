@@ -169,6 +169,9 @@ class URControl:
         self._connected = False
         self._robot_mode = -1
         self._safety_mode = -1
+        self._runtime_state = 0
+        self._tcp_force = np.zeros(6)
+        self._tcp_pose = np.zeros(6)
         self._recv_count = 0
         # write_torque stats
         self._write_count = 0
@@ -307,14 +310,41 @@ class URControl:
 
     def read_contact_forces(self) -> np.ndarray:
         """Returns tau_contact [N].
-        Currently zeros — TODO: derive from actual_TCP_force when available.
+        NOTE: returns zeros — the RTDE output recipe now includes
+        actual_TCP_force but that's Cartesian wrench (6D), not joint
+        contact torque. Mapping wrench→joint torque requires Jacobian
+        (handled upstream in node logic when available).
         """
         with self._lock:
             return self._tau_contact.copy()
 
+    def read_tcp_force(self) -> np.ndarray:
+        """Returns Cartesian F/T at TCP, base frame [Fx,Fy,Fz,Tx,Ty,Tz] (N, Nm)."""
+        with self._lock:
+            return self._tcp_force.copy()
+
+    def read_tcp_pose(self) -> np.ndarray:
+        """Returns TCP pose [x,y,z,rx,ry,rz] (position + axis-angle, meters/rad)."""
+        with self._lock:
+            return self._tcp_pose.copy()
+
     def read_eef_pose(self) -> tuple:
-        """Placeholder FK — TODO: implement from UR RTDE actual_TCP_pose."""
-        return np.array([0.0, 0.0, 0.5]), np.eye(3)
+        """Returns (position[3], rotation_matrix[3,3]) from actual_TCP_pose."""
+        with self._lock:
+            pose = self._tcp_pose.copy()
+        pos = pose[:3]
+        # Convert axis-angle (rx,ry,rz) to rotation matrix
+        rvec = pose[3:]
+        theta = float(np.linalg.norm(rvec))
+        if theta < 1e-8:
+            R = np.eye(3)
+        else:
+            k = rvec / theta
+            K = np.array([[0, -k[2], k[1]],
+                          [k[2], 0, -k[0]],
+                          [-k[1], k[0], 0]])
+            R = np.eye(3) + np.sin(theta)*K + (1-np.cos(theta))*(K @ K)
+        return pos, R
 
     def write_torque(self, tau: np.ndarray) -> bool:
         """Send torque command to robot via RTDE input data package."""
@@ -338,15 +368,18 @@ class URControl:
         return ok
 
     def read_status(self) -> dict:
-        """Return robot_mode, safety_mode, recv_count, write_count, current."""
+        """Return full status snapshot."""
         with self._lock:
             return {
                 'robot_mode': self._robot_mode,
                 'safety_mode': self._safety_mode,
+                'runtime_state': self._runtime_state,
                 'recv_count': self._recv_count,
                 'write_count': self._write_count,
                 'last_tau': self._last_tau.copy(),
                 'actual_current': self._current.copy(),
+                'actual_TCP_force': self._tcp_force.copy(),
+                'actual_TCP_pose': self._tcp_pose.copy(),
             }
 
     # ---- Background receive thread -----------------------------------------
@@ -363,6 +396,12 @@ class URControl:
                         self._dq[:] = data['actual_qd']
                     if 'actual_current' in data:
                         self._current[:] = data['actual_current']
+                    if 'actual_TCP_force' in data:
+                        self._tcp_force[:] = data['actual_TCP_force']
+                    if 'actual_TCP_pose' in data:
+                        self._tcp_pose[:] = data['actual_TCP_pose']
+                    if 'runtime_state' in data:
+                        self._runtime_state = data['runtime_state']
                     if 'timestamp' in data:
                         self._timestamp = data['timestamp']
                     if 'robot_mode' in data:

@@ -57,13 +57,17 @@ _TYPE_SIZE = {
 }
 
 # Standard output recipe for bilateral teleop
+# Matches infra_dualarm reference (subset) for bilateral F/T feedback.
 DEFAULT_OUTPUT_RECIPE = [
-    ('timestamp',       RTDE_TYPE_DOUBLE),
-    ('actual_q',        RTDE_TYPE_VECTOR6D),
-    ('actual_qd',       RTDE_TYPE_VECTOR6D),
-    ('actual_current',  RTDE_TYPE_VECTOR6D),
-    ('robot_mode',      RTDE_TYPE_INT32),
-    ('safety_mode',     RTDE_TYPE_INT32),
+    ('timestamp',         RTDE_TYPE_DOUBLE),
+    ('actual_q',          RTDE_TYPE_VECTOR6D),
+    ('actual_qd',         RTDE_TYPE_VECTOR6D),
+    ('actual_current',    RTDE_TYPE_VECTOR6D),
+    ('actual_TCP_force',  RTDE_TYPE_VECTOR6D),  # F/T at TCP (for bilateral)
+    ('actual_TCP_pose',   RTDE_TYPE_VECTOR6D),  # TCP pose (pos + axis-angle)
+    ('runtime_state',     RTDE_TYPE_UINT32),     # URScript program state
+    ('robot_mode',        RTDE_TYPE_INT32),
+    ('safety_mode',       RTDE_TYPE_INT32),
 ]
 
 # Standard input recipe (torque command)
