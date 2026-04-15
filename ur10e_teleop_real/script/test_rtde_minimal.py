@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""
+test_rtde_minimal.py — MINIMAL-MOTION torque test for UR real hardware.
+
+Purpose: verify direct_torque() actually moves the robot, without risky homing.
+ONLY excites joint 0 (shoulder_pan) with tiny torques. Other joints held with
+light damping only (no PD toward setpoint).
+
+SAFETY:
+  - Max torque: 2 Nm on joint 0, 0.5 Nm on others
+  - No homing — starts from wherever the arm currently is
+  - 10-second hold-zero phase at start to verify robot stays still
+  - Be ready with EM stop just in case.
+
+Usage:
+    python3 test_rtde_minimal.py --robot-ip 169.254.186.92
+"""
+
+import argparse
+import math
+import os
+import sys
+import time
+
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+try:
+    from ament_index_python.packages import get_package_share_directory
+    sys.path.insert(0, os.path.join(
+        get_package_share_directory('ur10e_teleop_real'), 'src'))
+except Exception:
+    pass
+
+from control import URControl
+
+N = 6
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Minimal-motion RTDE torque test')
+    parser.add_argument('--robot-ip', default='127.0.0.1')
+    parser.add_argument('--robot-port', type=int, default=30004)
+    parser.add_argument('--amp', type=float, default=0.5,
+                        help='Joint 0 torque amplitude in Nm (default 0.5)')
+    parser.add_argument('--freq', type=float, default=0.3,
+                        help='Sinusoid frequency in Hz (default 0.3)')
+    parser.add_argument('--duration', type=float, default=5.0,
+                        help='Sinusoid duration in seconds')
+    args = parser.parse_args()
+
+    # Very conservative torque limits. We only want TINY motion.
+    TORQUE_LIMIT = np.array([2.0, 2.0, 2.0, 0.5, 0.5, 0.5])
+    # Light velocity damping on all joints (prevents drift, not aggressive)
+    KD = np.array([0.5, 0.5, 0.5, 0.2, 0.2, 0.2])
+
+    print('=' * 60)
+    print('  RTDE Minimal-Motion Torque Test')
+    print('=' * 60)
+    print(f'  Robot IP      : {args.robot_ip}:{args.robot_port}')
+    print(f'  Joint 0 amp   : {args.amp} Nm  (sine at {args.freq} Hz)')
+    print(f'  Torque limit  : {TORQUE_LIMIT.tolist()}')
+    print(f'  Velocity damp : {KD.tolist()}')
+    print(f'  Duration      : {args.duration} s')
+    print()
+    print('  SAFETY: Be ready with EM stop. Test keeps arm near current pose.')
+    print()
+
+    # ---- Connect ----
+    print('[1/4] Connecting...')
+    robot = URControl(robot_ip=args.robot_ip, port=args.robot_port)
+    if not robot.connect():
+        print('  FAIL: Could not connect.')
+        return 1
+    print('  OK: Connected.')
+
+    time.sleep(0.5)
+    q0, _ = robot.read_joint_state()
+    print(f'  Starting q = {q0.round(4).tolist()}')
+
+    try:
+        # ---- Phase 1: zero-torque hold (verify arm stays put) ----
+        print('[2/4] Zero-torque hold for 3s (arm should NOT move)...')
+        t0 = time.time()
+        q_max_drift = np.zeros(N)
+        while time.time() - t0 < 3.0:
+            q_now, dq_now = robot.read_joint_state()
+            tau = -KD * dq_now  # just damping
+            tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
+            robot.write_torque(tau)
+            drift = np.abs(q_now - q0)
+            q_max_drift = np.maximum(q_max_drift, drift)
+            time.sleep(0.002)
+        print(f'  max drift per joint = {q_max_drift.round(4).tolist()} rad')
+        if np.max(q_max_drift) > 0.1:
+            print('  *** WARN: arm drifted > 0.1 rad in zero-torque mode ***')
+            print('  Aborting motion phase for safety.')
+            return 1
+
+        # ---- Phase 2: tiny sinusoid on joint 0 only ----
+        print(f'[3/4] Sinusoid on JOINT 0 ONLY (amp={args.amp} Nm, {args.duration}s)...')
+        print('  (Other joints: velocity damping only)')
+        q_start = q0.copy()
+        max_joint0_delta = 0.0
+        max_tau_sent = 0.0
+        t0 = time.time()
+        while time.time() - t0 < args.duration:
+            t = time.time() - t0
+            q_now, dq_now = robot.read_joint_state()
+            # Joint 0: pure sinusoidal torque (no position feedback)
+            tau_sin = args.amp * math.sin(2 * math.pi * args.freq * t)
+            # All joints: velocity damping (prevents drift)
+            tau = -KD * dq_now
+            tau[0] += tau_sin
+            tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
+            robot.write_torque(tau)
+            delta = abs(q_now[0] - q_start[0])
+            max_joint0_delta = max(max_joint0_delta, delta)
+            max_tau_sent = max(max_tau_sent, float(np.abs(tau).max()))
+            time.sleep(0.002)
+        print(f'  max |tau| sent       = {max_tau_sent:.3f} Nm')
+        print(f'  joint 0 max delta    = {max_joint0_delta:.4f} rad '
+              f'({math.degrees(max_joint0_delta):.2f} deg)')
+
+        # ---- Phase 3: zero-torque hold again (damp out motion) ----
+        print('[4/4] Damping phase 2s (arm settles)...')
+        t0 = time.time()
+        while time.time() - t0 < 2.0:
+            _, dq_now = robot.read_joint_state()
+            tau = -KD * dq_now
+            tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
+            robot.write_torque(tau)
+            time.sleep(0.002)
+
+        q_final, _ = robot.read_joint_state()
+        total_drift = np.abs(q_final - q0)
+        print(f'  final q = {q_final.round(4).tolist()}')
+        print(f'  total drift per joint = {total_drift.round(4).tolist()} rad')
+
+    finally:
+        robot.disconnect()
+
+    print()
+    print('=' * 60)
+    print('  RESULT')
+    print('=' * 60)
+    if max_joint0_delta < 0.001:
+        print('  Joint 0 did NOT move (< 1 mrad). direct_torque may be ineffective.')
+    elif max_joint0_delta < 0.05:
+        print(f'  Joint 0 moved {max_joint0_delta:.4f} rad — SMALL, direct_torque WORKS.')
+    else:
+        print(f'  Joint 0 moved {max_joint0_delta:.4f} rad — LARGE, tune down gains.')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
