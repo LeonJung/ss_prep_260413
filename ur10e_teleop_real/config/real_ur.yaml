@@ -11,9 +11,10 @@ gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_
 torque_limit: [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]
 
 # --- Per-robot HOME positions [rad] ---
-# Both Leader (UR3e) and Follower (UR10e) home to the same negative-angle
-# pose for this specific physical setup (verified on real hardware).
-leader_home:   [-2.24, -1.8608, -2.16, -2.2568, -2.24, 0.0]
+# Verified on real hardware:
+#   Leader (UR3e):   [+2.24, -1.28, +2.16, -0.88, +2.24, 0]
+#   Follower (UR10e):[-2.24, -1.86, -2.16, -2.26, -2.24, 0]
+leader_home:   [ 2.24, -1.2808,  2.16, -0.8848,  2.24, 0.0]
 follower_home: [-2.24, -1.8608, -2.16, -2.2568, -2.24, 0.0]
 
 # --- Joint mirroring (for reverse-mounted leader) ---
