@@ -56,11 +56,15 @@ def main():
                         help='Pulse duration per direction (default 0.3 s)')
     args = parser.parse_args()
 
-    # Torque limits: allow enough on the excited joint to overcome friction;
-    # keep wrist joints very small (EM-brake safety if damping fights motion).
-    TORQUE_LIMIT = np.array([8.0, 8.0, 6.0, 1.0, 1.0, 1.0])
+    # Torque limits: generous on excited joint (up to |amp|), very small on
+    # wrist joints to avoid runaway motion if they're the damping target.
+    TORQUE_LIMIT = np.array([25.0, 25.0, 20.0, 2.0, 2.0, 2.0])
     # Light velocity damping on all joints (prevents drift only)
     KD = np.array([0.5, 0.5, 0.5, 0.2, 0.2, 0.2])
+    # Clip target joint's limit to |amp| + a little headroom so we don't
+    # accidentally apply more than requested:
+    TORQUE_LIMIT[args.joint] = min(TORQUE_LIMIT[args.joint],
+                                    abs(args.amp) + 1.0)
 
     print('=' * 60)
     print('  RTDE Minimal-Motion Torque Test')
