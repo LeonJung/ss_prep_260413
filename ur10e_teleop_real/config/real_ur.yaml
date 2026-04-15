@@ -19,10 +19,10 @@ leader_home:   [-2.24, -1.2808,  2.16, -0.8848, -2.24, 0.0]
 follower_home: [-2.24, -1.8608, -2.16, -2.2568, -2.24, 0.0]
 
 # --- Joint mirroring (for reverse-mounted leader) ---
-# Joints 0,2,4 are sign-flipped due to reversed installation direction.
+# Joints 0 and 4 are sign-flipped (matches leader_home pattern).
 # When leader joint moves +delta, follower should move -delta on these joints.
 joint_mirror:
-  sign: [-1, 1, -1, 1, -1, 1]
+  sign: [-1, 1, 1, 1, -1, 1]
 
 # --- Auto-homing on start ---
 auto_home_on_start: true
