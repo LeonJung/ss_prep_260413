@@ -49,6 +49,11 @@ def main():
                         help='Sinusoid duration in seconds')
     parser.add_argument('--joint', type=int, default=0,
                         help='Which joint to excite (default 0 = shoulder_pan)')
+    parser.add_argument('--mode', choices=['sin', 'pulse'], default='sin',
+                        help='Motion pattern: sin (sinusoid) or pulse '
+                             '(constant +amp then -amp, each for pulse_s seconds)')
+    parser.add_argument('--pulse-s', type=float, default=0.3,
+                        help='Pulse duration per direction (default 0.3 s)')
     args = parser.parse_args()
 
     # Torque limits: allow enough on the excited joint to overcome friction;
@@ -100,31 +105,62 @@ def main():
             print('  Aborting motion phase for safety.')
             return 1
 
-        # ---- Phase 2: sinusoid on the selected joint only ----
+        # ---- Phase 2: excite selected joint ----
         j = args.joint
-        print(f'[3/4] Sinusoid on JOINT {j} ONLY '
-              f'(amp={args.amp} Nm, freq={args.freq} Hz, {args.duration}s)...')
-        print('  (Other joints: velocity damping only)')
         q_start = q0.copy()
         max_j_delta = 0.0
         max_tau_sent = 0.0
         max_tau_j_sent = 0.0
-        t0 = time.time()
-        while time.time() - t0 < args.duration:
-            t = time.time() - t0
-            q_now, dq_now = robot.read_joint_state()
-            # Target joint: pure sinusoidal torque (no position feedback)
-            tau_sin = args.amp * math.sin(2 * math.pi * args.freq * t)
-            # All joints: velocity damping (prevents drift)
-            tau = -KD * dq_now
-            tau[j] += tau_sin
-            tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
-            robot.write_torque(tau)
-            delta = abs(q_now[j] - q_start[j])
-            max_j_delta = max(max_j_delta, delta)
-            max_tau_sent = max(max_tau_sent, float(np.abs(tau).max()))
-            max_tau_j_sent = max(max_tau_j_sent, float(abs(tau[j])))
-            time.sleep(0.002)
+
+        if args.mode == 'sin':
+            print(f'[3/4] SINUSOID on JOINT {j} '
+                  f'(amp={args.amp} Nm, freq={args.freq} Hz, {args.duration}s)...')
+            print('  (Other joints: velocity damping only)')
+            t0 = time.time()
+            while time.time() - t0 < args.duration:
+                t = time.time() - t0
+                q_now, dq_now = robot.read_joint_state()
+                tau_cmd_j = args.amp * math.sin(2 * math.pi * args.freq * t)
+                tau = -KD * dq_now
+                tau[j] += tau_cmd_j
+                tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
+                robot.write_torque(tau)
+                delta = abs(q_now[j] - q_start[j])
+                max_j_delta = max(max_j_delta, delta)
+                max_tau_sent = max(max_tau_sent, float(np.abs(tau).max()))
+                max_tau_j_sent = max(max_tau_j_sent, float(abs(tau[j])))
+                time.sleep(0.002)
+        else:  # pulse
+            ps = args.pulse_s
+            print(f'[3/4] PULSE on JOINT {j}: +{args.amp} Nm for {ps}s, '
+                  f'rest {ps}s, -{args.amp} Nm for {ps}s, rest {ps}s')
+            print('  (Other joints: velocity damping only)')
+            phases = [
+                ('+tau', +args.amp, ps),
+                ('rest', 0.0,       ps),
+                ('-tau', -args.amp, ps),
+                ('rest', 0.0,       ps),
+            ]
+            for label, tau_j_cmd, dur in phases:
+                q_phase_start, _ = robot.read_joint_state()
+                t0 = time.time()
+                while time.time() - t0 < dur:
+                    q_now, dq_now = robot.read_joint_state()
+                    tau = -KD * dq_now
+                    tau[j] += tau_j_cmd
+                    tau = np.clip(tau, -TORQUE_LIMIT, TORQUE_LIMIT)
+                    robot.write_torque(tau)
+                    delta = abs(q_now[j] - q_start[j])
+                    max_j_delta = max(max_j_delta, delta)
+                    max_tau_sent = max(max_tau_sent, float(np.abs(tau).max()))
+                    max_tau_j_sent = max(max_tau_j_sent, float(abs(tau[j])))
+                    time.sleep(0.002)
+                q_phase_end, _ = robot.read_joint_state()
+                phase_delta = q_phase_end[j] - q_phase_start[j]
+                print(f'  [{label:<4s}]  tau_j={tau_j_cmd:+.1f}Nm  '
+                      f'phase_delta={phase_delta:+.5f} rad '
+                      f'({math.degrees(phase_delta):+.2f} deg)')
+
         print(f'  max |tau| sent overall = {max_tau_sent:.3f} Nm')
         print(f'  max |tau| on joint {j}  = {max_tau_j_sent:.3f} Nm')
         print(f'  joint {j} max delta     = {max_j_delta:.4f} rad '
