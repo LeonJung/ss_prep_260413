@@ -143,6 +143,7 @@ def main():
             ]
             for label, tau_j_cmd, dur in phases:
                 q_phase_start, _ = robot.read_joint_state()
+                max_cur_j = 0.0
                 t0 = time.time()
                 while time.time() - t0 < dur:
                     q_now, dq_now = robot.read_joint_state()
@@ -154,12 +155,15 @@ def main():
                     max_j_delta = max(max_j_delta, delta)
                     max_tau_sent = max(max_tau_sent, float(np.abs(tau).max()))
                     max_tau_j_sent = max(max_tau_j_sent, float(abs(tau[j])))
+                    cur = robot.read_status().get('actual_current', np.zeros(6))
+                    max_cur_j = max(max_cur_j, float(abs(cur[j])))
                     time.sleep(0.002)
                 q_phase_end, _ = robot.read_joint_state()
                 phase_delta = q_phase_end[j] - q_phase_start[j]
-                print(f'  [{label:<4s}]  tau_j={tau_j_cmd:+.1f}Nm  '
+                print(f'  [{label:<4s}]  tau_j={tau_j_cmd:+.2f}Nm  '
                       f'phase_delta={phase_delta:+.5f} rad '
-                      f'({math.degrees(phase_delta):+.2f} deg)')
+                      f'({math.degrees(phase_delta):+.2f} deg)  '
+                      f'|I|max={max_cur_j:.3f} A')
 
         print(f'  max |tau| sent overall = {max_tau_sent:.3f} Nm')
         print(f'  max |tau| on joint {j}  = {max_tau_j_sent:.3f} Nm')

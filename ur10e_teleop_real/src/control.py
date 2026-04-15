@@ -48,9 +48,9 @@ def rtde_torque_ctrl():
     dt_count = 0
     while True:
       if cmd_mode == 1:
-        direct_torque(cmd_torque, friction_comp=True)
+        direct_torque(cmd_torque)
         if first_dt:
-          textmsg("[rtde_torque_ctrl] first direct_torque(friction_comp=True) OK")
+          textmsg("[rtde_torque_ctrl] first direct_torque(defaults) OK")
           first_dt = False
         end
         dt_count = dt_count + 1
@@ -59,7 +59,7 @@ def rtde_torque_ctrl():
           dt_count = 0
         end
       else:
-        direct_torque(zero_tau, friction_comp=True)
+        direct_torque(zero_tau)
       end
     end
   end
@@ -338,7 +338,7 @@ class URControl:
         return ok
 
     def read_status(self) -> dict:
-        """Return robot_mode, safety_mode, recv_count, write_count."""
+        """Return robot_mode, safety_mode, recv_count, write_count, current."""
         with self._lock:
             return {
                 'robot_mode': self._robot_mode,
@@ -346,6 +346,7 @@ class URControl:
                 'recv_count': self._recv_count,
                 'write_count': self._write_count,
                 'last_tau': self._last_tau.copy(),
+                'actual_current': self._current.copy(),
             }
 
     # ---- Background receive thread -----------------------------------------
