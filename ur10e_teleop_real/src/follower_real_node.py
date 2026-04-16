@@ -44,6 +44,7 @@ from environment_sensing_data_emulator import EnvironmentEmulator
 MODE_ACTIVE = 0
 MODE_PAUSED = 1
 MODE_HOMING = 2
+MODE_FREEDRIVE = 3   # tau=0 (gravity-comp only) — for manual positioning / calibration
 
 JOINT_NAMES = [
     'shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
@@ -56,7 +57,7 @@ HOMING_DURATION_FALLBACK = 3.0
 
 def _state_name(s: int) -> str:
     return {MODE_ACTIVE: 'ACTIVE', MODE_PAUSED: 'PAUSED',
-            MODE_HOMING: 'HOMING'}.get(s, '??')
+            MODE_HOMING: 'HOMING', MODE_FREEDRIVE: 'FREEDRIVE'}.get(s, '??')
 
 
 def _quintic(alpha: float) -> float:
@@ -313,6 +314,11 @@ class FollowerReal(Node):
                         q_target_init = self.HOME_QPOS.copy()
                         self._publish_mode(MODE_PAUSED)
                         self.get_logger().info('HOMING complete → PAUSED')
+
+                elif cur_state == MODE_FREEDRIVE:
+                    # Zero-torque (firmware gravity comp only). User can move
+                    # the arm freely by hand — used for calibration/positioning.
+                    tau = tau_grav
 
                 else:
                     tau = tau_grav
