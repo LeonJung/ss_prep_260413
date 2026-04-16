@@ -183,8 +183,11 @@ class LeaderReal(Node):
         self.OVERFORCE_USER       = np.array(lcfg['OVERFORCE_USER'])
         self.OVERFORCE_CONSTRAINT = np.array(lcfg['OVERFORCE_CONSTRAINT'])
 
-        self.act_lo = -np.array(self.cfg['torque_limit'])
-        self.act_hi =  np.array(self.cfg['torque_limit'])
+        # Leader-specific torque limit if present, else fall back to shared
+        tlim = self.cfg.get('leader_torque_limit',
+                             self.cfg.get('torque_limit', [25.0]*N))
+        self.act_lo = -np.array(tlim)
+        self.act_hi =  np.array(tlim)
 
         self.friction_comp = self.cfg['friction_comp']
         self.gravity_comp_internal = self.cfg['gravity_comp_internal']

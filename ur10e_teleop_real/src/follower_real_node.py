@@ -108,8 +108,11 @@ class FollowerReal(Node):
         self.KD_HOLD  = np.array(fcfg['KD_HOLD'])
         self.OVERFORCE_CONSTRAINT = np.array(fcfg['OVERFORCE_CONSTRAINT'])
 
-        self.act_lo = -np.array(self.cfg['torque_limit'])
-        self.act_hi =  np.array(self.cfg['torque_limit'])
+        # Follower-specific torque limit if present, else fall back to shared
+        tlim = self.cfg.get('follower_torque_limit',
+                             self.cfg.get('torque_limit', [25.0]*N))
+        self.act_lo = -np.array(tlim)
+        self.act_hi =  np.array(tlim)
 
         self.friction_comp = self.cfg['friction_comp']
         self.gravity_comp_internal = self.cfg['gravity_comp_internal']
