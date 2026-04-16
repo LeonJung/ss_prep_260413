@@ -41,11 +41,12 @@ leader:
   KD_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
-  # Bilateral coupling (restored after IP-swap discovery).
-  # Leader (UR3e) feels a modest pull toward follower for force feedback;
-  # follower's KP_TRACK is the dominant tracking term.
+  # Bilateral coupling — position spring only, no velocity damping.
+  # Iter-A tuning: KD_BI=0 removes viscous drag felt by the user during
+  # fast hand motion. Contact feedback still comes through via KP_BI as
+  # tracking error grows when follower gets stuck.
   KP_BI:     [40.0, 40.0, 25.0, 12.0, 12.0, 12.0]
-  KD_BI:     [ 5.0,  5.0,  3.0,  2.0,  2.0,  2.0]
+  KD_BI:     [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
   # With KP_USER=0 the user-spring cannot exceed threshold, so OVERFORCE_USER
   # becomes irrelevant. Keep large numbers as sentinels.
   OVERFORCE_USER:       [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
