@@ -32,6 +32,7 @@ from collections import deque
 import numpy as np
 
 import rclpy
+import rclpy.executors
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from sensor_msgs.msg import JointState
@@ -115,7 +116,6 @@ def main():
     rclpy.init()
     node = Calibrator()
 
-    import rclpy.executors
     executor = rclpy.executors.SingleThreadedExecutor()
     executor.add_node(node)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
