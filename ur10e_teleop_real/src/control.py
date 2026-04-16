@@ -36,17 +36,11 @@ UR_SECONDARY_PORT = 30002
 # SAFETY:
 #   - When mode register (int_register_0) != 1, applies zero torque.
 #   - PC must write mode=0 before disconnect to release the arm.
-URSCRIPT_TORQUE_CONTROL_TEMPLATE = """\
+URSCRIPT_TORQUE_CONTROL = """\
 def rtde_torque_ctrl():
   global cmd_torque = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   global cmd_mode = 0
   global zero_tau = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-
-  # Apply payload so direct_torque's implicit gravity handling matches
-  # the real load (pendant's Active Payload isn't guaranteed to carry
-  # across to uploaded URScript's direct_torque).
-  set_payload({payload_mass}, [{cog_x}, {cog_y}, {cog_z}])
-  textmsg("[rtde_torque_ctrl] set_payload mass={payload_mass}")
 
   thread torque_thread():
     textmsg("[rtde_torque_ctrl] torque_thread START")
@@ -101,15 +95,6 @@ end
 
 rtde_torque_ctrl()
 """
-
-
-def _build_urscript(payload_mass: float, payload_cog: tuple) -> str:
-    """Fill URScript template with payload values."""
-    return URSCRIPT_TORQUE_CONTROL_TEMPLATE.format(
-        payload_mass=float(payload_mass),
-        cog_x=float(payload_cog[0]),
-        cog_y=float(payload_cog[1]),
-        cog_z=float(payload_cog[2]))
 
 URSCRIPT_STOP = """\
 def rtde_stop():
@@ -167,10 +152,7 @@ class URControl:
     def __init__(self, robot_ip: str = '127.0.0.1', robot_name: str = 'ur10e',
                  timestep: float = 0.002, port: int = 30004,
                  upload_urscript: bool = None,
-                 secondary_port: int = UR_SECONDARY_PORT,
-                 payload_mass: float = 0.0,
-                 payload_cog: tuple = (0.0, 0.0, 0.05),
-                 **kwargs):
+                 secondary_port: int = UR_SECONDARY_PORT, **kwargs):
         params = _ROBOT_PARAMS[robot_name]
         self.robot_name = robot_name
         self.timestep = timestep
@@ -203,8 +185,6 @@ class URControl:
             upload_urscript = robot_ip not in ('127.0.0.1', 'localhost')
         self._upload_urscript = upload_urscript
         self._secondary_port = secondary_port
-        self._payload_mass = float(payload_mass)
-        self._payload_cog = tuple(payload_cog)
 
     def connect(self) -> bool:
         if not self._conn.connect():
@@ -255,11 +235,10 @@ class URControl:
                 self._conn.send_input(np.zeros(N), control_mode=0)
             except Exception as e:
                 print(f'[URControl] initial zero-tau send failed: {e}')
-            urscript = _build_urscript(self._payload_mass, self._payload_cog)
             print(f'[URControl] uploading URScript torque loop '
-                  f'({len(urscript)} bytes, payload_mass={self._payload_mass} kg) '
+                  f'({len(URSCRIPT_TORQUE_CONTROL)} bytes) '
                   f'→ {self._conn.host}:{self._secondary_port}')
-            if self._send_urscript(urscript):
+            if self._send_urscript(URSCRIPT_TORQUE_CONTROL):
                 print('[URControl] URScript upload OK '
                       '(check UR pendant log for "[rtde_torque_ctrl] START")')
                 # Give UR a moment to start the script and see if robot_mode
