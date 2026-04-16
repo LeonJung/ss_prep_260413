@@ -40,13 +40,11 @@ leader:
   KD_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
-  # Passive-leader bilateral (no force-feedback for now). Leader is just a
-  # gravity-compensated master the user drags by hand; follower tracks via
-  # its own KP_TRACK. Restore nonzero KP_BI/KD_BI once follower gravity
-  # compensation for the payload is solid — then force-feedback won't
-  # cause launch-on-ACTIVE caused by follower sag.
-  KP_BI:     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  KD_BI:     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  # Bilateral coupling (restored after IP-swap discovery).
+  # Leader (UR3e) feels a modest pull toward follower for force feedback;
+  # follower's KP_TRACK is the dominant tracking term.
+  KP_BI:     [40.0, 40.0, 25.0, 12.0, 12.0, 12.0]
+  KD_BI:     [ 5.0,  5.0,  3.0,  2.0,  2.0,  2.0]
   # With KP_USER=0 the user-spring cannot exceed threshold, so OVERFORCE_USER
   # becomes irrelevant. Keep large numbers as sentinels.
   OVERFORCE_USER:       [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]

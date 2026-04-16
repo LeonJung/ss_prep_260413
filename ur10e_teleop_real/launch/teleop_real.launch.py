@@ -21,11 +21,11 @@ def generate_launch_description():
         'robot', default_value='ur3e',
         description='Leader robot type (ur10e or ur3e)')
     leader_ip_arg = DeclareLaunchArgument(
-        'leader_ip', default_value='192.168.1.100',
-        description='Leader UR robot IP address')
+        'leader_ip', default_value='169.254.186.94',
+        description='Leader (UR3e) IP')
     follower_ip_arg = DeclareLaunchArgument(
-        'follower_ip', default_value='192.168.1.101',
-        description='Follower UR robot IP address')
+        'follower_ip', default_value='169.254.186.92',
+        description='Follower (UR10e) IP')
 
     leader = ExecuteProcess(
         cmd=[
