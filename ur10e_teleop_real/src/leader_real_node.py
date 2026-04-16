@@ -331,6 +331,8 @@ class LeaderReal(Node):
         # Ignore reset topic during startup grace period (latched replay protection)
         startup_time = time.time()
         RESET_STARTUP_GRACE = 2.0
+        # Bilateral soft-start timer (reset on each PAUSED→ACTIVE transition)
+        active_t_start = startup_time
         # 1Hz diagnostic log
         last_diag_t = 0.0
         q_prev_diag = q_init.copy()
@@ -386,6 +388,7 @@ class LeaderReal(Node):
                         q_home_start = q.copy()
                     elif cur_state == MODE_ACTIVE:
                         q_user = q.copy()
+                        active_t_start = now   # for bilateral soft-start
 
                 # Keyboard (joint-space, disabled in SSH/headless)
                 if cur_state == MODE_ACTIVE and self.keyboard is not None:
@@ -405,8 +408,13 @@ class LeaderReal(Node):
                     tau_user = (self.KP_USER * (q_user - q)
                                 - self.KD_USER * dq)
                     if bilateral_active:
-                        tau_bi = (self.KP_BI * (peer_q - q)
-                                  + self.KD_BI * (peer_dq - dq))
+                        # Soft-start ramp: tau_bi grows 0 → 1 over 0.5 s to
+                        # avoid sudden yank if leader/follower aren't exactly
+                        # synchronized at the moment ACTIVE is entered.
+                        ACTIVE_RAMP = 0.5
+                        ramp = min(1.0, (now - active_t_start) / ACTIVE_RAMP)
+                        tau_bi = ramp * (self.KP_BI * (peer_q - q)
+                                         + self.KD_BI * (peer_dq - dq))
                     else:
                         tau_bi = np.zeros(N)
                     tau = tau_user + tau_bi + tau_grav
