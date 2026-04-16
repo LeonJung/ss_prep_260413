@@ -257,3 +257,12 @@ SSH 환경에서는 keyboard 자동 비활성화 (pynput unavailable 경고).
 - [ ] F/T sensor integration for over-force detection
 - [ ] TCP position safety limits
 - [ ] Real-time kernel support (POSIX FIFO thread)
+- [ ] Smooth PAUSED→ACTIVE transition on follower
+      Even after bilateral home calibration (calibrate_bilateral.py),
+      follower still jerks when ACTIVE is first published. Residual
+      arises from payload-induced gravity sag during PAUSED (held by
+      KP_HOLD to within a few degrees of home, not exact). Next-step
+      options: (a) put follower's tau_grav through a proper payload-
+      aware gravity model, (b) add a per-robot soft-start ramp on the
+      tracking term, or (c) use a dynamic zero-offset reference
+      captured at transition instant.
