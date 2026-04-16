@@ -145,7 +145,10 @@ class FollowerReal(Node):
             from control import URControl
             self.robot = URControl(
                 robot_ip=robot_ip, robot_name=robot_name,
-                timestep=self.timestep, port=robot_port)
+                timestep=self.timestep, port=robot_port,
+                payload_mass=self.cfg.get('follower_payload_mass', 0.0),
+                payload_cog=tuple(self.cfg.get(
+                    'follower_payload_cog', [0.0, 0.0, 0.05])))
         else:
             self.emulator = EnvironmentEmulator(robot_name)
             self.robot = DummyControl(

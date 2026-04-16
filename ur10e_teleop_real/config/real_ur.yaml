@@ -5,6 +5,15 @@
 friction_comp: true          # UR firmware friction compensation (direct_torque friction_comp=True)
 gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_grav in code)
 
+# --- Payload (mass in kg, CoG in meters from tool flange) ---
+# Critical: direct_torque() is "user supplies torque including gravity",
+# so we must tell UR the payload so gravity comp (if any) is correct.
+# Reference: UR10e teaching pendant shows Active Payload = 1.72 kg.
+leader_payload_mass:   0.0
+leader_payload_cog:    [0.0, 0.0, 0.05]
+follower_payload_mass: 1.72
+follower_payload_cog:  [0.0, 0.0, 0.05]  # adjust if gripper CoG known
+
 # --- Torque safety limits [Nm] — per-robot ---
 # Leader (UR3e) is smaller, smaller motor torque caps.
 # Follower (UR10e) is much stronger, needs higher limits to track briskly.
