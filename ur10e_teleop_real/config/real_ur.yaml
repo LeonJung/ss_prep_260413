@@ -14,12 +14,13 @@ leader_torque_limit:    [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]   # UR3e
 follower_torque_limit:  [80.0, 80.0, 50.0, 15.0, 10.0, 8.0] # UR10e
 
 # --- Per-robot HOME positions [rad] ---
-# Measured from working bilateral reference implementation on real hardware
-# (homed by reference code, read actual_q):
-#   Leader (UR3e, 169.254.186.92)
-#   Follower (UR10e, 169.254.186.94)
-leader_home:   [2.3194, -1.3083, 2.2429, -0.9185, 2.2835, -0.0043]
-follower_home: [2.3193, -1.3127, 2.2259, -0.9337, 2.2813,  0.0087]
+# Bilateral-calibrated via calibrate_bilateral.py (5 sync-pose pairs):
+#   mean_offset = follower_q - leader_q = [+0.011, +0.009, +0.001, -0.040, -0.005, -0.002]
+#   std         per joint                = [0.017, 0.030, 0.017, 0.039, 0.014, 0.040]
+#   fit verdict : OK  (max std 2.3° — eyeball sync precision)
+# leader_home  = pose 1's leader_q;  follower_home = leader_home + mean_offset
+leader_home:   [ 2.2984, -1.3313,  2.2127, -0.8611,  2.2772,  0.0376]
+follower_home: [ 2.3092, -1.3226,  2.2141, -0.9007,  2.2723,  0.0357]
 
 # --- Joint mirroring ---
 # Both arms home to essentially the same joint values (measured), so no
