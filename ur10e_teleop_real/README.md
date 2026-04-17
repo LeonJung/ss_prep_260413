@@ -266,3 +266,18 @@ SSH 환경에서는 keyboard 자동 비활성화 (pynput unavailable 경고).
       aware gravity model, (b) add a per-robot soft-start ramp on the
       tracking term, or (c) use a dynamic zero-offset reference
       captured at transition instant.
+- [ ] Auto power-on / boot / brake-release before homing
+      Currently the operator has to manually step through Power On,
+      Booting, and Release Brakes on each teach pendant before
+      launching. Automate this via the Dashboard Server (port 29999):
+      `power on` → wait for robotmode BOOTING → IDLE, then `brake release`
+      → wait for robotmode RUNNING, THEN proceed with URScript upload
+      and homing. Implementation sketch:
+        - Extend `src/control.py` or add `src/dashboard_client.py`:
+          open TCP to :29999, send commands, poll `robotmode` until
+          target state reached, with per-step timeout.
+        - leader_real_node / follower_real_node: call this in `connect()`
+          path before `_init_pubsub()` / `startRTDECommunication`.
+        - Config flag `auto_power_on: true` to keep it opt-in.
+      Reference: `identify_robots.py` already uses the Dashboard port;
+      extend with `power on`, `brake release`, `robotmode` polling.
