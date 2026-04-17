@@ -152,7 +152,8 @@ class URControl:
     def __init__(self, robot_ip: str = '127.0.0.1', robot_name: str = 'ur10e',
                  timestep: float = 0.002, port: int = 30004,
                  upload_urscript: bool = None,
-                 secondary_port: int = UR_SECONDARY_PORT, **kwargs):
+                 secondary_port: int = UR_SECONDARY_PORT,
+                 auto_power_cycle: bool = False, **kwargs):
         params = _ROBOT_PARAMS[robot_name]
         self.robot_name = robot_name
         self.timestep = timestep
@@ -186,7 +187,24 @@ class URControl:
         self._upload_urscript = upload_urscript
         self._secondary_port = secondary_port
 
+        # Auto power-cycle (opt-in): connect() will power_on + brake_release
+        # and disconnect() will power_off. Applies only to real UR (skipped
+        # for dummy / localhost).
+        is_real = robot_ip not in ('127.0.0.1', 'localhost')
+        self._auto_power_cycle = auto_power_cycle and is_real
+        self._dashboard = None
+
     def connect(self) -> bool:
+        # ---- auto power-cycle (opt-in): power_on + brake_release before RTDE
+        if self._auto_power_cycle:
+            from dashboard_client import DashboardClient
+            self._dashboard = DashboardClient(
+                self._conn.host,
+                logger=lambda s: print(f'[URControl:dashboard] {s}'))
+            if not self._dashboard.power_up_sequence():
+                print('[URControl] auto power-cycle (power-up) FAILED — aborting connect()')
+                return False
+
         if not self._conn.connect():
             print(f'[URControl] Failed to connect to {self._conn.host}:{self._conn.port}')
             return False
@@ -271,6 +289,14 @@ class URControl:
             self._recv_thread.join(timeout=2.0)
         self._conn.disconnect()
         self._connected = False
+        # ---- auto power-cycle (opt-in): power_off on the way out
+        if self._auto_power_cycle and self._dashboard is not None:
+            try:
+                self._dashboard.power_down_sequence()
+            except Exception as e:
+                print(f'[URControl] power-down error (ignored): {e}')
+            self._dashboard.close()
+            self._dashboard = None
         print(f'[URControl] Disconnected from {self.robot_name}')
         return True
 

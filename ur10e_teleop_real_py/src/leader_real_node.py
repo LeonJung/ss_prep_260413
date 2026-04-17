@@ -224,7 +224,8 @@ class LeaderReal(Node):
             from control import URControl
             self.robot = URControl(
                 robot_ip=robot_ip, robot_name=robot,
-                timestep=self.timestep, port=robot_port)
+                timestep=self.timestep, port=robot_port,
+                auto_power_cycle=self.cfg.get('auto_power_cycle', False))
         else:
             self.emulator = EnvironmentEmulator(robot)
             self.robot = DummyControl(
