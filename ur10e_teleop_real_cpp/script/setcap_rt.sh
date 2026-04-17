@@ -71,16 +71,22 @@ echo
 
 for b in "${targets[@]}"; do
     path="${bin_dir}/${b}"
-    if [[ ! -x "${path}" ]]; then
+    if [[ ! -e "${path}" ]]; then
         echo "  SKIP  ${b}  — not found at ${path}"
         continue
     fi
+    # setcap refuses symlinks ("filename must be regular"). With colcon's
+    # --symlink-install, ${path} is a symlink into build/ — resolve it.
+    real_path=$(realpath "${path}")
+    if [[ "${real_path}" != "${path}" ]]; then
+        echo "  (symlink: ${path}  ->  ${real_path})"
+    fi
     if [[ ${clear_mode} -eq 1 ]]; then
-        sudo setcap -r "${path}"
-        echo "  CLR   ${path}"
+        sudo setcap -r "${real_path}"
+        echo "  CLR   ${real_path}"
     else
-        sudo setcap "${CAPS}" "${path}"
-        echo "  SET   ${path}"
+        sudo setcap "${CAPS}" "${real_path}"
+        echo "  SET   ${real_path}"
     fi
 done
 
@@ -88,8 +94,9 @@ echo
 echo "[setcap_rt] current caps:"
 for b in "${targets[@]}"; do
     path="${bin_dir}/${b}"
-    if [[ -x "${path}" ]]; then
-        current=$(getcap "${path}" || echo "(none)")
+    if [[ -e "${path}" ]]; then
+        real_path=$(realpath "${path}")
+        current=$(getcap "${real_path}" || echo "(none)")
         echo "  ${current}"
     fi
 done
