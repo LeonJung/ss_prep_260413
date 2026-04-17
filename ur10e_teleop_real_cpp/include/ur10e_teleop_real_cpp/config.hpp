@@ -34,6 +34,9 @@ struct ControlConfig {
   double homing_duration          = 5.0;    // seconds
   double homing_contact_threshold = 0.3;    // fraction of OVERFORCE_CONSTRAINT
 
+  // ---- auto power-cycle (Dashboard Server, port 29999) ----
+  bool   auto_power_cycle         = false;
+
   // ---- leader gains ----
   Vec6 leader_kp_user   = {0, 0, 0, 0, 0, 0};
   Vec6 leader_kd_user   = {0, 0, 0, 0, 0, 0};

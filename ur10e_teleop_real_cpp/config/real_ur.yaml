@@ -33,6 +33,14 @@ auto_home_on_start: true
 homing_duration: 5.0          # seconds (quintic spline, slow for safety)
 homing_contact_threshold: 0.3  # fraction of OVERFORCE_CONSTRAINT to detect collision during homing
 
+# --- Auto power-cycle (opt-in) ---
+# When true, node connect() runs UR Dashboard Server (port 29999) sequence:
+#   Power On → Booting → IDLE → Brake Release → RUNNING
+# and disconnect() runs Power Off (UR engages brakes automatically).
+# Leave false to keep the manual pendant workflow.
+# Requires the robot to be in Remote Control mode.
+auto_power_cycle: false
+
 # --- PD gains ---
 leader:
   # KP_USER = 0: pure haptic bilateral (drag leader by hand, no q_user spring).

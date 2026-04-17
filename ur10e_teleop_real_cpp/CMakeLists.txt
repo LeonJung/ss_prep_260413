@@ -35,6 +35,7 @@ add_executable(leader_node
   src/leader_node.cpp
   src/leader_main.cpp
   src/config.cpp
+  src/dashboard_client.cpp
 )
 ament_target_dependencies(leader_node
   rclcpp sensor_msgs std_msgs ur_client_library
@@ -49,6 +50,7 @@ add_executable(follower_node
   src/follower_node.cpp
   src/follower_main.cpp
   src/config.cpp
+  src/dashboard_client.cpp
 )
 ament_target_dependencies(follower_node
   rclcpp sensor_msgs std_msgs ur_client_library

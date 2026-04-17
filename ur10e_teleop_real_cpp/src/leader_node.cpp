@@ -74,6 +74,16 @@ LeaderNode::LeaderNode(const Options& opts)
 LeaderNode::~LeaderNode() { stop(); }
 
 bool LeaderNode::connect_robot() {
+  // Optional: auto power-cycle via Dashboard (port 29999) before RTDE.
+  if (cfg_.auto_power_cycle) {
+    dashboard_ = std::make_unique<DashboardClient>(opts_.robot_ip);
+    if (!dashboard_->power_up_sequence()) {
+      RCLCPP_ERROR(get_logger(),
+        "auto power-cycle (power-up) FAILED — aborting connect_robot");
+      return false;
+    }
+  }
+
   urcl::UrDriverConfiguration cfg;
   cfg.robot_ip           = opts_.robot_ip;
   cfg.output_recipe_file = opts_.resources_dir + "/rtde_output_recipe.txt";
@@ -124,6 +134,11 @@ void LeaderNode::stop() {
   if (control_thread_.joinable()) control_thread_.join();
   if (driver_) {
     try { driver_->stopControl(); } catch (...) {}
+  }
+  if (dashboard_) {
+    try { dashboard_->power_down_sequence(); } catch (...) {}
+    dashboard_->close();
+    dashboard_.reset();
   }
 }
 

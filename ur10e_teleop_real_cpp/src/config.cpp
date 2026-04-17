@@ -62,6 +62,7 @@ bool load_config(const std::string& path, ControlConfig& out) {
   try_scalar(root, "auto_home_on_start",      out.auto_home_on_start);
   try_scalar(root, "homing_duration",         out.homing_duration);
   try_scalar(root, "homing_contact_threshold", out.homing_contact_threshold);
+  try_scalar(root, "auto_power_cycle",        out.auto_power_cycle);
   try_scalar(root, "timestep",                out.timestep);
 
   try_vec6(root, "torque_limit",    out.torque_limit);

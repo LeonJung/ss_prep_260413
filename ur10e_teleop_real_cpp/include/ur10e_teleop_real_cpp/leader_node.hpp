@@ -17,6 +17,7 @@
 #include <ur_client_library/ur/ur_driver.h>
 
 #include "ur10e_teleop_real_cpp/config.hpp"
+#include "ur10e_teleop_real_cpp/dashboard_client.hpp"
 #include "ur10e_teleop_real_cpp/rt_thread.hpp"
 
 namespace ur10e_teleop_real_cpp {
@@ -68,6 +69,7 @@ private:
   RTConfig rt_cfg_;
 
   std::unique_ptr<urcl::UrDriver> driver_;
+  std::unique_ptr<DashboardClient> dashboard_;
   std::atomic<bool> program_running_{false};
 
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr state_pub_;
