@@ -57,7 +57,7 @@ _TYPE_SIZE = {
 }
 
 # Standard output recipe for bilateral teleop
-# Matches infra_dualarm reference (subset) for bilateral F/T feedback.
+# Matches personal_dualarm reference (subset) for bilateral F/T feedback.
 DEFAULT_OUTPUT_RECIPE = [
     ('timestamp',         RTDE_TYPE_DOUBLE),
     ('actual_q',          RTDE_TYPE_VECTOR6D),
