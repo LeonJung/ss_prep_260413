@@ -174,13 +174,59 @@ of µs).
 The launch files pass `--resources-dir` automatically from the installed
 `share/ur10e_teleop_real_cpp/resources`.
 
-## Known limitations / TODO
+## TODO
 
-- **tau_contact / OVER-FORCE not implemented** — `actual_TCP_force` is
-  read but not converted to joint-space. Carried over from `_py`.
-- **Auto power-on / brake-release** — still manual on the pendant.
-- **Force-feedback variant** — future `_ff` package will replace the
-  position-spring coupling with Jacobian-mapped TCP force.
+Mirrored in `ur10e_teleop_real_py/README.md` — changes should land in
+both packages.
+
+### 🔴 High priority
+
+- [ ] **Auto power-on / brake-release + graceful shutdown**
+      Currently the operator runs Power On → Booting → Release Brakes
+      on each teach pendant before every session, and powers the
+      robot back down afterwards. Automate via UR Dashboard Server
+      (port 29999):
+        startup:  `power on` → wait BOOTING → IDLE → `brake release`
+                  → wait RUNNING → then URScript upload + homing
+        shutdown: reverse — stop URScript, `brake engage` (from a safe
+                  pose), `power off`, close dashboard socket
+      Implementation sketch:
+        - add a `dashboard_client` module (C++): open TCP to :29999,
+          send commands, poll `robotmode`/`safetymode` with per-step
+          timeouts
+        - leader_node / follower_node call startup in `connect_robot()`
+          and shutdown in `stop()`
+        - opt-in via config flag `auto_power_cycle: true`
+
+- [ ] **Smooth PAUSED→ACTIVE transition on follower**
+      Even after bilateral home calibration, follower jerks on first
+      ACTIVE pub. Root cause: payload-induced gravity sag during PAUSED
+      — KP_HOLD holds follower within a few degrees of home but not
+      exactly, so the error at ACTIVE entry is nonzero and
+      KP_TRACK*error fires a kick. Options:
+        (a) payload-aware gravity model on PC, added to `tau`
+        (b) follower-side soft-start ramp on KP_TRACK, mirroring the
+            one already on leader's KP_BI
+        (c) dynamic zero-offset reference captured at transition
+
+### 🟡 Medium priority
+
+- [ ] **F/T sensor integration — OVER-FORCE detection + contact torque**
+      `actual_TCP_force` is in the RTDE output recipe but unused.
+      Convert to joint-space via J^T·F (requires UR Jacobian; DH
+      params available) and feed into:
+        - existing over-force detection path (currently zeros →
+          never fires)
+        - HOMING collision detection (currently disabled for same reason)
+        - optional: explicit haptic feedback onto leader for crisper
+          "freedrive vs contact" distinction
+
+- [ ] **TCP position safety limits (Cartesian workspace)**
+      Define a bounding box in base frame (xyz_min, xyz_max). Monitor
+      `actual_TCP_pose` each cycle; if TCP leaves the box, force
+      MODE_PAUSED. Prevents accidental large excursions during
+      bilateral, useful when follower has a tool or is near an
+      obstacle. Opt-in via config (`workspace_limits: ...`).
 
 ## Architecture overview
 

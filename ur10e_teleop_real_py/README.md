@@ -441,24 +441,60 @@ TAU_BI_DEADBAND: [ 10,  10, 6.5, 4.5, 4.5, 3.8]
 
 ## TODO
 
-- [ ] `ur_server_dummy.py` dynamics stabilization
-- [ ] F/T sensor integration for over-force detection (+ explicit contact feedback channel)
-- [ ] TCP position safety limits
-- [ ] Real-time kernel support (POSIX FIFO thread)
-- [ ] Smooth PAUSED→ACTIVE transition on follower
-      Even after calibration, follower still jerks on first ACTIVE pub.
-      Residual is payload-induced gravity sag during PAUSED. Options:
-      (a) payload-aware gravity model on PC, (b) per-robot soft-start
-      ramp on tracking term, (c) dynamic zero-offset reference at
-      transition instant.
-- [ ] Auto power-on / boot / brake-release before homing
-      Dashboard Server (port 29999) commands:
-        `power on` → wait BOOTING → IDLE → `brake release` → wait RUNNING
-      Implementation: extend `src/control.py` or add `src/dashboard_client.py`;
-      leader/follower nodes call before RTDE. Opt-in via `auto_power_on: true`.
-      `identify_robots.py` already uses :29999 as reference.
-- [ ] Pure TCP-F/T force feedback variant (ur10e_teleop_real_py_ff)
-      Position-position bilateral has structural ambiguity between
-      free motion and contact. Plan: separate package with J^T·F from
-      follower's `actual_TCP_force` replacing KP_BI path. Gives real
-      freedrive in free space, clean contact signal otherwise.
+Mirrored in `ur10e_teleop_real_cpp/README.md` — changes should land in
+both packages.
+
+### 🔴 High priority
+
+- [ ] **Auto power-on / brake-release + graceful shutdown**
+      Currently the operator runs Power On → Booting → Release Brakes
+      on each teach pendant before every session, and powers the
+      robot back down afterwards. Automate via UR Dashboard Server
+      (port 29999):
+        startup:  `power on` → wait BOOTING → IDLE → `brake release`
+                  → wait RUNNING → then URScript upload + homing
+        shutdown: reverse — stop URScript, `brake engage` (from a safe
+                  pose), `power off`, close dashboard socket
+      Implementation sketch:
+        - add `src/dashboard_client.py` (or extend `control.py`): TCP
+          to :29999, send commands, poll `robotmode`/`safetymode`
+          until target state reached, per-step timeouts
+        - nodes call startup in `connect()` and shutdown in
+          `disconnect()` / on SIGINT
+        - opt-in via config flag `auto_power_cycle: true`
+      `identify_robots.py` already uses :29999 as a reference.
+
+- [ ] **Smooth PAUSED→ACTIVE transition on follower**
+      Even after bilateral home calibration (`calibrate_bilateral.py`),
+      follower jerks on first ACTIVE pub. Root cause: payload-induced
+      gravity sag during PAUSED — KP_HOLD holds follower within a few
+      degrees of home but not exactly, so the error at ACTIVE entry is
+      nonzero and KP_TRACK*error fires a kick. Options:
+        (a) payload-aware gravity model on PC, added to `tau`
+        (b) follower-side soft-start ramp on KP_TRACK, mirroring the
+            one already on leader's KP_BI
+        (c) dynamic zero-offset reference captured at transition
+
+### 🟡 Medium priority
+
+- [ ] **F/T sensor integration — OVER-FORCE detection + contact torque**
+      `actual_TCP_force` is in the RTDE output recipe but unused.
+      Convert to joint-space via J^T·F (requires UR Jacobian; DH
+      params available) and feed into:
+        - existing over-force detection path (currently zeros →
+          never fires)
+        - HOMING collision detection (currently disabled for same reason)
+        - optional: explicit haptic feedback onto leader for crisper
+          "freedrive vs contact" distinction
+
+- [ ] **TCP position safety limits (Cartesian workspace)**
+      Define a bounding box in base frame (xyz_min, xyz_max). Monitor
+      `actual_TCP_pose` each cycle; if TCP leaves the box, force
+      MODE_PAUSED. Prevents accidental large excursions during
+      bilateral, useful when follower has a tool or is near an
+      obstacle. Opt-in via config (`workspace_limits: ...`).
+
+### ✅ Done (historical reference)
+
+- [x] Real-time kernel support — delivered in `ur10e_teleop_real_cpp`
+      via SCHED_FIFO + mlockall. Python can't do hard RT due to GIL/GC.
