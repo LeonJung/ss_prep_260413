@@ -34,6 +34,7 @@ target_link_libraries(rt_thread PUBLIC pthread rt)
 add_executable(leader_node
   src/leader_node.cpp
   src/leader_main.cpp
+  src/config.cpp
 )
 ament_target_dependencies(leader_node
   rclcpp sensor_msgs std_msgs ur_client_library
@@ -47,6 +48,7 @@ target_link_libraries(leader_node
 add_executable(follower_node
   src/follower_node.cpp
   src/follower_main.cpp
+  src/config.cpp
 )
 ament_target_dependencies(follower_node
   rclcpp sensor_msgs std_msgs ur_client_library

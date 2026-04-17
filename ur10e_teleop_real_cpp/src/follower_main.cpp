@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
     if      (a == "--robot-ip")    opts.robot_ip = need("--robot-ip");
     else if (a == "--robot")       opts.robot_type = need("--robot");
     else if (a == "--config")      opts.config_path = need("--config");
+    else if (a == "--resources-dir") opts.resources_dir = need("--resources-dir");
     else if (a == "--rt-mode")     opts.use_rt = parse_bool(need("--rt-mode"));
     else if (a == "--rt")          opts.use_rt = true;
     else if (a == "--no-rt")       opts.use_rt = false;

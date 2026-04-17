@@ -12,6 +12,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     pkg_share = get_package_share_directory('ur10e_teleop_real_cpp')
     config = f'{pkg_share}/config/real_ur.yaml'
+    resources = f'{pkg_share}/resources'
 
     follower_ip_arg = DeclareLaunchArgument('follower_ip',
         default_value='169.254.186.92')
@@ -25,6 +26,7 @@ def generate_launch_description():
         arguments=[
             '--robot-ip', LaunchConfiguration('follower_ip'),
             '--config', config,
+            '--resources-dir', resources,
             '--rt-mode', LaunchConfiguration('rt'),
         ],
     )
