@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — Install dependencies for ur10e_teleop_real
+# install.sh — Install dependencies for ur10e_teleop_real_py
 #
 # Usage:
 #   bash install.sh
@@ -19,18 +19,18 @@ sudo apt install -y \
 echo "[install] Done."
 echo ""
 echo "=== Build ==="
-echo "  cd ~/colcon_ws && colcon build --packages-select ur10e_teleop_real"
+echo "  cd ~/colcon_ws && colcon build --packages-select ur10e_teleop_real_py"
 echo ""
 echo "=== Run (dummy mode — no hardware) ==="
-echo "  ros2 launch ur10e_teleop_real teleop_dummy.launch.py"
+echo "  ros2 launch ur10e_teleop_real_py teleop_dummy.launch.py"
 echo ""
 echo "=== Verify which robot is at which IP FIRST ==="
 echo "  python3 script/identify_robots.py --ips <IP_A> <IP_B>"
 echo ""
 echo "=== Run (real UR — two robots; launch defaults set to project network) ==="
-echo "  ros2 launch ur10e_teleop_real teleop_real.launch.py"
+echo "  ros2 launch ur10e_teleop_real_py teleop_real.launch.py"
 echo "  # or override IPs:"
-echo "  ros2 launch ur10e_teleop_real teleop_real.launch.py leader_ip:=<UR3e_IP> follower_ip:=<UR10e_IP>"
+echo "  ros2 launch ur10e_teleop_real_py teleop_real.launch.py leader_ip:=<UR3e_IP> follower_ip:=<UR10e_IP>"
 echo ""
 echo "=== After homing, switch to ACTIVE ==="
 echo "  ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray \"data: [0.0, 0.0, 0.0]\""

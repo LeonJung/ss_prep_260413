@@ -5,8 +5,8 @@ Starts ur_server_dummy.py (×2, different ports for leader/follower),
 then leader/follower_real_node.py with --client rtde.
 
 Usage:
-  ros2 launch ur10e_teleop_real teleop_rtde_dummy.launch.py
-  ros2 launch ur10e_teleop_real teleop_rtde_dummy.launch.py robot:=ur3e
+  ros2 launch ur10e_teleop_real_py teleop_rtde_dummy.launch.py
+  ros2 launch ur10e_teleop_real_py teleop_rtde_dummy.launch.py robot:=ur3e
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
@@ -16,7 +16,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('ur10e_teleop_real')
+    pkg_share = get_package_share_directory('ur10e_teleop_real_py')
     pkg_lib = pkg_share.replace('/share/', '/lib/')
     src_dir = f'{pkg_share}/src'
     config = f'{pkg_share}/config/dummy.yaml'

@@ -7,9 +7,9 @@ Run this on the PC that has network access to the UR3e.
 Both PCs must share ROS_DOMAIN_ID and have DDS discovery working.
 
 Usage:
-  ros2 launch ur10e_teleop_real teleop_real_leader.launch.py
-  ros2 launch ur10e_teleop_real teleop_real_leader.launch.py leader_ip:=<IP>
-  ros2 launch ur10e_teleop_real teleop_real_leader.launch.py robot:=ur10e leader_ip:=<IP>
+  ros2 launch ur10e_teleop_real_py teleop_real_leader.launch.py
+  ros2 launch ur10e_teleop_real_py teleop_real_leader.launch.py leader_ip:=<IP>
+  ros2 launch ur10e_teleop_real_py teleop_real_leader.launch.py robot:=ur10e leader_ip:=<IP>
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
@@ -19,7 +19,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('ur10e_teleop_real')
+    pkg_share = get_package_share_directory('ur10e_teleop_real_py')
     pkg_lib = pkg_share.replace('/share/', '/lib/')
     config = f'{pkg_share}/config/real_ur.yaml'
 

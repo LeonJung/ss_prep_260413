@@ -14,11 +14,11 @@ FOLLOWER_IP="${2:-192.168.1.11}"
 FREQ="${3:-500}"
 
 INSTALL="${HOME}/colcon_ws/install"
-BINARY="${INSTALL}/ur10e_teleop_real/lib/ur10e_teleop_real/unilateral_control"
+BINARY="${INSTALL}/ur10e_teleop_real_py/lib/ur10e_teleop_real_py/unilateral_control"
 
 if [ ! -f "${BINARY}" ]; then
   echo "[launch_unilateral_real] ERROR: Binary not found at ${BINARY}"
-  echo "  Run: colcon build --packages-select ur10e_teleop_real"
+  echo "  Run: colcon build --packages-select ur10e_teleop_real_py"
   exit 1
 fi
 

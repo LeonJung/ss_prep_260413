@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test_full_stack_real.py — End-to-end test for ur10e_teleop_real.
+test_full_stack_real.py — End-to-end test for ur10e_teleop_real_py.
 
 Tests leader_real_node.py + follower_real_node.py using dummy robot clients.
 All verification via ROS2 topics and terminal logs (no visual/MuJoCo viewer).
@@ -38,8 +38,8 @@ from std_msgs.msg import Float64MultiArray, Int32
 # Paths
 # ---------------------------------------------------------------------------
 HOME_DIR = os.path.expanduser('~')
-INSTALL  = f'{HOME_DIR}/colcon_ws/install/ur10e_teleop_real'
-SRC_DIR  = f'{INSTALL}/share/ur10e_teleop_real/src'
+INSTALL  = f'{HOME_DIR}/colcon_ws/install/ur10e_teleop_real_py'
+SRC_DIR  = f'{INSTALL}/share/ur10e_teleop_real_py/src'
 LEADER_PY   = f'{SRC_DIR}/leader_real_node.py'
 FOLLOWER_PY = f'{SRC_DIR}/follower_real_node.py'
 

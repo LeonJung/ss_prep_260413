@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test_full_stack_real_ur_server_dummy.py — RTDE test for ur10e_teleop_real.
+test_full_stack_real_ur_server_dummy.py — RTDE test for ur10e_teleop_real_py.
 
 Tests leader/follower_real_node.py with --client rtde + ur_server_dummy.py.
 All verification via ROS2 topics and terminal logs (no visual/MuJoCo viewer).
@@ -38,9 +38,9 @@ from std_msgs.msg import Float64MultiArray, Int32
 # Paths
 # ---------------------------------------------------------------------------
 HOME_DIR = os.path.expanduser('~')
-INSTALL  = f'{HOME_DIR}/colcon_ws/install/ur10e_teleop_real'
-SRC_DIR  = f'{INSTALL}/share/ur10e_teleop_real/src'
-LIB_DIR  = f'{INSTALL}/lib/ur10e_teleop_real'
+INSTALL  = f'{HOME_DIR}/colcon_ws/install/ur10e_teleop_real_py'
+SRC_DIR  = f'{INSTALL}/share/ur10e_teleop_real_py/src'
+LIB_DIR  = f'{INSTALL}/lib/ur10e_teleop_real_py'
 LEADER_PY   = f'{LIB_DIR}/leader_real_node.py'
 FOLLOWER_PY = f'{LIB_DIR}/follower_real_node.py'
 SERVER_PY   = f'{SRC_DIR}/ur_server_dummy.py'
@@ -49,7 +49,7 @@ LOG_LEADER   = '/tmp/fullstack_rtde_leader.log'
 LOG_FOLLOWER = '/tmp/fullstack_rtde_follower.log'
 LOG_SERVER_L = '/tmp/fullstack_rtde_server_leader.log'
 LOG_SERVER_F = '/tmp/fullstack_rtde_server_follower.log'
-CONFIG_PATH  = f'{INSTALL}/share/ur10e_teleop_real/config/rtde_dummy.yaml'
+CONFIG_PATH  = f'{INSTALL}/share/ur10e_teleop_real_py/config/rtde_dummy.yaml'
 
 # ---------------------------------------------------------------------------
 # Constants

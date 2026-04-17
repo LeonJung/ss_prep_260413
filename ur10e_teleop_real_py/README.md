@@ -1,4 +1,4 @@
-# ur10e_teleop_real
+# ur10e_teleop_real_py
 
 Bilateral force-feedback teleoperation for real UR robots (Leader: UR3e, Follower: UR10e) via RTDE.
 No external ROS2 package dependencies — standalone package.
@@ -6,7 +6,7 @@ No external ROS2 package dependencies — standalone package.
 ## Package Structure
 
 ```
-ur10e_teleop_real/
+ur10e_teleop_real_py/
 ├── src/
 │   ├── leader_real_node.py            # Leader ROS2 node (keyboard + bilateral PD + deadband)
 │   ├── follower_real_node.py          # Follower ROS2 node (bilateral PD tracking)
@@ -43,11 +43,11 @@ ur10e_teleop_real/
 ## Install
 
 ```bash
-cd ~/colcon_ws/src/ur10e_teleop_real
+cd ~/colcon_ws/src/ur10e_teleop_real_py
 bash script/install.sh
 
 cd ~/colcon_ws
-colcon build --packages-select ur10e_teleop_real
+colcon build --packages-select ur10e_teleop_real_py
 source install/setup.bash
 ```
 
@@ -70,7 +70,7 @@ Dashboard Server (port 29999) 에 `get robot model` 를 쿼리해서 각 IP 가 
 ### 2. Launch bilateral teleop
 
 ```bash
-ros2 launch ur10e_teleop_real teleop_real.launch.py
+ros2 launch ur10e_teleop_real_py teleop_real.launch.py
 ```
 
 기본 IP (launch file default):
@@ -79,7 +79,7 @@ ros2 launch ur10e_teleop_real teleop_real.launch.py
 
 다른 IP 쓰려면:
 ```bash
-ros2 launch ur10e_teleop_real teleop_real.launch.py \
+ros2 launch ur10e_teleop_real_py teleop_real.launch.py \
   leader_ip:=<UR3e_IP> follower_ip:=<UR10e_IP>
 ```
 
@@ -125,17 +125,17 @@ unicast profile 이나 `ROS_DISCOVERY_SERVER` 설정 없이 바로 동작.
 
 ```bash
 # teleop_real_leader.launch.py 는 leader 노드만 실행
-ros2 launch ur10e_teleop_real teleop_real_leader.launch.py
+ros2 launch ur10e_teleop_real_py teleop_real_leader.launch.py
 # or override IP:
-ros2 launch ur10e_teleop_real teleop_real_leader.launch.py leader_ip:=<UR3e_IP>
+ros2 launch ur10e_teleop_real_py teleop_real_leader.launch.py leader_ip:=<UR3e_IP>
 ```
 
 ### PC B — Follower (UR10e) 쪽
 
 ```bash
-ros2 launch ur10e_teleop_real teleop_real_follower.launch.py
+ros2 launch ur10e_teleop_real_py teleop_real_follower.launch.py
 # or override IP:
-ros2 launch ur10e_teleop_real teleop_real_follower.launch.py follower_ip:=<UR10e_IP>
+ros2 launch ur10e_teleop_real_py teleop_real_follower.launch.py follower_ip:=<UR10e_IP>
 ```
 
 ### 모드 전환 (아무 PC 에서나)
@@ -153,7 +153,7 @@ ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray "data: [0.0, 0.
 ## Run — Dummy Mode (No Hardware)
 
 ```bash
-ros2 launch ur10e_teleop_real teleop_dummy.launch.py
+ros2 launch ur10e_teleop_real_py teleop_dummy.launch.py
 ```
 
 로컬 simulation (URControl 대신 DummyControl). URScript 자동 업로드 스킵.
@@ -166,7 +166,7 @@ Leader 와 follower 가 "같은 pose 에 있는 것" 을 code 가 정확히 알�
 
 ```bash
 # 1. Teleop 실행 중 상태에서 (homing 완료 후)
-ros2 launch ur10e_teleop_real teleop_real.launch.py
+ros2 launch ur10e_teleop_real_py teleop_real.launch.py
 
 # 2. 별도 터미널에서 calibration 시작
 python3 script/calibrate_bilateral.py --n 5
@@ -241,10 +241,10 @@ python3 tests/test_full_stack_real.py
 
 ```bash
 # Terminal 1: teleop
-ros2 launch ur10e_teleop_real teleop_real.launch.py
+ros2 launch ur10e_teleop_real_py teleop_real.launch.py
 
 # Terminal 2: logging
-cd ~/colcon_ws/src/ur10e_teleop_real
+cd ~/colcon_ws/src/ur10e_teleop_real_py
 bash script/logging.sh                                     # default: log/teleop_<timestamp>/
 bash script/logging.sh log/my_test config/real_ur.yaml      # custom + config snapshot
 # Ctrl+C to stop
@@ -451,7 +451,7 @@ TAU_BI_DEADBAND: [ 10,  10, 6.5, 4.5, 4.5, 3.8]
       Implementation: extend `src/control.py` or add `src/dashboard_client.py`;
       leader/follower nodes call before RTDE. Opt-in via `auto_power_on: true`.
       `identify_robots.py` already uses :29999 as reference.
-- [ ] Pure TCP-F/T force feedback variant (ur10e_teleop_real_ff)
+- [ ] Pure TCP-F/T force feedback variant (ur10e_teleop_real_py_ff)
       Position-position bilateral has structural ambiguity between
       free motion and contact. Plan: separate package with J^T·F from
       follower's `actual_TCP_force` replacing KP_BI path. Gives real

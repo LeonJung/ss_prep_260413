@@ -17,7 +17,7 @@ Flow:
 
 Usage:
     # Start teleop first:
-    ros2 launch ur10e_teleop_real teleop_real.launch.py
+    ros2 launch ur10e_teleop_real_py teleop_real.launch.py
     # In another terminal, after homing completes:
     python3 script/calibrate_bilateral.py
     python3 script/calibrate_bilateral.py --n 5

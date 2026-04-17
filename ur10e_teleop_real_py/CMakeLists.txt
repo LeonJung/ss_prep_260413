@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ur10e_teleop_real VERSION 1.0.0)
+project(ur10e_teleop_real_py VERSION 1.0.0)
 
 install(PROGRAMS
   src/leader_real_node.py

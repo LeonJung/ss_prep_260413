@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 try:
     from ament_index_python.packages import get_package_share_directory
     sys.path.insert(0, os.path.join(
-        get_package_share_directory('ur10e_teleop_real'), 'src'))
+        get_package_share_directory('ur10e_teleop_real_py'), 'src'))
 except Exception:
     pass
 from dummy_control import DummyControl
@@ -394,7 +394,7 @@ def main():
     if config_path and not os.path.isabs(config_path):
         try:
             from ament_index_python.packages import get_package_share_directory
-            pkg = get_package_share_directory('ur10e_teleop_real')
+            pkg = get_package_share_directory('ur10e_teleop_real_py')
             candidate = os.path.join(pkg, 'config', config_path)
             if os.path.exists(candidate):
                 config_path = candidate

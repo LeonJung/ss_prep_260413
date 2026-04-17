@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 try:
     from ament_index_python.packages import get_package_share_directory
     sys.path.insert(0, os.path.join(
-        get_package_share_directory('ur10e_teleop_real'), 'src'))
+        get_package_share_directory('ur10e_teleop_real_py'), 'src'))
 except Exception:
     pass
 

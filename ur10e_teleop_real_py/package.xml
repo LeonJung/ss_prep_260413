@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>ur10e_teleop_real</name>
+  <name>ur10e_teleop_real_py</name>
   <version>1.0.0</version>
-  <description>UR10E bilateral teleoperation — real hardware with dummy client.</description>
+  <description>UR bilateral teleoperation (Python) — real hardware via RTDE + URScript.</description>
   <maintainer email="your@email.com">UR10E Migration Project</maintainer>
   <license>Apache-2.0</license>
 

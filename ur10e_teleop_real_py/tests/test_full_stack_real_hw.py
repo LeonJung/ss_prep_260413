@@ -19,7 +19,7 @@ Phases:
 
 Usage:
     # Start nodes first:
-    ros2 launch ur10e_teleop_real teleop_real.launch.py leader_ip:=... follower_ip:=...
+    ros2 launch ur10e_teleop_real_py teleop_real.launch.py leader_ip:=... follower_ip:=...
 
     # Then run test:
     python3 tests/test_full_stack_real_hw.py
