@@ -17,7 +17,10 @@
 set -euo pipefail
 
 PKG="ur10e_teleop_real_cpp"
-CAPS="cap_sys_nice+ep,cap_ipc_lock+ep"
+# Use the clause-form accepted by all libcap versions:
+#   capname_list '=' flag_ops    →    'cap_a,cap_b=ep'
+# (The old "cap_a+ep,cap_b+ep" form is rejected by stricter parsers.)
+CAPS="cap_sys_nice,cap_ipc_lock=ep"
 DEFAULT_BINS=(leader_node follower_node jitter_benchmark)
 
 # ---- locate install prefix --------------------------------------------------
