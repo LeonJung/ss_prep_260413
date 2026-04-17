@@ -1,115 +1,210 @@
 # ur10e_teleop_real_cpp
 
-C++ implementation of bilateral force-feedback teleoperation for real UR robots,
-intended to take advantage of a PREEMPT_RT kernel for tight control-loop timing.
+C++ implementation of bilateral force-feedback teleoperation for real UR
+robots. Uses `ur_client_library` for the UR I/O layer and supports
+PREEMPT_RT kernel scheduling (SCHED_FIFO + mlockall) for tight control-loop
+timing.
 
 Sibling of [`ur10e_teleop_real_py`](../ur10e_teleop_real_py/) — same topic
-namespace, same control semantics, same config format. Only one of the two
-packages is launched at a time.
+namespace, same control semantics, same config schema. Only one of the
+two packages is launched at a time.
 
-## Current status: **Phase 2 skeleton**
+## Status
 
-- Package builds.
-- `leader_node` / `follower_node` executables start but do nothing functional yet
-  (no robot connection, no control loop — just a jitter-tracked RT-sleep loop).
-- `rt_thread` utilities implemented: `init_rt_thread`, `lock_process_memory`,
-  `sleep_until` (CLOCK_MONOTONIC), `JitterTracker`.
-- Config copied from `_py` (`config/real_ur.yaml`).
-- `resources/external_control.urscript` copied from ur_client_library — will be
-  templated by the driver at connect time.
+Feature-complete port of `_py`:
 
-Phases remaining: 3 (RT toggle already hooked up), 4 (bilateral control law
-porting from `_py`), 5 (rclcpp wiring + ur_client_library integration),
-7 (RT-vs-nonRT comparison tooling), 8/9 (README expansion, build helpers).
+| feature                                  | _py | _cpp |
+|------------------------------------------|-----|------|
+| 4-mode state machine (ACTIVE/PAUSED/HOMING/FREEDRIVE) | ✅ | ✅ |
+| Bilateral PD + continuous deadband       | ✅ | ✅ |
+| ACTIVE-entry soft-start ramp (0.5 s)     | ✅ | ✅ |
+| Quintic-spline auto-homing               | ✅ | ✅ |
+| Reset counter → HOMING (with startup grace) | ✅ | ✅ |
+| Per-robot torque limits                  | ✅ | ✅ |
+| Joint mirror transform                   | ✅ | ✅ |
+| firmware friction_comp via URScript      | ✅ | ✅ |
+| 1 Hz [DIAG] status log                   | ✅ | ✅ |
+| PREEMPT_RT scheduling (SCHED_FIFO + mlockall) | —  | ✅ |
+| Jitter benchmark utility                 | —  | ✅ |
+| tau_contact (F/T-derived) + OVER-FORCE   | —  | — (both TODO) |
 
 ## Dependencies
 
-- ROS2 Jazzy: `rclcpp`, `sensor_msgs`, `std_msgs`
-- `ur_client_library` (source at `/home/bpearson/install_ws/Universal_Robots_Client_Library`)
-- `Eigen3`
-- `yaml-cpp`
-- C++17
+```bash
+source /opt/ros/<your-distro>/setup.bash   # humble | jazzy | rolling | ...
+bash script/install.sh
+```
+
+Auto-detects `ROS_DISTRO` so the same script works on Humble, Jazzy, etc.
+
+Installs:
+- `ros-<DISTRO>-{rclcpp,sensor-msgs,std-msgs,ament-cmake,ur-client-library}`
+- `libeigen3-dev`, `libyaml-cpp-dev`, `libcap2-bin`
 
 ## Build
 
 ```bash
-cd ~/colcon_ws
+cd <your_ws>
 colcon build --packages-select ur10e_teleop_real_cpp
 source install/setup.bash
 ```
 
-## RT mode — permissions
+### ⚠️ `--symlink-install` caveat
 
-To actually enter SCHED_FIFO and mlockall, the binaries need
-CAP_SYS_NICE + CAP_IPC_LOCK. Use the helper:
+`colcon build --symlink-install` places a SYMLINK at
+`install/.../<binary>` pointing into `build/`. Linux's `setcap` refuses
+symlinks with `"filename must be a regular file"`. The helper
+`setcap_rt.sh` compensates by calling `readlink -f` and applying caps to
+the real build-side file, but after every rebuild the build-side file
+is overwritten and caps are lost — **re-run `setcap_rt.sh` after every
+build** (you need to anyway; see below).
+
+If you prefer, build that one package without symlink-install:
+```bash
+colcon build --packages-select ur10e_teleop_real_cpp  # no --symlink-install
+```
+Other packages in the workspace can still use `--symlink-install`; only
+this one needs a real binary for setcap.
+
+## RT capabilities (one-time per build)
 
 ```bash
-bash script/setcap_rt.sh              # grants caps to all 3 binaries
-bash script/setcap_rt.sh leader_node  # only one
-bash script/setcap_rt.sh --clear      # removes caps
+bash script/setcap_rt.sh
 ```
 
-**Rerun after every `colcon build`** — the rebuilt binary loses its caps.
+Paths are auto-discovered from `ros2 pkg prefix`, so it works regardless
+of your workspace name or ROS distro — just source the workspace first.
 
-Without caps the executables still run, but `--rt-mode true` will print a
-warning and fall back to normal scheduling.
+Options:
+- `bash script/setcap_rt.sh leader_node`   — specific binary
+- `bash script/setcap_rt.sh --clear`        — remove caps (debug)
+
+**Re-run after every `colcon build`** — rebuilt binaries lose their caps.
+
+Without caps the executables still run, but `--rt-mode true` prints a
+warning and falls back to normal scheduling.
+
+## Launch
+
+### Single PC (both nodes)
+
+```bash
+# non-RT
+ros2 launch ur10e_teleop_real_cpp teleop_real.launch.py
+
+# both nodes RT
+ros2 launch ur10e_teleop_real_cpp teleop_real.launch.py \
+    leader_rt:=true follower_rt:=true
+
+# only leader RT (mixed environment)
+ros2 launch ur10e_teleop_real_cpp teleop_real.launch.py \
+    leader_rt:=true follower_rt:=false
+```
+
+### Distributed (leader on PC A, follower on PC B)
+
+```bash
+# PC A — UR3e side
+ros2 launch ur10e_teleop_real_cpp teleop_real_leader.launch.py rt:=true
+
+# PC B — UR10e side
+ros2 launch ur10e_teleop_real_cpp teleop_real_follower.launch.py rt:=true
+```
+
+Each PC chooses its own `rt:=true|false` independently, so a setup
+where only one of the two PCs has the PREEMPT_RT kernel works cleanly.
+
+### Mode topic (from anywhere)
+
+After homing completes, switch to bilateral:
+```bash
+ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray \
+    "data: [0.0, 0.0, 0.0]"
+```
+
+Modes: 0=ACTIVE · 1=PAUSED · 2=HOMING · 3=FREEDRIVE.
 
 ## RT vs non-RT benchmark
 
 Standalone timing test (no ROS, no robot — just the cyclic sleep loop):
 
 ```bash
-# grant caps (rerun after every colcon build)
-bash script/setcap_rt.sh
-
-# compare
-python3 script/rt_comparison.py --duration 30
-python3 script/rt_comparison.py --duration 30 --save-csv /tmp/jit
-python3 script/rt_comparison.py --duration 30 --plot   # needs matplotlib
+bash script/setcap_rt.sh                      # caps granted once
+python3 script/rt_comparison.py --duration 30 --rt-cpu 2
+python3 script/rt_comparison.py --duration 30 --rt-cpu 2 --load
+python3 script/rt_comparison.py --duration 30 --plot   # matplotlib
 ```
 
-What you'd expect to see (order-of-magnitude):
+`--load` spawns `N-1` busy processes so the RT advantage surfaces;
+`--rt-cpu N` pins the RT thread to a specific core.
 
-| metric           | normal kernel     | PREEMPT_RT + caps |
-|------------------|-------------------|-------------------|
-| period mean      | ≈ target          | ≈ target          |
-| p99              | target + 100-500µs| target + 50-100µs |
-| p99.9            | target + 1-5 ms   | target + 100-300µs|
-| worst-case (max) | target + 5-50 ms  | target + 100-500µs|
-
-Direct binary:
-
+Direct binary (CSV to stdout, summary to stderr):
 ```bash
 jitter_benchmark --rt-mode true --duration 30 --period-us 2000 > run.csv
 ```
 
-Stdout = per-cycle CSV, stderr = jitter summary.
+### What to expect
 
-## Launch (placeholder — control loop TODO)
+On a PREEMPT_RT kernel:
+| metric | non-RT | RT |
+|---|---|---|
+| mean | ≈ target | ≈ target |
+| worst-case (idle) | target +100-300 µs | target +50-200 µs |
+| worst-case (under load) | **target +ms possible** | target +few-hundred µs |
 
-```bash
-# both nodes on one PC, non-RT
-ros2 launch ur10e_teleop_real_cpp teleop_real.launch.py
+PREEMPT_RT kernel already improves non-RT threads dramatically; SCHED_FIFO
+on top gives the final tightening, mostly in worst-case (tail) latency.
 
-# both nodes on one PC, RT
-ros2 launch ur10e_teleop_real_cpp teleop_real.launch.py rt:=true
+On a normal (non-PREEMPT_RT) kernel the gap is much wider (ms vs hundreds
+of µs).
 
-# distributed: leader on PC A
-ros2 launch ur10e_teleop_real_cpp teleop_real_leader.launch.py rt:=true
-# distributed: follower on PC B
-ros2 launch ur10e_teleop_real_cpp teleop_real_follower.launch.py rt:=true
-```
-
-## CLI args
-
-Both executables accept:
+## CLI args (both executables)
 
 | flag | default | meaning |
 |---|---|---|
-| `--robot-ip IP` | UR3e: `.94` / UR10e: `.92` | robot's IP |
-| `--robot ur3e\|ur10e` | `ur3e` / `ur10e` | robot type (affects torque limits) |
-| `--config PATH` | — | YAML config path |
-| `--rt-mode true\|false` | `false` | enable SCHED_FIFO + mlockall |
-| `--rt` / `--no-rt` | — | shortcut for true/false |
-| `--rt-priority N` | `80` | SCHED_FIFO priority (1..99) |
-| `--rt-cpu N` | `-1` | pin control thread to CPU core |
+| `--robot-ip IP`         | UR3e: .94 / UR10e: .92 | robot's IP |
+| `--robot ur3e\|ur10e`    | ur3e / ur10e           | robot type |
+| `--config PATH`         | —                      | YAML config path |
+| `--resources-dir PATH`  | —                      | dir with rtde_*_recipe.txt + external_control.urscript |
+| `--rt-mode true\|false`  | false                  | enable SCHED_FIFO + mlockall |
+| `--rt` / `--no-rt`       | —                      | shortcut |
+| `--rt-priority N`       | 80                     | SCHED_FIFO priority (1..99) |
+| `--rt-cpu N`            | -1                     | pin control thread to CPU core |
+
+The launch files pass `--resources-dir` automatically from the installed
+`share/ur10e_teleop_real_cpp/resources`.
+
+## Known limitations / TODO
+
+- **tau_contact / OVER-FORCE not implemented** — `actual_TCP_force` is
+  read but not converted to joint-space. Carried over from `_py`.
+- **Auto power-on / brake-release** — still manual on the pendant.
+- **Force-feedback variant** — future `_ff` package will replace the
+  position-spring coupling with Jacobian-mapped TCP force.
+
+## Architecture overview
+
+```
++-----------------+        +-----------------+
+| leader_real_     |        | follower_real_  |
+| node (UR3e)     |<------>| node (UR10e)    |
+|                 |  ROS   |                 |
+| rclcpp + rt_     |        | rclcpp + rt_    |
+| thread::SCHED_   |        | thread::SCHED_  |
+| FIFO @ prio 80  |        | FIFO @ prio 80  |
+|        |        |        |        |        |
+|     UrDriver    |        |     UrDriver    |
++--------+--------+        +--------+--------+
+         |                          |
+    RTDE/URScript              RTDE/URScript
+         |                          |
+    [UR3e robot]               [UR10e robot]
+```
+
+## Comparison script
+
+`script/rt_comparison.py`:
+- Runs the standalone benchmark twice (non-RT + RT) with optional load
+- Parses CSV, prints percentile stats (mean/min/p50/p90/p99/p99.9/max)
+- `--save-csv DIR` for raw dump
+- `--plot` for matplotlib histogram
