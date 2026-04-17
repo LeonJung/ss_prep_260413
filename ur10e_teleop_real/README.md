@@ -8,19 +8,19 @@ No external ROS2 package dependencies — standalone package.
 ```
 ur10e_teleop_real/
 ├── src/
-│   ├── leader_real_node.py            # Leader ROS2 node (keyboard + bilateral PD)
+│   ├── leader_real_node.py            # Leader ROS2 node (keyboard + bilateral PD + deadband)
 │   ├── follower_real_node.py          # Follower ROS2 node (bilateral PD tracking)
-│   ├── control.py                     # URControl — RTDE client
+│   ├── control.py                     # URControl — RTDE client + URScript upload
 │   ├── rtde_connection.py             # RTDE binary protocol implementation
-│   ├── dummy_control.py              # DummyControl — local dynamics for testing
+│   ├── dummy_control.py               # DummyControl — local dynamics for testing
 │   ├── ur_server_dummy.py             # RTDE dummy server [TODO: dynamics improvement]
 │   └── environment_sensing_data_emulator.py
 ├── config/
-│   ├── real_ur.yaml                   # Config for real UR hardware
-│   ├── dummy.yaml                     # Config for dummy testing
-│   └── rtde_dummy.yaml               # Config for RTDE + dummy server
+│   ├── real_ur.yaml                   # Real UR hardware (tuned bilateral + deadband)
+│   ├── dummy.yaml                     # Dummy testing
+│   └── rtde_dummy.yaml                # RTDE + dummy server
 ├── launch/
-│   ├── teleop_real.launch.py          # Real UR robots (default: leader=ur3e)
+│   ├── teleop_real.launch.py          # Real UR robots (default IPs set)
 │   ├── teleop_dummy.launch.py         # Dummy mode (no hardware)
 │   └── teleop_rtde_dummy.launch.py    # RTDE + dummy server
 ├── tests/
@@ -29,7 +29,10 @@ ur10e_teleop_real/
 │   └── test_full_stack_real_ur_server_dummy.py
 ├── script/
 │   ├── install.sh                     # Dependency installer
+│   ├── identify_robots.py             # Dashboard-based robot model/state query
+│   ├── calibrate_bilateral.py         # Interactive bilateral home calibration
 │   ├── test_rtde_connection.py        # RTDE connection + motion test
+│   ├── test_rtde_minimal.py           # Safe minimal-motion torque test
 │   ├── logging.sh                     # Auto-logging (topics + monitor)
 │   └── log_monitor.py                 # Real-time status monitor
 ├── log/                               # Log output directory (auto-created)
@@ -48,38 +51,60 @@ colcon build --packages-select ur10e_teleop_real
 source install/setup.bash
 ```
 
-## Run — Real UR Robots (RTDE)
+Dependencies (auto-installed by `install.sh`):
+- Python: `numpy`, `pynput` (optional, keyboard), `python-xlib`, `pyyaml`
+- ROS2 Jazzy: `sensor_msgs`, `std_msgs`, `launch`, `ament_index_python`
 
-Default: Leader = UR3e, Follower = UR10e.
+No other ROS2 packages required.
 
-### Two-robot bilateral teleop
+## Quick Start — Real UR Robots
 
+### 1. Identify which robot is at which IP (always do this first)
+
+```bash
+python3 script/identify_robots.py --ips <IP_A> <IP_B>
+```
+
+Dashboard Server (port 29999) 에 `get robot model` 를 쿼리해서 각 IP 가 UR3e 인지 UR10e 인지 확인. Launch IP 순서 잘못되면 leader/follower 설정이 엉켜서 모든 게 이상해지므로 필수 확인.
+
+### 2. Launch bilateral teleop
+
+```bash
+ros2 launch ur10e_teleop_real teleop_real.launch.py
+```
+
+기본 IP (launch file default):
+- `leader_ip = 169.254.186.94` (UR3e)
+- `follower_ip = 169.254.186.92` (UR10e)
+
+다른 IP 쓰려면:
 ```bash
 ros2 launch ur10e_teleop_real teleop_real.launch.py \
-  leader_ip:=192.168.1.100 \
-  follower_ip:=192.168.1.101
+  leader_ip:=<UR3e_IP> follower_ip:=<UR10e_IP>
 ```
 
-### Leader is UR10e (override default)
+### 3. Wait for homing to complete (≈5 s quintic spline)
+
+Pendant 로그에 양쪽 모두 `Program rtde_torque_ctrl started` + `HOMING complete → PAUSED` 떠야 함. PC 콘솔 `[DIAG]` 로그로도 확인.
+
+### 4. Switch to ACTIVE (start bilateral)
 
 ```bash
-ros2 launch ur10e_teleop_real teleop_real.launch.py \
-  robot:=ur10e \
-  leader_ip:=192.168.1.100 \
-  follower_ip:=192.168.1.101
+ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray "data: [0.0, 0.0, 0.0]"
 ```
 
-### Manual (separate terminals)
+Mode 숫자:
+| value | mode | 효과 |
+|---|---|---|
+| 0 | ACTIVE | Bilateral tracking — 이걸 주로 씀 |
+| 1 | PAUSED | 양팔이 각자 home 에 hold (수동 움직임 막힘) |
+| 2 | HOMING | 양팔을 home 으로 quintic spline 이동 (auto_home_on_start=true 로 시작 시 자동) |
+| 3 | FREEDRIVE | 양팔 torque=0 (firmware gravity-comp 만) — 손으로 자유 positioning 가능 |
 
-```bash
-# Terminal 1: Leader
-ros2 run ur10e_teleop_real leader_real_node.py \
-  --client rtde --robot-ip 192.168.1.100 --config real_ur.yaml
+### 5. Operate
 
-# Terminal 2: Follower
-ros2 run ur10e_teleop_real follower_real_node.py \
-  --client rtde --robot-ip 192.168.1.101 --config real_ur.yaml
-```
+- Leader (UR3e) 를 손으로 이리저리 움직이면 Follower (UR10e) 가 실시간으로 따라옴
+- Follower 가 어딘가에 닿으면 leader 에 약한 force feedback (contact 감)
 
 ## Run — Dummy Mode (No Hardware)
 
@@ -87,158 +112,213 @@ ros2 run ur10e_teleop_real follower_real_node.py \
 ros2 launch ur10e_teleop_real teleop_dummy.launch.py
 ```
 
+로컬 simulation (URControl 대신 DummyControl). URScript 자동 업로드 스킵.
+
+## Calibration — Bilateral Home Tuning
+
+Leader 와 follower 가 "같은 pose 에 있는 것" 을 code 가 정확히 알아야 bilateral 제어가 매끄러움. 초기 default home 이 맞지 않으면 ACTIVE 전환 시 로봇이 튀어나감 등의 증상.
+
+### Workflow
+
+```bash
+# 1. Teleop 실행 중 상태에서 (homing 완료 후)
+ros2 launch ur10e_teleop_real teleop_real.launch.py
+
+# 2. 별도 터미널에서 calibration 시작
+python3 script/calibrate_bilateral.py --n 5
+```
+
+진행:
+1. Script 가 `MODE_FREEDRIVE` 를 발행 → 두 팔 torque=0 상태
+2. 사용자가 양팔을 눈으로 봤을 때 sync 된 자세 (mirror 가 아닌 **같은 모양**) 로 손으로 옮김
+3. Enter 누름 → 스크립트가 두 팔 joint_state 를 ~100 ms 평균해서 기록
+4. 총 5개 pose 에서 반복 (다양한 workspace 자세로)
+5. 스크립트가 `mean_offset`, `std`, `fit verdict` 출력 + 추천 home 값 제시
+
+### 결과 해석
+
+```
+mean OFFSET = [...]   ← follower_q - leader_q 평균 (rad)
+std         = [...]   ← 포즈별 offset 편차
+fit verdict : GOOD (max std < 0.01 rad)
+            : OK   (max std < 0.05)
+            : POOR (max std > 0.05 — sign flip / scale issue)
+```
+
+- GOOD/OK → 출력된 suggested `leader_home`, `follower_home` 을 `config/real_ur.yaml` 에 복사
+- POOR → 데이터 원인 분석 (특정 joint 에 scale 이나 sign 차이 있는 경우)
+
+Script 종료 시 자동으로 `MODE_PAUSED` 발행 → 양팔 home 잡음.
+
 ## Testing
 
-### 1. RTDE Connection + Motion Test (단독, 실물 1대로)
-
-Homing 후 joint 0에 ±0.05 rad sinusoid → 복귀. 실물 UR 연결 확인용.
+### 1. 실물 UR 연결 확인 (단독)
 
 ```bash
 python3 script/test_rtde_connection.py \
-  --robot-ip 192.168.1.100 \
-  --config config/real_ur.yaml
+  --robot-ip <UR_IP> --config config/real_ur.yaml
 ```
 
-### 2. 실물 통합 테스트 (ROS2 토픽 전용, SSH 가능)
+Homing + joint 0 에 작은 sinusoid → 복귀.
 
-노드 실행 중 별도 터미널에서 실행. keyboard/X11 불필요.
+### 2. 안전 최소 토크 테스트
 
 ```bash
-# 먼저 노드 실행:
-ros2 launch ur10e_teleop_real teleop_real.launch.py \
-  leader_ip:=192.168.1.100 follower_ip:=192.168.1.101
+python3 script/test_rtde_minimal.py --robot-ip <UR_IP> --mode pulse --joint 3 --amp 1.0
+```
 
-# 다른 터미널:
+개별 joint 에 작은 pulse 만 — direct_torque 파이프라인 작동 확인용. `--mode sin` or `pulse` 선택, `--joint N` 으로 관절 선택.
+
+### 3. 실물 통합 테스트 (ROS2 토픽 전용)
+
+```bash
+# 노드 실행 후 다른 터미널:
 python3 tests/test_full_stack_real_hw.py
 ```
 
-테스트 항목:
+| Phase | 내용 |
+|---|---|
+| 0 | Setup & liveness |
+| 1 | Passive stability (PAUSED 에서 drift 작음) |
+| 2 | Publish rate >= 50 Hz |
+| 5 | PAUSED ↔ ACTIVE 토글 |
+| 6 | HOMING 수렴 |
+| 7 | Reset topic |
 
-| Phase | 이름 | 내용 |
-|---|---|---|
-| 0 | Setup & liveness | 양쪽 노드 기동 + 토픽 발행 확인 |
-| 1 | Passive stability | 양팔 정지 유지 (drift < 0.05 rad / 2s) |
-| 2 | Control frequency | publish rate >= 50 Hz |
-| 5 | Pause toggle | PAUSED → hold 안정성 → ACTIVE 복귀 |
-| 6 | Homing | HOMING mode → HOME 수렴 |
-| 7 | Reset | reset topic → leader HOME 복귀 |
-
-### 3. Dummy mode 자동 테스트
+### 4. Dummy mode 자동 테스트
 
 ```bash
 python3 tests/test_full_stack_real.py
 ```
 
-## Logging (실물 디버깅용)
+## Logging
 
-실물 테스트 시 모든 토픽과 상태를 자동 기록합니다. 로그는 `log/` 디렉토리에 저장됩니다.
-
-### 사용법
+실물 디버깅 시 모든 토픽 + 상태 자동 기록 (logs/ 디렉토리).
 
 ```bash
-# Terminal 1: teleop 실행
-ros2 launch ur10e_teleop_real teleop_real.launch.py \
-  leader_ip:=192.168.1.100 follower_ip:=192.168.1.101
+# Terminal 1: teleop
+ros2 launch ur10e_teleop_real teleop_real.launch.py
 
-# Terminal 2: logging 시작
+# Terminal 2: logging
 cd ~/colcon_ws/src/ur10e_teleop_real
-bash script/logging.sh                            # default: log/teleop_YYYYMMDD_HHMMSS/
-bash script/logging.sh log/my_test config/real_ur.yaml  # custom dir + config snapshot
-# → Ctrl+C로 중지
+bash script/logging.sh                                     # default: log/teleop_<timestamp>/
+bash script/logging.sh log/my_test config/real_ur.yaml      # custom + config snapshot
+# Ctrl+C to stop
 ```
 
-### 기록되는 파일
-
+기록 파일:
 ```
-log/teleop_20260413_150000/
-├── leader_state.csv      # Leader joint positions/velocities
-├── follower_state.csv    # Follower joint positions/velocities
-├── mode.csv              # Mode 전환 이력
-├── rosout.csv            # 모든 노드 로그
-├── warnings_only.csv     # WARN/ERROR/OVER-FORCE만 필터링
-├── monitor_output.log    # 실시간 모니터 출력 기록
-├── config_snapshot.yaml  # 사용된 config 복사본
-├── system_info.txt       # 호스트/날짜/ROS 버전
-├── node_list.txt         # 실행 중인 노드
-├── topic_list.txt        # 활성 토픽
-├── hz_leader.txt         # Leader publish rate
-└── hz_follower.txt       # Follower publish rate
+log/teleop_<timestamp>/
+├── leader_state.csv       follower_state.csv     mode.csv
+├── rosout.csv             warnings_only.csv      monitor_output.log
+├── config_snapshot.yaml   system_info.txt        node_list.txt
+├── topic_list.txt         hz_leader.txt          hz_follower.txt
 ```
 
-### 실시간 모니터 (logging 중 자동 표시)
+실시간 모니터 (`log_monitor.py`) 가 3 초마다 요약 출력.
 
-```
-   Time     Mode   Warn  TrkErr                                  Leader q[0:5]                                Follower q[0:5]
----------------------------------------------------------------------------------------------------------------------------------
-     3s   ACTIVE      0  0.0012  [+2.240,-1.281,+2.160,-0.885,+2.240,+0.000]  [-2.240,-1.861,-2.160,-2.257,-2.240,+0.000]
-     6s   PAUSED      1  0.0000  [+2.240,-1.281,+2.160,-0.885,+2.240,+0.000]  [-2.240,-1.861,-2.160,-2.257,-2.240,+0.000]  *** 1 NEW WARNING(S) ***
-```
-
-### 문제 발생 시
-
+문제 발생 시:
 ```bash
-cd ~/colcon_ws/src/ur10e_teleop_real
-zip -r teleop_logs.zip log/teleop_YYYYMMDD_HHMMSS/
+zip -r teleop_logs.zip log/teleop_<timestamp>/
 ```
-
-이 zip과 함께 **어떤 동작을 했을 때 문제가 생겼는지** 전달.
 
 ## UR Robot Prerequisites
 
-- UR controller ON, **Remote Control** mode (pendant 모드 아님!)
-- Firmware >= **5.22.0** (required for `direct_torque()`) — 5.25 tested
-- 로봇 초기화 (브레이크 해제, 전원 on)
-- Network: PC와 UR이 같은 subnet (예: 192.168.1.x)
-- IP 확인: UR pendant > Settings > Network
-- 30002 포트 (Secondary Interface) 접근 가능해야 함 — `control.py` 가
-  연결 시 URScript 토크 제어 루프를 자동 업로드하는 데 사용
+- UR controller ON, **Remote Control** mode (pendant 모드 아님)
+- Firmware >= **5.22.0** (required for `direct_torque()`); 5.25 tested
+- 로봇 초기화 (브레이크 해제, 전원 on) — 현재는 수동. 자동화는 TODO
+- Network: PC 와 UR 이 같은 subnet
+- 포트: 30004 (RTDE), 30002 (Secondary — URScript upload), 29999 (Dashboard — identify_robots)
 
 ### URScript 자동 업로드
 
-`URControl.connect()` 가 UR Secondary Interface(port 30002)에 아래와 같은
-스크립트를 전송해 controller 위에서 실행시킵니다:
+`URControl.connect()` 가 Secondary Interface(30002)에 아래 URScript 업로드, controller 위에서 실행:
 
 ```urscript
 def rtde_torque_ctrl():
-  while True:
-    mode = read_input_integer_register(0)
-    if mode == 1:
-      tau = [read_input_float_register(0), ...]
-      direct_torque(tau)        # firmware 5.22+ 토크 제어
-    else:
-      direct_torque([0,...,0])  # safe idle
+  global cmd_torque = [0, 0, 0, 0, 0, 0]
+  global cmd_mode = 0
+
+  thread torque_thread():
+    while True:
+      if cmd_mode == 1:
+        direct_torque(cmd_torque, friction_comp=True)   # firmware friction comp
+      else:
+        direct_torque([0, 0, 0, 0, 0, 0], friction_comp=True)
+      end
     end
+  end
+
+  run torque_thread()
+  while True:
+    cmd_mode = read_input_integer_register(0)
+    if cmd_mode == 1:
+      cmd_torque = [read_input_float_register(0..5)]
+    end
+    sync()
   end
 end
 rtde_torque_ctrl()
 ```
 
-이 스크립트가 없으면 RTDE input register 에 토크값을 써도 **로봇은 1도 움직이지
-않습니다** (register 만 업데이트되고 실행되지 않음). Pendant 에 Play 버튼 누를 필요
-없이 PC 연결만으로 자동으로 토크 제어 모드로 진입합니다.
+- `direct_torque` 는 별도 **real-time thread** 에서 호출 (UR 공식 driver 패턴)
+- `friction_comp=True` 로 harmonic drive 관절 마찰 상쇄
+- Disconnect 시 `stopj(2.0)` 로 안전 정지
 
-disconnect 시에는 `stopj(2.0)` 을 보내 안전 정지합니다.
+## Config (real_ur.yaml) 주요 파라미터
 
-## Config Switching
+### Torque control
+- `friction_comp: true` — firmware 가 joint friction 보상 (URScript 에서 `friction_comp=True` 로 호출)
+- `gravity_comp_internal: true` — firmware 가 중력 보상
+- `leader_torque_limit` / `follower_torque_limit` — 각 로봇 per-joint 한계 (UR3e < UR10e)
 
-| Config | `friction_comp` | `gravity_comp_internal` | `torque_limit` | Use case |
-|---|---|---|---|---|
-| `real_ur.yaml` | true | true | ±10 Nm | Real UR hardware |
-| `dummy.yaml` | false | false | ±330 Nm | Dummy testing |
-
-## Joint Mirroring (reverse-mounted leader)
-
-Leader(UR3e)가 반대 방향으로 설치되어 joints 0,2,4의 회전 방향이 반대:
+### Bilateral coupling (leader side, ACTIVE 모드)
 
 ```yaml
-# config/real_ur.yaml
-joint_mirror:
-  sign: [-1, 1, -1, 1, -1, 1]   # joints 0,2,4 flipped
-leader_home:  [2.24, -1.2808, 2.16, -0.8848, 2.24, 0.0]
-follower_home: [-2.24, -1.8608, -2.16, -2.2568, -2.24, 0.0]
+KP_BI:           [100, 100, 70, 35, 35, 30]   # position spring
+KD_BI:           [  0,   0,  0,  0,  0,  0]   # velocity damping = off
+TAU_BI_DEADBAND: [ 10,  10, 6.5, 4.5, 4.5, 3.8]   # per-joint, in Nm
 ```
 
-## Keyboard Controls (Leader, display 필요)
+**제어식** (ACTIVE):
+```
+tau_raw = KP_BI * (peer_q - q)
+tau_bi  = sign(tau_raw) * max(0, |tau_raw| - TAU_BI_DEADBAND)
+tau     = tau_bi  (clipped by leader_torque_limit)
+```
+
+**의미**:
+- Follower 가 leader 를 잘 따라올 때 → position error 작음 → `|tau_raw| < deadband` → `tau = 0` → 사용자는 freedrive 감
+- Follower 가 막혀서 못 따라올 때 → error 가 deadband 초과 → spring 힘 loa leader 에 전달됨 → contact 감
+
+### Follower tracking
+
+```yaml
+KP_TRACK: [300, 300, 150, 100, 100, 80]   # 공격적 tracking
+KD_TRACK: [ 30,  30,  20,  10,  10, 10]
+```
+
+UR10e 의 큰 질량 / payload 극복을 위해 충분히 큰 이득.
+
+### Home positions (bilateral-calibrated)
+
+```yaml
+leader_home:   [2.2984, -1.3313, 2.2127, -0.8611, 2.2772, 0.0376]   # UR3e
+follower_home: [2.3092, -1.3226, 2.2141, -0.9007, 2.2723, 0.0357]   # UR10e
+```
+
+`calibrate_bilateral.py` 로 5 pose 측정 후 mean_offset 기반 도출.
+
+### Joint mirroring
+
+```yaml
+joint_mirror:
+  sign: [1, 1, 1, 1, 1, 1]   # 두 로봇 동일 orientation — mirror 없음
+```
+
+두 arm 이 같은 방향 mount 됨 확인. (초기 default 였던 `[-1, 1, -1, 1, -1, 1]` 은 다른 셋업용)
+
+## Keyboard Controls (Leader, display 필요 — SSH 에서는 비활성)
 
 | Key | Joint | Direction |
 |---|---|---|
@@ -249,35 +329,86 @@ follower_home: [-2.24, -1.8608, -2.16, -2.2568, -2.24, 0.0]
 | T / G | 4 (wrist_2) | -/+ |
 | Y / H | 5 (wrist_3) | -/+ |
 
-SSH 환경에서는 keyboard 자동 비활성화 (pynput unavailable 경고).
+현재 구성 (KP_USER=0) 에서는 keyboard 사용하지 않음 — pure haptic bilateral. Keyboard 쓰려면 config 의 `KP_USER`, `KD_USER` 를 0 이 아닌 값으로.
+
+## Tuning Journal — Bilateral haptic feel
+
+초기 naive bilateral → "자연스러운 haptic" 까지의 실험 기록. 기준: **free motion 은 freedrive 처럼 가볍고, contact 는 명확히 전달**.
+
+### Iter-A: `KD_BI = 0`
+- **변경**: viscous damping 제거 (KD_BI 5 → 0)
+- **결과**: 빠른 손 motion 의 끈적함 사라짐. Contact 감 약간 약해짐 (velocity mismatch 채널 상실).
+- **교훈**: KD_BI 는 viscosity 주범이지만 contact 전환의 onset 신호도 제공. 0 으로 두면 더 가볍지만 contact 반응 느림.
+
+### Iter-C: Continuous deadband 도입
+- **변경**: `tau_bi = sign(raw) * max(0, |raw| - DB)` — 작은 error 는 0 통과, 큰 error 는 threshold 빼고 전달
+- **결과**: Free motion 의 residual error 가 저항으로 새지 않음. Contact 는 threshold 넘으면 명확 전달.
+- **교훈**: Position-position bilateral 의 핵심 한계 (free/contact 모호) 를 해결하는 단일 지렛대.
+
+### Iter-D: KP_BI 상향 + wrist deadband widen
+- **변경**: KP_BI [40,40,25,12,12,12] → [60,60,40,20,20,20], DB wrist 0.5 → 1.2 Nm
+- **결과**: Contact per 단위 error 강해짐. Wrist 가 빠른 motion 에 덜 민감.
+
+### Iter-E: `friction_comp=True` + leader wrist torque_limit 상향
+- **변경**: URScript 의 direct_torque 에 `friction_comp=True` 복원, leader wrist limit [5,3,2] → [8,6,4]
+- **결과**: 이전 IP 스왑 상태에서 안 먹었던 friction_comp 가 이번엔 제대로 작동. Wrist contact 더 넓은 범위 전달.
+
+### Iter-F: 추가 KP_BI 상향 + wrist KP_TRACK 상향
+- **변경**: KP_BI 1.7x → [100,100,70,35,35,30], wrist KP_TRACK [50,50,40] → [100,100,80], leader wrist limit [9,8,6]
+- **결과**: Contact 감 확실히 개선. Free motion 에서 다시 뻑뻑해짐 (KP_BI 상승분만큼 residual 이 강하게 전달).
+
+### Iter-G: Deadband 1.6x widen
+- **변경**: DB [5,5,3.5,2.1,2.1,1.8] → [8,8,5.5,3.5,3.5,3.0]
+- **결과**: Free motion tolerance 가 rad 단위로도 1.6x → 부드러움 복구. Contact 강도 약간 감소하지만 여전히 OK.
+
+### Iter-H: Shoulder/elbow DB 추가 widen
+- **변경**: Shoulder DB 8 → 10, elbow 5.5 → 6.5 (wrist 유지)
+- **결과**: Shoulder 특히 눈에 띄게 부드러워짐. 대비로 wrist 가 뻑뻑하게 느껴짐.
+
+### Iter-I (최종): Wrist DB widen
+- **변경**: Wrist DB [3.5,3.5,3.0] → [4.5,4.5,3.8]
+- **결과**: Wrist 도 freedrive 감. Contact 약간 줄어들지만 여전히 "OK" 수준.
+
+### 최종 수렴값
+
+```yaml
+KP_BI:           [100, 100, 70, 35, 35, 30]
+KD_BI:           [  0,   0,  0,  0,  0,  0]
+TAU_BI_DEADBAND: [ 10,  10, 6.5, 4.5, 4.5, 3.8]
+# Tolerance (rad) = DB/KP_BI:
+#   shoulder  0.100  (5.7°)
+#   elbow     0.093  (5.3°)
+#   wrist     0.129  (7.4°), wrist_3 0.127
+```
+
+### 핵심 교훈
+
+1. **Contact 감은 KP_BI * effective_error 에 의해 결정** — deadband 로 바닥 slicing 해도 contact 는 deadband 위 영역에서 충분히 올라옴
+2. **Free motion tolerance 는 rad 단위 (DB/KP_BI)** — 이걸 >3° 수준 보장하면 tracking jitter 가 저항으로 새지 않음
+3. **Wrist 가 shoulder 보다 넓은 tolerance 필요** — 사람이 wrist 를 더 빠르게 움직이기 때문
+4. **Torque_limit 이 contact 상한** — KP_BI 가 아무리 커도 limit 에서 clip. Wrist 의 leader_torque_limit 을 하드웨어 한계까지 올리면 강한 contact 가 충분히 전달됨
+5. **Position-position bilateral 의 구조적 한계는 존재** — 완벽한 "freedrive + contact" 는 TCP F/T 센서 기반 pure force feedback 에서 나옴 (TODO 의 FF 분기)
 
 ## TODO
 
 - [ ] `ur_server_dummy.py` dynamics stabilization
-- [ ] F/T sensor integration for over-force detection
+- [ ] F/T sensor integration for over-force detection (+ explicit contact feedback channel)
 - [ ] TCP position safety limits
 - [ ] Real-time kernel support (POSIX FIFO thread)
 - [ ] Smooth PAUSED→ACTIVE transition on follower
-      Even after bilateral home calibration (calibrate_bilateral.py),
-      follower still jerks when ACTIVE is first published. Residual
-      arises from payload-induced gravity sag during PAUSED (held by
-      KP_HOLD to within a few degrees of home, not exact). Next-step
-      options: (a) put follower's tau_grav through a proper payload-
-      aware gravity model, (b) add a per-robot soft-start ramp on the
-      tracking term, or (c) use a dynamic zero-offset reference
-      captured at transition instant.
+      Even after calibration, follower still jerks on first ACTIVE pub.
+      Residual is payload-induced gravity sag during PAUSED. Options:
+      (a) payload-aware gravity model on PC, (b) per-robot soft-start
+      ramp on tracking term, (c) dynamic zero-offset reference at
+      transition instant.
 - [ ] Auto power-on / boot / brake-release before homing
-      Currently the operator has to manually step through Power On,
-      Booting, and Release Brakes on each teach pendant before
-      launching. Automate this via the Dashboard Server (port 29999):
-      `power on` → wait for robotmode BOOTING → IDLE, then `brake release`
-      → wait for robotmode RUNNING, THEN proceed with URScript upload
-      and homing. Implementation sketch:
-        - Extend `src/control.py` or add `src/dashboard_client.py`:
-          open TCP to :29999, send commands, poll `robotmode` until
-          target state reached, with per-step timeout.
-        - leader_real_node / follower_real_node: call this in `connect()`
-          path before `_init_pubsub()` / `startRTDECommunication`.
-        - Config flag `auto_power_on: true` to keep it opt-in.
-      Reference: `identify_robots.py` already uses the Dashboard port;
-      extend with `power on`, `brake release`, `robotmode` polling.
+      Dashboard Server (port 29999) commands:
+        `power on` → wait BOOTING → IDLE → `brake release` → wait RUNNING
+      Implementation: extend `src/control.py` or add `src/dashboard_client.py`;
+      leader/follower nodes call before RTDE. Opt-in via `auto_power_on: true`.
+      `identify_robots.py` already uses :29999 as reference.
+- [ ] Pure TCP-F/T force feedback variant (ur10e_teleop_real_ff)
+      Position-position bilateral has structural ambiguity between
+      free motion and contact. Plan: separate package with J^T·F from
+      follower's `actual_TCP_force` replacing KP_BI path. Gives real
+      freedrive in free space, clean contact signal otherwise.
