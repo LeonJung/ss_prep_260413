@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
-# install.sh — Install dependencies for ur10e_teleop_real_py
+# install.sh — Install dependencies for ur10e_teleop_real_py.
+#
+# Auto-detects ROS distro from $ROS_DISTRO (set when you sourced
+# /opt/ros/<distro>/setup.bash). Defaults to 'jazzy' if unset.
 #
 # Usage:
-#   bash install.sh
+#   source /opt/ros/<your-distro>/setup.bash   # humble | jazzy | rolling ...
+#   bash script/install.sh
 
 set -euo pipefail
+
+DISTRO="${ROS_DISTRO:-jazzy}"
+echo "[install] ROS distro: ${DISTRO}"
 
 echo "[install] Installing Python dependencies..."
 pip3 install --user numpy pynput python-xlib pyyaml
 
 echo "[install] Installing ROS2 packages..."
 sudo apt install -y \
-  ros-jazzy-sensor-msgs \
-  ros-jazzy-std-msgs \
-  ros-jazzy-launch \
-  ros-jazzy-ament-index-python
+  "ros-${DISTRO}-sensor-msgs" \
+  "ros-${DISTRO}-std-msgs" \
+  "ros-${DISTRO}-launch" \
+  "ros-${DISTRO}-ament-index-python"
 
 echo "[install] Done."
 echo ""

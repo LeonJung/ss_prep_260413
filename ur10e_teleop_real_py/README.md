@@ -1,7 +1,13 @@
 # ur10e_teleop_real_py
 
 Bilateral force-feedback teleoperation for real UR robots (Leader: UR3e, Follower: UR10e) via RTDE.
-No external ROS2 package dependencies — standalone package.
+Pure Python implementation — no external ROS2 package dependencies.
+
+A C++ sibling of this package,
+[`ur10e_teleop_real_cpp`](../ur10e_teleop_real_cpp/), provides the same
+behavior on top of `ur_client_library` with optional PREEMPT_RT scheduling
+for tighter worst-case timing. Same ROS topic namespace, same config
+schema — launch **one or the other**, not both.
 
 ## Package Structure
 
