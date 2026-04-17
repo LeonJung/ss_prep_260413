@@ -464,21 +464,35 @@ both packages.
         - opt-in via config flag `auto_power_cycle: true`
       `identify_robots.py` already uses :29999 as a reference.
 
-- [ ] **Smooth PAUSED→ACTIVE transition on follower**
-      Even after bilateral home calibration (`calibrate_bilateral.py`),
-      follower jerks on first ACTIVE pub. Root cause (per user): the
-      switch to torque-based control can't settle follower exactly at
-      home — KP_HOLD balances payload gravity + friction at a small
-      positional offset from home. At ACTIVE entry the tracking error
-      = (leader_q - follower_q_actual) is thus nonzero and KP_TRACK
-      fires a kick. Options:
-        (a) payload-aware gravity model on PC, added to `tau`, so
-            tracking loop starts with true zero steady-state error
-        (b) follower-side soft-start ramp on KP_TRACK, mirroring the
-            one already on leader's KP_BI
-        (c) dynamic zero-offset reference captured at transition
-            (use follower's actual q at the ACTIVE edge as the
-            tracking origin, not follower_home)
+- [ ] **Position-control homing (fix for PAUSED→ACTIVE jerk)**
+      Root cause of the follower jerk: torque-based homing via
+      KP_HOLD*(q_des − q) can't settle exactly at home. The spring
+      balance point is home + (gravity + friction)/KP_HOLD, not home
+      itself. At ACTIVE entry tracking error is nonzero → KP_TRACK
+      fires a kick.
+
+      Chosen direction (per user decision): use UR's native position
+      control for HOMING only, keep torque control for everything else.
+      Position control settles at the exact commanded q; the torque
+      loop then starts from zero error.
+
+      Implementation sketch — two URScript variants swapped at mode
+      transitions (URScript hot-swap via port 30002 takes ~1 s, fine
+      since homing is 5 s anyway):
+        HOMING      → uploaded URScript runs `movej(home_q, a, v)` /
+                      `servoj` to the home pose, then reports done
+        PAUSED / ACTIVE / FREEDRIVE → the existing torque-loop URScript
+                      with direct_torque
+      Alternative single-URScript design: one script that dispatches
+      inside on a mode register — calls movej when mode=HOMING (which
+      blocks until arrival), then falls back into the torque loop.
+      Simpler; avoids the hot-swap entirely.
+
+      Fallback workarounds if the position-control path proves hard
+      to integrate:
+        (a) payload-aware gravity model on PC, added to `tau`
+        (b) follower-side soft-start ramp on KP_TRACK
+        (c) dynamic zero-offset reference at transition
 
 ### 🟡 Medium priority
 
