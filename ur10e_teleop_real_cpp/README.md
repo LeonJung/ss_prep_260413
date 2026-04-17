@@ -200,14 +200,17 @@ both packages.
 
 - [ ] **Smooth PAUSED→ACTIVE transition on follower**
       Even after bilateral home calibration, follower jerks on first
-      ACTIVE pub. Root cause: payload-induced gravity sag during PAUSED
-      — KP_HOLD holds follower within a few degrees of home but not
-      exactly, so the error at ACTIVE entry is nonzero and
-      KP_TRACK*error fires a kick. Options:
+      ACTIVE pub. Root cause (per user): the switch to torque-based
+      control can't settle follower exactly at home — KP_HOLD balances
+      payload gravity + friction at a small positional offset. At
+      ACTIVE entry the tracking error = (leader_q - follower_q_actual)
+      is thus nonzero and KP_TRACK fires a kick. Options:
         (a) payload-aware gravity model on PC, added to `tau`
         (b) follower-side soft-start ramp on KP_TRACK, mirroring the
             one already on leader's KP_BI
         (c) dynamic zero-offset reference captured at transition
+            (use follower's actual q at the ACTIVE edge as the
+            tracking origin, not follower_home)
 
 ### 🟡 Medium priority
 
@@ -221,12 +224,27 @@ both packages.
         - optional: explicit haptic feedback onto leader for crisper
           "freedrive vs contact" distinction
 
-- [ ] **TCP position safety limits (Cartesian workspace)**
-      Define a bounding box in base frame (xyz_min, xyz_max). Monitor
-      `actual_TCP_pose` each cycle; if TCP leaves the box, force
-      MODE_PAUSED. Prevents accidental large excursions during
-      bilateral, useful when follower has a tool or is near an
-      obstacle. Opt-in via config (`workspace_limits: ...`).
+- [ ] **TCP workspace safety — 2-tier virtual wall**
+      Bounding box in base frame (xyz_min, xyz_max). Two layers:
+        (i)  SOFT safety — when follower's TCP touches the box, inject
+             a synthetic contact force through the same haptic path
+             the real F/T feedback would use:
+               F_wall = K_wall * penetration  (spring into the wall)
+               tau   += J^T * F_wall          (mapped to joint torque)
+             User feels the wall on leader exactly like a physical
+             obstacle. Great for "gentle reminder" behavior.
+        (ii) HARD safety — if user keeps pushing past the soft wall
+             and penetration exceeds a deeper threshold (or |F_wall|
+             exceeds a cutoff), escalate to MODE_PAUSED.
+      Opt-in via config:
+        workspace_limits:
+          xyz_min: [...]
+          xyz_max: [...]
+          k_wall: 2000              # N/m, soft-wall stiffness
+          soft_penetration: 0.02    # m, threshold before hard escalation
+      Performance: estimated overhead ~15 µs/cycle on top of the
+      existing Jacobian work for the F/T integration item — negligible
+      (< 1% of a 2 ms cycle). Shares the Jacobian module with that item.
 
 ## Architecture overview
 
