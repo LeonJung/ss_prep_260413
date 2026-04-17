@@ -106,6 +106,46 @@ Mode 숫자:
 - Leader (UR3e) 를 손으로 이리저리 움직이면 Follower (UR10e) 가 실시간으로 따라옴
 - Follower 가 어딘가에 닿으면 leader 에 약한 force feedback (contact 감)
 
+## Distributed Setup (Leader and Follower on separate PCs)
+
+각 로봇을 **다른 PC** 에서 제어하려면 split launch files 사용.
+
+### 전제
+
+- 두 PC 가 동일 **RMW** (e.g. `rmw_zenoh_cpp`) 및 **같은 `ROS_DOMAIN_ID`** (기본 0)
+- 각 PC → 자기 담당 로봇 IP 로 RTDE(30004) + Secondary(30002) 접근 가능
+- 방화벽이 해당 RMW 의 traffic 허용
+- (권장) 두 PC 간 NTP 시간 동기화
+
+### PC A — Leader (UR3e) 쪽
+
+```bash
+# teleop_real_leader.launch.py 는 leader 노드만 실행
+ros2 launch ur10e_teleop_real teleop_real_leader.launch.py
+# or override IP:
+ros2 launch ur10e_teleop_real teleop_real_leader.launch.py leader_ip:=<UR3e_IP>
+```
+
+### PC B — Follower (UR10e) 쪽
+
+```bash
+ros2 launch ur10e_teleop_real teleop_real_follower.launch.py
+# or override IP:
+ros2 launch ur10e_teleop_real teleop_real_follower.launch.py follower_ip:=<UR10e_IP>
+```
+
+### 모드 전환 (아무 PC 에서나)
+
+```bash
+ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray "data: [0.0, 0.0, 0.0]"
+```
+
+### 분산 주의사항
+
+1. **Latency 증가**: 같은 PC 에서 ~0-1 ms vs LAN 분산 +1-5 ms. 일반 LAN 에서 체감 거의 없지만, bilateral tuning (특히 KD_BI, deadband) 에 약간 영향 줄 수 있음.
+2. **RMW 동일성**: 두 PC 가 같은 `RMW_IMPLEMENTATION` 이어야 함. Zenoh 쓰면 cross-subnet discovery 가 대체로 깔끔 (router 토폴로지 지원). 다른 subnet 에서 FastDDS/CycloneDDS 쓸 때는 unicast profile 또는 `ROS_DISCOVERY_SERVER` 필요.
+3. **Config 동기화**: 두 PC 가 `config/real_ur.yaml` 같은 내용 유지. 한 쪽만 수정하면 gain 불일치.
+
 ## Run — Dummy Mode (No Hardware)
 
 ```bash
