@@ -10,7 +10,7 @@ gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_
 # Follower (UR10e) is much stronger, needs higher limits to track briskly.
 # If per-robot keys are missing, torque_limit is used for both.
 torque_limit:           [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]   # fallback
-leader_torque_limit:    [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]   # UR3e
+leader_torque_limit:    [25.0, 25.0, 18.0, 8.0, 6.0, 4.0]   # UR3e, wrist bumped for contact feel
 follower_torque_limit:  [80.0, 80.0, 50.0, 15.0, 10.0, 8.0] # UR10e
 
 # --- Per-robot HOME positions [rad] ---

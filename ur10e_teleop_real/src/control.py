@@ -48,9 +48,9 @@ def rtde_torque_ctrl():
     dt_count = 0
     while True:
       if cmd_mode == 1:
-        direct_torque(cmd_torque)
+        direct_torque(cmd_torque, friction_comp=True)
         if first_dt:
-          textmsg("[rtde_torque_ctrl] first direct_torque(defaults) OK")
+          textmsg("[rtde_torque_ctrl] first direct_torque(friction_comp=True) OK")
           first_dt = False
         end
         dt_count = dt_count + 1
@@ -59,7 +59,7 @@ def rtde_torque_ctrl():
           dt_count = 0
         end
       else:
-        direct_torque(zero_tau)
+        direct_torque(zero_tau, friction_comp=True)
       end
     end
   end
