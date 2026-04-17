@@ -49,11 +49,15 @@ def find_benchmark():
 
 
 # ----------------------------------------------------------------------------
-def run_bench(binary, rt_mode, duration, period_us):
+def run_bench(binary, rt_mode, duration, period_us, rt_cpu=None, rt_priority=None):
     cmd = [binary,
            '--rt-mode', 'true' if rt_mode else 'false',
            '--duration', str(duration),
            '--period-us', str(period_us)]
+    if rt_cpu is not None:
+        cmd += ['--rt-cpu', str(rt_cpu)]
+    if rt_priority is not None:
+        cmd += ['--rt-priority', str(rt_priority)]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     return proc.stdout, proc.stderr, proc.returncode
 
@@ -114,6 +118,14 @@ def main():
     parser.add_argument('--binary')
     parser.add_argument('--duration', type=float, default=30.0)
     parser.add_argument('--period-us', type=int, default=2000)
+    parser.add_argument('--rt-cpu', type=int, default=None,
+        help='Pin RT thread to this CPU core (reduces migration jitter). '
+             'Applied to both runs for fair comparison.')
+    parser.add_argument('--rt-priority', type=int, default=None,
+        help='SCHED_FIFO priority for the RT run (default 80)')
+    parser.add_argument('--load', action='store_true',
+        help='Generate background CPU load during each run (stress-ng or yes) '
+             'so the RT benefit is visible.')
     parser.add_argument('--save-csv')
     parser.add_argument('--plot', action='store_true')
     args = parser.parse_args()
@@ -132,15 +144,52 @@ def main():
     print(f"  period   : {args.period_us} us  (target {1e6/args.period_us:.0f} Hz)")
     print()
 
+    # Optional background CPU load — surfaces the RT advantage.
+    load_proc = None
+    def start_load():
+        nonlocal load_proc
+        if args.load:
+            # Spawn N-1 'yes' processes to saturate CPU without stealing the
+            # RT-pinned core (if --rt-cpu is used). Simple and always available.
+            import multiprocessing
+            n = max(1, multiprocessing.cpu_count() - 1)
+            print(f"  [load] spawning {n} busy processes")
+            load_proc = [subprocess.Popen(['yes'], stdout=subprocess.DEVNULL)
+                         for _ in range(n)]
+    def stop_load():
+        nonlocal load_proc
+        if load_proc:
+            for p in load_proc:
+                try: p.terminate()
+                except Exception: pass
+            for p in load_proc:
+                try: p.wait(timeout=1.0)
+                except Exception: p.kill()
+            load_proc = None
+
     print("[1/2] running non-RT ...")
-    out_nr, err_nr, rc_nr = run_bench(binary, False, args.duration, args.period_us)
+    start_load()
+    try:
+        out_nr, err_nr, rc_nr = run_bench(binary, False, args.duration,
+                                            args.period_us,
+                                            rt_cpu=args.rt_cpu,
+                                            rt_priority=args.rt_priority)
+    finally:
+        stop_load()
     dts_nr = parse_dts(out_nr)
     print(f"  captured {len(dts_nr)} cycles")
     for line in err_nr.strip().splitlines():
         print(f"  stderr: {line}")
 
     print("[2/2] running RT ...")
-    out_rt, err_rt, rc_rt = run_bench(binary, True, args.duration, args.period_us)
+    start_load()
+    try:
+        out_rt, err_rt, rc_rt = run_bench(binary, True, args.duration,
+                                            args.period_us,
+                                            rt_cpu=args.rt_cpu,
+                                            rt_priority=args.rt_priority)
+    finally:
+        stop_load()
     dts_rt = parse_dts(out_rt)
     print(f"  captured {len(dts_rt)} cycles")
     for line in err_rt.strip().splitlines():

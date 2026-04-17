@@ -17,6 +17,7 @@
 #include <cstring>
 #include <chrono>
 #include <string>
+#include <vector>
 
 #include "ur10e_teleop_real_cpp/rt_thread.hpp"
 
@@ -73,7 +74,15 @@ int main(int argc, char** argv) {
   auto end_time = start + std::chrono::nanoseconds(
       static_cast<int64_t>(duration * 1e9));
 
-  if (csv) std::printf("cycle,now_ns,dt_us\n");
+  // Pre-allocate the CSV buffer so no heap activity in the hot loop.
+  const int64_t expected_cycles =
+      static_cast<int64_t>(duration * 1e6) / period_us + 16;
+  std::vector<int32_t> dt_us_buf;
+  std::vector<int64_t> now_ns_buf;
+  if (csv) {
+    dt_us_buf.reserve(expected_cycles);
+    now_ns_buf.reserve(expected_cycles);
+  }
 
   std::chrono::nanoseconds prev_now{0};
   int cycle = 0;
@@ -84,13 +93,23 @@ int main(int argc, char** argv) {
 
     if (csv && prev_now.count() != 0) {
       auto dt_us = (t - prev_now).count() / 1000;
-      std::printf("%d,%ld,%ld\n", cycle, t.count(), dt_us);
+      // push_back is O(1) amortized; capacity reserved above so no realloc.
+      dt_us_buf.push_back(static_cast<int32_t>(dt_us));
+      now_ns_buf.push_back(t.count());
     }
     prev_now = t;
     ++cycle;
 
     deadline += period;
     sleep_until(deadline);
+  }
+
+  // ---- now that the timing-sensitive loop is done, dump CSV ----
+  if (csv) {
+    std::printf("cycle,now_ns,dt_us\n");
+    for (size_t i = 0; i < dt_us_buf.size(); ++i) {
+      std::printf("%zu,%ld,%d\n", i + 1, (long)now_ns_buf[i], dt_us_buf[i]);
+    }
   }
 
   std::fprintf(stderr, "# summary: %s\n",
