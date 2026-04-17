@@ -10,7 +10,7 @@ gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_
 # Follower (UR10e) is much stronger, needs higher limits to track briskly.
 # If per-robot keys are missing, torque_limit is used for both.
 torque_limit:           [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]   # fallback
-leader_torque_limit:    [25.0, 25.0, 18.0, 8.0, 6.0, 4.0]   # UR3e, wrist bumped for contact feel
+leader_torque_limit:    [25.0, 25.0, 18.0, 9.0, 8.0, 6.0]   # UR3e, wrist at hardware headroom
 follower_torque_limit:  [80.0, 80.0, 50.0, 15.0, 10.0, 8.0] # UR10e
 
 # --- Per-robot HOME positions [rad] ---
@@ -41,16 +41,13 @@ leader:
   KD_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
-  # Bilateral coupling with deadband (Iter-A + Iter-C + Iter-D).
-  # Iter-D: KP_BI bumped ~50-70% for stronger contact feel; deadband
-  # scaled so shoulder/elbow tolerance stays same (~3°) and wrist
-  # tolerance widens (~3.4°) for smoother fast wrist motion.
-  KP_BI:     [60.0, 60.0, 40.0, 20.0, 20.0, 20.0]
-  KD_BI:     [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
-  # Per-joint deadband in Nm. Continuous form: tau = sign(raw) *
-  # max(0, |raw| - threshold). Below threshold = 0 (freedrive), above =
-  # full minus threshold (smooth onset, no discontinuity).
-  TAU_BI_DEADBAND: [3.0, 3.0, 2.0, 1.2, 1.2, 1.2]
+  # Bilateral coupling with deadband (Iter-A + Iter-C + Iter-D + Iter-F).
+  # Iter-F: KP_BI bumped 1.7x for stronger contact per unit error.
+  # Deadband scaled proportionally so free-motion tolerance in rad is
+  # unchanged (shoulder/elbow 0.050, wrist 0.060).
+  KP_BI:     [100.0, 100.0, 70.0, 35.0, 35.0, 30.0]
+  KD_BI:     [  0.0,   0.0,  0.0,  0.0,  0.0,  0.0]
+  TAU_BI_DEADBAND: [5.0, 5.0, 3.5, 2.1, 2.1, 1.8]
   # With KP_USER=0 the user-spring cannot exceed threshold, so OVERFORCE_USER
   # becomes irrelevant. Keep large numbers as sentinels.
   OVERFORCE_USER:       [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
@@ -58,8 +55,10 @@ leader:
 
 follower:
   # Higher KP_TRACK so UR10e (heavier, more friction) catches up faster.
-  KP_TRACK:  [300.0, 300.0, 150.0, 50.0, 50.0, 40.0]
-  KD_TRACK:  [30.0,  30.0,  20.0,  10.0, 10.0, 10.0]
+  # Iter-F: wrist KP_TRACK doubled so quick wrist motion doesn't create
+  # tracking-error spikes that bleed through the leader's KP_BI deadband.
+  KP_TRACK:  [300.0, 300.0, 150.0, 100.0, 100.0, 80.0]
+  KD_TRACK:  [30.0,  30.0,  20.0,   10.0,  10.0, 10.0]
   KP_HOLD:   [100.0, 100.0,  50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,   12.0, 10.0, 10.0, 10.0]
   OVERFORCE_CONSTRAINT: [60.0, 60.0, 60.0, 30.0, 30.0, 30.0]
