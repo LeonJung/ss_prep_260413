@@ -52,6 +52,44 @@ sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
 Without caps the executables still run, but `--rt-mode true` will print a
 warning and fall back to normal scheduling.
 
+## RT vs non-RT benchmark
+
+Standalone timing test (no ROS, no robot — just the cyclic sleep loop):
+
+```bash
+# before `setcap`: both runs fall through to normal scheduling
+python3 script/rt_comparison.py --duration 30
+
+# one-time: grant caps so RT actually engages
+sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
+    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/jitter_benchmark
+sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
+    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/leader_node
+sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
+    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/follower_node
+
+# then:
+python3 script/rt_comparison.py --duration 30 --save-csv /tmp/jit
+python3 script/rt_comparison.py --duration 30 --plot   # needs matplotlib
+```
+
+What you'd expect to see (order-of-magnitude):
+
+| metric           | normal kernel     | PREEMPT_RT + caps |
+|------------------|-------------------|-------------------|
+| period mean      | ≈ target          | ≈ target          |
+| p99              | target + 100-500µs| target + 50-100µs |
+| p99.9            | target + 1-5 ms   | target + 100-300µs|
+| worst-case (max) | target + 5-50 ms  | target + 100-500µs|
+
+Direct binary:
+
+```bash
+jitter_benchmark --rt-mode true --duration 30 --period-us 2000 > run.csv
+```
+
+Stdout = per-cycle CSV, stderr = jitter summary.
+
 ## Launch (placeholder — control loop TODO)
 
 ```bash

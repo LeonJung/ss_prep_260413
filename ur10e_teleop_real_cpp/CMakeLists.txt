@@ -58,7 +58,11 @@ target_link_libraries(follower_node
   yaml-cpp
 )
 
-install(TARGETS leader_node follower_node
+# ---- Jitter benchmark (no ROS, no robot; pure timing) ----
+add_executable(jitter_benchmark src/jitter_benchmark.cpp)
+target_link_libraries(jitter_benchmark rt_thread)
+
+install(TARGETS leader_node follower_node jitter_benchmark
   DESTINATION lib/${PROJECT_NAME}
 )
 
