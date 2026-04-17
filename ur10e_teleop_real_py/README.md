@@ -471,28 +471,27 @@ both packages.
       itself. At ACTIVE entry tracking error is nonzero → KP_TRACK
       fires a kick.
 
-      Chosen direction (per user decision): use UR's native position
-      control for HOMING only, keep torque control for everything else.
-      Position control settles at the exact commanded q; the torque
-      loop then starts from zero error.
+      Plan — two URScript programs, hot-swapped via port 30002 at
+      HOMING ↔ non-HOMING transitions:
 
-      Implementation sketch — two URScript variants swapped at mode
-      transitions (URScript hot-swap via port 30002 takes ~1 s, fine
-      since homing is 5 s anyway):
-        HOMING      → uploaded URScript runs `movej(home_q, a, v)` /
-                      `servoj` to the home pose, then reports done
-        PAUSED / ACTIVE / FREEDRIVE → the existing torque-loop URScript
-                      with direct_torque
-      Alternative single-URScript design: one script that dispatches
-      inside on a mode register — calls movej when mode=HOMING (which
-      blocks until arrival), then falls back into the torque loop.
-      Simpler; avoids the hot-swap entirely.
+        URScript A — existing torque-loop (direct_torque)
+          Used for PAUSED / ACTIVE / FREEDRIVE.
 
-      Fallback workarounds if the position-control path proves hard
-      to integrate:
-        (a) payload-aware gravity model on PC, added to `tau`
-        (b) follower-side soft-start ramp on KP_TRACK
-        (c) dynamic zero-offset reference at transition
+        URScript B — native position control (movej / servoj to home)
+          Used only for HOMING. Settles at the exact commanded q.
+
+      Transition flow:
+        user sends MODE_HOMING
+          → node stops current torque writes
+          → uploads URScript B with target home_q in payload
+          → URScript B runs movej, reports completion
+          → node uploads URScript A (torque loop)
+          → node publishes MODE_PAUSED
+        user later sends MODE_ACTIVE / etc. — torque loop handles it.
+
+      Hot-swap via port 30002 takes ~1 s; homing already takes ~5 s so
+      no user-visible latency added. The torque loop starts from
+      exactly zero error, so there's no kick on the first active cycle.
 
 ### 🟡 Medium priority
 
