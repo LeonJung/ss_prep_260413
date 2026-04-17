@@ -1,0 +1,74 @@
+# real_ur.yaml — Config for actual UR hardware
+# UR firmware handles friction and gravity internally via direct_torque().
+
+# --- Firmware compensation switches ---
+friction_comp: true          # UR firmware friction compensation (direct_torque friction_comp=True)
+gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_grav in code)
+
+# --- Torque safety limits [Nm] — per-robot ---
+# Leader (UR3e) is smaller, smaller motor torque caps.
+# Follower (UR10e) is much stronger, needs higher limits to track briskly.
+# If per-robot keys are missing, torque_limit is used for both.
+torque_limit:           [25.0, 25.0, 15.0, 5.0, 3.0, 2.0]   # fallback
+leader_torque_limit:    [25.0, 25.0, 18.0, 9.0, 8.0, 6.0]   # UR3e, wrist at hardware headroom
+follower_torque_limit:  [80.0, 80.0, 50.0, 15.0, 10.0, 8.0] # UR10e
+
+# --- Per-robot HOME positions [rad] ---
+# Bilateral-calibrated via calibrate_bilateral.py (5 sync-pose pairs):
+#   mean_offset = follower_q - leader_q = [+0.011, +0.009, +0.001, -0.040, -0.005, -0.002]
+#   std         per joint                = [0.017, 0.030, 0.017, 0.039, 0.014, 0.040]
+#   fit verdict : OK  (max std 2.3° — eyeball sync precision)
+# leader_home  = pose 1's leader_q;  follower_home = leader_home + mean_offset
+leader_home:   [ 2.2984, -1.3313,  2.2127, -0.8611,  2.2772,  0.0376]
+follower_home: [ 2.3092, -1.3226,  2.2141, -0.9007,  2.2723,  0.0357]
+
+# --- Joint mirroring ---
+# Both arms home to essentially the same joint values (measured), so no
+# physical mirroring — leader delta = follower delta on every joint.
+joint_mirror:
+  sign: [1, 1, 1, 1, 1, 1]
+
+# --- Auto-homing on start ---
+auto_home_on_start: true
+homing_duration: 5.0          # seconds (quintic spline, slow for safety)
+homing_contact_threshold: 0.3  # fraction of OVERFORCE_CONSTRAINT to detect collision during homing
+
+# --- PD gains ---
+leader:
+  # KP_USER = 0: pure haptic bilateral (drag leader by hand, no q_user spring).
+  # Restore nonzero values only when keyboard input is used to drive q_user.
+  KP_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  KD_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
+  KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
+  # Bilateral coupling with deadband (Iter-A/C/D/F/G/H/I).
+  # Iter-I: wrist deadband +30% — after Iter-H made shoulder/elbow much
+  # smoother, the wrist felt comparatively stiff. Tolerance (rad):
+  #   shoulders 0.100 (5.7°), elbow 0.093 (5.3°), wrists 0.129 (7.4°).
+  # KP_BI unchanged (contact feel was already good per user).
+  KP_BI:     [100.0, 100.0, 70.0, 35.0, 35.0, 30.0]
+  KD_BI:     [  0.0,   0.0,  0.0,  0.0,  0.0,  0.0]
+  TAU_BI_DEADBAND: [10.0, 10.0, 6.5, 4.5, 4.5, 3.8]
+  # With KP_USER=0 the user-spring cannot exceed threshold, so OVERFORCE_USER
+  # becomes irrelevant. Keep large numbers as sentinels.
+  OVERFORCE_USER:       [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
+  OVERFORCE_CONSTRAINT: [30.0, 30.0, 30.0, 30.0, 30.0, 30.0]
+
+follower:
+  # Higher KP_TRACK so UR10e (heavier, more friction) catches up faster.
+  # Iter-F: wrist KP_TRACK doubled so quick wrist motion doesn't create
+  # tracking-error spikes that bleed through the leader's KP_BI deadband.
+  KP_TRACK:  [300.0, 300.0, 150.0, 100.0, 100.0, 80.0]
+  KD_TRACK:  [30.0,  30.0,  20.0,   10.0,  10.0, 10.0]
+  KP_HOLD:   [100.0, 100.0,  50.0, 25.0, 25.0, 25.0]
+  KD_HOLD:   [20.0,  20.0,   12.0, 10.0, 10.0, 10.0]
+  OVERFORCE_CONSTRAINT: [60.0, 60.0, 60.0, 30.0, 30.0, 30.0]
+
+# --- Friction model (used only when friction_comp: false) ---
+friction:
+  Fc:  [12.5, 15.8, 11.9, 2.06, 2.01, 2.76]
+  Fv:  [7.1,  16.1, 5.7,  2.95, 1.14, 1.88]
+  k:   [50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
+
+# --- Control loop ---
+timestep: 0.002  # 500 Hz
