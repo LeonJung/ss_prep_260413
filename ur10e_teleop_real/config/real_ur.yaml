@@ -41,13 +41,15 @@ leader:
   KD_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
-  # Bilateral coupling with deadband (Iter-A + Iter-C + Iter-D + Iter-F).
-  # Iter-F: KP_BI bumped 1.7x for stronger contact per unit error.
-  # Deadband scaled proportionally so free-motion tolerance in rad is
-  # unchanged (shoulder/elbow 0.050, wrist 0.060).
+  # Bilateral coupling with deadband (Iter-A/C/D/F/G).
+  # Iter-G: deadband widened ~1.6x. Tolerance (rad) now ~0.080 on
+  # shoulder/elbow (was 0.050) and ~0.100 on wrists (was 0.060) — enough
+  # headroom that normal tracking jitter and transient error spikes stay
+  # below threshold, restoring true freedrive feel in free motion.
+  # KP_BI unchanged (contact feel was already good per user).
   KP_BI:     [100.0, 100.0, 70.0, 35.0, 35.0, 30.0]
   KD_BI:     [  0.0,   0.0,  0.0,  0.0,  0.0,  0.0]
-  TAU_BI_DEADBAND: [5.0, 5.0, 3.5, 2.1, 2.1, 1.8]
+  TAU_BI_DEADBAND: [8.0, 8.0, 5.5, 3.5, 3.5, 3.0]
   # With KP_USER=0 the user-spring cannot exceed threshold, so OVERFORCE_USER
   # becomes irrelevant. Keep large numbers as sentinels.
   OVERFORCE_USER:       [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]
