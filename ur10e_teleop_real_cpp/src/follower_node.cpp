@@ -25,6 +25,12 @@ FollowerNode::FollowerNode(const Options& opts)
     }
   }
 
+  home_qpos_   = cfg_.follower_home;
+  peer_home_   = cfg_.leader_home;
+  mirror_sign_ = cfg_.mirror_sign;
+  torque_limit_ = cfg_.has_follower_torque_limit
+      ? cfg_.follower_torque_limit : cfg_.torque_limit;
+
   RCLCPP_INFO(get_logger(),
     "FollowerNode  robot=%s  ip=%s  rt=%s  prio=%d  cpu=%d",
     opts.robot_type.c_str(), opts.robot_ip.c_str(),
@@ -139,6 +145,13 @@ void FollowerNode::publish_mode(int mode, double t_start, double duration) {
   mode_pub_->publish(msg);
 }
 
+namespace {
+inline double quintic_ease_f(double a) {
+  a = std::clamp(a, 0.0, 1.0);
+  return 10 * a*a*a - 15 * a*a*a*a + 6 * a*a*a*a*a;
+}
+}  // namespace
+
 void FollowerNode::control_loop() {
   init_rt_thread(rt_cfg_);
 
@@ -151,24 +164,145 @@ void FollowerNode::control_loop() {
               (long)(period.count() / 1000),
               rt_cfg_.enabled ? "ON" : "OFF");
 
-  urcl::vector6d_t tau_cmd = {0, 0, 0, 0, 0, 0};
+  std::array<double, 6> q{}, dq{};
+  std::array<double, 6> q_hold{}, q_home_start{}, q_target_init{};
+  q_hold = home_qpos_;
+  q_home_start = home_qpos_;
 
-  int log_counter = 0;
-  while (running_) {
-    auto t_now = now_monotonic();
-    jitter.tick(t_now);
-
+  // initial read
+  {
     auto data = driver_->getDataPackage();
-    std::array<double, 6> q{}, dq{};
     if (data) {
       urcl::vector6d_t _q, _qd;
       if (data->getData("actual_q",  _q) && data->getData("actual_qd", _qd)) {
         for (int i = 0; i < 6; ++i) { q[i] = _q[i]; dq[i] = _qd[i]; }
       }
     }
+    q_target_init = q;
+  }
+  RCLCPP_INFO(get_logger(), "q_target_init seeded to actual_q");
 
-    // TODO(phase4): KP_TRACK * (peer_q_local - q) + KD_TRACK * ... + tau_grav
-    for (int i = 0; i < 6; ++i) tau_cmd[i] = 0.0;
+  int prev_state = /*MODE_ACTIVE*/ 0;
+  int log_counter = 0;
+
+  // Auto-homing on start
+  if (cfg_.auto_home_on_start) {
+    publish_mode(/*MODE_HOMING=*/2, this->now().seconds(), cfg_.homing_duration);
+    RCLCPP_INFO(get_logger(), "auto_home_on_start → HOMING in %.1fs",
+                cfg_.homing_duration);
+  }
+
+  urcl::vector6d_t tau_cmd = {0, 0, 0, 0, 0, 0};
+
+  while (running_) {
+    auto t_now_mono = now_monotonic();
+    jitter.tick(t_now_mono);
+    const double now_sec = this->now().seconds();
+
+    // read state
+    {
+      auto data = driver_->getDataPackage();
+      if (data) {
+        urcl::vector6d_t _q, _qd;
+        if (data->getData("actual_q", _q) && data->getData("actual_qd", _qd)) {
+          for (int i = 0; i < 6; ++i) { q[i] = _q[i]; dq[i] = _qd[i]; }
+        }
+      }
+    }
+
+    // snapshot mode / peer
+    int cur_state;
+    double h_t_start, h_duration;
+    {
+      std::lock_guard<std::mutex> lk(mode_mtx_);
+      cur_state = mode_state_;
+      h_t_start = mode_t_start_;
+      h_duration = mode_duration_;
+    }
+    std::array<double, 6> raw_peer_q{}, raw_peer_dq{};
+    bool bilateral_active = false;
+    {
+      std::lock_guard<std::mutex> lk(peer_mtx_);
+      if (peer_q_valid_) {
+        raw_peer_q = peer_q_;
+        raw_peer_dq = peer_dq_;
+        bilateral_active = true;
+      }
+    }
+
+    // state transition
+    if (cur_state != prev_state) {
+      RCLCPP_INFO(get_logger(), "state %d → %d", prev_state, cur_state);
+      if (cur_state == /*MODE_PAUSED=*/1) {
+        q_hold = (prev_state == /*MODE_HOMING=*/2) ? home_qpos_ : q;
+      } else if (cur_state == /*MODE_HOMING=*/2) {
+        q_home_start = q;
+      }
+    }
+
+    // mirror peer → local
+    std::array<double, 6> peer_q_local{}, peer_dq_local{};
+    if (bilateral_active) {
+      for (int i = 0; i < 6; ++i) {
+        const double delta = raw_peer_q[i] - peer_home_[i];
+        peer_q_local[i]  = home_qpos_[i] + mirror_sign_[i] * delta;
+        peer_dq_local[i] = mirror_sign_[i] * raw_peer_dq[i];
+      }
+    }
+
+    // control law
+    std::array<double, 6> tau{};
+    switch (cur_state) {
+      case /*MODE_ACTIVE=*/0: {
+        if (bilateral_active) {
+          for (int i = 0; i < 6; ++i) {
+            tau[i] = cfg_.follower_kp_track[i] * (peer_q_local[i] - q[i])
+                   + cfg_.follower_kd_track[i] * (peer_dq_local[i] - dq[i]);
+          }
+        } else {
+          // no peer yet — hold at seed
+          for (int i = 0; i < 6; ++i) {
+            tau[i] = cfg_.follower_kp_track[i] * (q_target_init[i] - q[i])
+                   - cfg_.follower_kd_track[i] * dq[i];
+          }
+        }
+        break;
+      }
+      case /*MODE_PAUSED=*/1:
+        for (int i = 0; i < 6; ++i) {
+          tau[i] = cfg_.follower_kp_hold[i] * (q_hold[i] - q[i])
+                 - cfg_.follower_kd_hold[i] * dq[i];
+        }
+        break;
+      case /*MODE_HOMING=*/2: {
+        const double dur = (h_duration > 0) ? h_duration : cfg_.homing_duration;
+        const double t = std::max(0.0, now_sec - h_t_start);
+        const double alpha = std::min(t / dur, 1.0);
+        const double ease = quintic_ease_f(alpha);
+        std::array<double, 6> q_des{};
+        for (int i = 0; i < 6; ++i) {
+          q_des[i] = (1.0 - ease) * q_home_start[i] + ease * home_qpos_[i];
+          tau[i] = cfg_.follower_kp_hold[i] * (q_des[i] - q[i])
+                 - cfg_.follower_kd_hold[i] * dq[i];
+        }
+        if (alpha >= 1.0) {
+          q_target_init = home_qpos_;
+          publish_mode(/*MODE_PAUSED=*/1);
+          RCLCPP_INFO(get_logger(), "HOMING complete → PAUSED");
+        }
+        break;
+      }
+      case /*MODE_FREEDRIVE=*/3:
+      default:
+        // tau already zero
+        break;
+    }
+
+    // clip
+    for (int i = 0; i < 6; ++i) {
+      tau[i] = std::clamp(tau[i], -torque_limit_[i], torque_limit_[i]);
+      tau_cmd[i] = tau[i];
+    }
 
     driver_->writeJointCommand(
         tau_cmd,
@@ -179,9 +313,14 @@ void FollowerNode::control_loop() {
 
     if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {
       log_counter = 0;
-      RCLCPP_INFO(get_logger(), "%s", jitter.log_line("[JIT]").c_str());
+      double tau_max = 0.0;
+      for (double v : tau) tau_max = std::max(tau_max, std::abs(v));
+      RCLCPP_INFO(get_logger(),
+        "[DIAG] mode=%d |tau|max=%.2fN·m  %s",
+        cur_state, tau_max, jitter.log_line("").c_str());
     }
 
+    prev_state = cur_state;
     deadline += period;
     sleep_until(deadline);
   }

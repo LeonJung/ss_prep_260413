@@ -90,6 +90,12 @@ private:
 
   std::atomic<int> reset_counter_{0};
 
+  // resolved once in ctor
+  Vec6 home_qpos_{};         // this robot's home (leader_home)
+  Vec6 peer_home_{};         // peer's home (follower_home)
+  Vec6 mirror_sign_{};
+  Vec6 torque_limit_{};      // leader_torque_limit or shared torque_limit
+
   std::atomic<bool> running_{false};
   std::thread control_thread_;
 };

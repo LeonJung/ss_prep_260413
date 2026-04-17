@@ -73,6 +73,12 @@ private:
   double mode_t_start_ = 0.0;
   double mode_duration_ = 0.0;
 
+  // resolved once in ctor
+  Vec6 home_qpos_{};         // follower_home
+  Vec6 peer_home_{};         // leader_home
+  Vec6 mirror_sign_{};
+  Vec6 torque_limit_{};
+
   std::atomic<bool> running_{false};
   std::thread control_thread_;
 };

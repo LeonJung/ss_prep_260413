@@ -28,6 +28,13 @@ LeaderNode::LeaderNode(const Options& opts)
     }
   }
 
+  // Resolve per-robot values
+  home_qpos_   = cfg_.leader_home;
+  peer_home_   = cfg_.follower_home;
+  mirror_sign_ = cfg_.mirror_sign;
+  torque_limit_ = cfg_.has_leader_torque_limit
+      ? cfg_.leader_torque_limit : cfg_.torque_limit;
+
   RCLCPP_INFO(get_logger(),
     "LeaderNode  robot=%s  ip=%s  rt=%s  prio=%d  cpu=%d",
     opts.robot_type.c_str(), opts.robot_ip.c_str(),
@@ -161,6 +168,15 @@ void LeaderNode::publish_mode(int mode, double t_start, double duration) {
   mode_pub_->publish(msg);
 }
 
+namespace {
+
+inline double quintic_ease(double a) {
+  a = std::clamp(a, 0.0, 1.0);
+  return 10 * a*a*a - 15 * a*a*a*a + 6 * a*a*a*a*a;
+}
+
+}  // namespace
+
 void LeaderNode::control_loop() {
   init_rt_thread(rt_cfg_);
 
@@ -173,45 +189,200 @@ void LeaderNode::control_loop() {
               (long)(period.count() / 1000),
               rt_cfg_.enabled ? "ON" : "OFF");
 
-  // Zero torque command — Phase 4 will replace with real bilateral PD.
-  urcl::vector6d_t tau_cmd = {0, 0, 0, 0, 0, 0};
+  // ---- state variables (mirror leader_real_node.py) ----
+  std::array<double, 6> q{}, dq{};
+  std::array<double, 6> q_user{}, q_hold{}, q_home_start{};
+  q_hold       = home_qpos_;
+  q_home_start = home_qpos_;
 
-  int log_counter = 0;
-  while (running_) {
-    auto t_now = now_monotonic();
-    jitter.tick(t_now);
-
-    // ---- Read robot state (RTDE data package) ----
+  // initial read to seed q_user
+  {
     auto data = driver_->getDataPackage();
-    std::array<double, 6> q{}, dq{};
     if (data) {
       urcl::vector6d_t _q, _qd;
       if (data->getData("actual_q",  _q) && data->getData("actual_qd", _qd)) {
         for (int i = 0; i < 6; ++i) { q[i] = _q[i]; dq[i] = _qd[i]; }
       }
     }
+    q_user = q;
+  }
+  RCLCPP_INFO(get_logger(), "q_user seeded to actual_q");
 
-    // ---- Control law (placeholder — Phase 4) ----
-    // TODO(phase4): implement MODE_ACTIVE / PAUSED / HOMING / FREEDRIVE logic
-    //   per leader_real_node.py: KP_BI*(peer_q - q) + deadband + soft-start
-    //   ramp on PAUSED→ACTIVE, etc.
-    for (int i = 0; i < 6; ++i) tau_cmd[i] = 0.0;
+  int prev_state = MODE_ACTIVE;
+  int log_counter = 0;
 
-    // ---- Write torque ----
+  const double startup_time = this->now().seconds();
+  const double RESET_STARTUP_GRACE = 2.0;
+  double active_t_start = startup_time;
+  int last_reset_counter = reset_counter_.load();
+
+  // Auto-homing on start
+  if (cfg_.auto_home_on_start) {
+    publish_mode(MODE_HOMING, this->now().seconds(), cfg_.homing_duration);
+    RCLCPP_INFO(get_logger(), "auto_home_on_start → HOMING in %.1fs",
+                cfg_.homing_duration);
+  }
+
+  urcl::vector6d_t tau_cmd = {0, 0, 0, 0, 0, 0};
+
+  while (running_) {
+    auto t_now_mono = now_monotonic();
+    jitter.tick(t_now_mono);
+    const double now_sec = this->now().seconds();
+
+    // ---- read state ----
+    {
+      auto data = driver_->getDataPackage();
+      if (data) {
+        urcl::vector6d_t _q, _qd;
+        if (data->getData("actual_q", _q) && data->getData("actual_qd", _qd)) {
+          for (int i = 0; i < 6; ++i) { q[i] = _q[i]; dq[i] = _qd[i]; }
+        }
+      }
+    }
+
+    // ---- snapshot mode / peer state ----
+    int cur_state;
+    double h_t_start, h_duration;
+    {
+      std::lock_guard<std::mutex> lk(mode_mtx_);
+      cur_state = mode_state_;
+      h_t_start = mode_t_start_;
+      h_duration = mode_duration_;
+    }
+    std::array<double, 6> raw_peer_q{}, raw_peer_dq{};
+    bool bilateral_active = false;
+    {
+      std::lock_guard<std::mutex> lk(peer_mtx_);
+      if (peer_q_valid_) {
+        raw_peer_q = peer_q_;
+        raw_peer_dq = peer_dq_;
+        bilateral_active = true;
+      }
+    }
+
+    // ---- reset handling (→ HOMING) ----
+    int cur_reset = reset_counter_.load();
+    if (cur_reset != last_reset_counter) {
+      last_reset_counter = cur_reset;
+      if (now_sec - startup_time < RESET_STARTUP_GRACE) {
+        RCLCPP_INFO(get_logger(),
+            "reset ignored during startup grace (counter=%d)", cur_reset);
+      } else if (cur_state == MODE_ACTIVE) {
+        publish_mode(MODE_HOMING, now_sec, cfg_.homing_duration);
+        RCLCPP_INFO(get_logger(),
+            "reset request → HOMING (%.1fs)", cfg_.homing_duration);
+      }
+    }
+
+    // ---- state transition ----
+    if (cur_state != prev_state) {
+      RCLCPP_INFO(get_logger(), "state %d → %d", prev_state, cur_state);
+      if (cur_state == MODE_PAUSED) {
+        q_hold = (prev_state == MODE_HOMING) ? home_qpos_ : q;
+      } else if (cur_state == MODE_HOMING) {
+        q_home_start = q;
+      } else if (cur_state == MODE_ACTIVE) {
+        q_user = q;
+        active_t_start = now_sec;
+      }
+    }
+
+    // ---- mirror peer → local frame ----
+    std::array<double, 6> peer_q_local{}, peer_dq_local{};
+    if (bilateral_active) {
+      for (int i = 0; i < 6; ++i) {
+        const double delta = raw_peer_q[i] - peer_home_[i];
+        peer_q_local[i]  = home_qpos_[i] + mirror_sign_[i] * delta;
+        peer_dq_local[i] = mirror_sign_[i] * raw_peer_dq[i];
+      }
+    }
+
+    // ---- control law ----
+    std::array<double, 6> tau{};
+    // gravity compensation: firmware handles it when gravity_comp_internal
+    // is true (our default). So tau_grav is always zero here.
+    const double ACTIVE_RAMP = 0.5;  // soft-start window [s]
+
+    switch (cur_state) {
+      case MODE_ACTIVE: {
+        const double ramp = std::min(
+            1.0, (now_sec - active_t_start) / ACTIVE_RAMP);
+        for (int i = 0; i < 6; ++i) {
+          // user-spring (zero when KP_USER=0 in current config)
+          double tau_user = cfg_.leader_kp_user[i] * (q_user[i] - q[i])
+                          - cfg_.leader_kd_user[i] * dq[i];
+          // bilateral coupling with continuous deadband + soft-start ramp
+          double tau_bi = 0.0;
+          if (bilateral_active) {
+            double raw = cfg_.leader_kp_bi[i] * (peer_q_local[i] - q[i])
+                       + cfg_.leader_kd_bi[i] * (peer_dq_local[i] - dq[i]);
+            double mag = std::abs(raw);
+            double excess = std::max(0.0, mag - cfg_.leader_tau_bi_deadband[i]);
+            tau_bi = ramp * std::copysign(excess, raw);
+          }
+          tau[i] = tau_user + tau_bi;
+        }
+        break;
+      }
+      case MODE_PAUSED:
+        for (int i = 0; i < 6; ++i) {
+          tau[i] = cfg_.leader_kp_hold[i] * (q_hold[i] - q[i])
+                 - cfg_.leader_kd_hold[i] * dq[i];
+        }
+        break;
+      case MODE_HOMING: {
+        const double dur = (h_duration > 0) ? h_duration : cfg_.homing_duration;
+        const double t = std::max(0.0, now_sec - h_t_start);
+        const double alpha = std::min(t / dur, 1.0);
+        const double ease = quintic_ease(alpha);
+        std::array<double, 6> q_des{};
+        for (int i = 0; i < 6; ++i) {
+          q_des[i] = (1.0 - ease) * q_home_start[i] + ease * home_qpos_[i];
+          tau[i] = cfg_.leader_kp_hold[i] * (q_des[i] - q[i])
+                 - cfg_.leader_kd_hold[i] * dq[i];
+        }
+        // completion check — publish PAUSED, seed q_user at home
+        if (alpha >= 1.0) {
+          q_user = home_qpos_;
+          publish_mode(MODE_PAUSED);
+          RCLCPP_INFO(get_logger(), "HOMING complete → PAUSED");
+        }
+        // TODO: homing collision detection when we have tau_contact
+        break;
+      }
+      case MODE_FREEDRIVE:
+      default:
+        // tau already zero
+        break;
+    }
+
+    // ---- clip to torque_limit ----
+    for (int i = 0; i < 6; ++i) {
+      tau[i] = std::clamp(tau[i], -torque_limit_[i], torque_limit_[i]);
+      tau_cmd[i] = tau[i];
+    }
+
+    // ---- write torque ----
     driver_->writeJointCommand(
         tau_cmd,
         urcl::comm::ControlMode::MODE_TORQUE,
         urcl::RobotReceiveTimeout::millisec(20));
 
-    // ---- Publish state ----
+    // ---- publish state ----
     publish_state(q, dq);
 
     // ---- 1 Hz diag ----
     if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {
       log_counter = 0;
-      RCLCPP_INFO(get_logger(), "%s", jitter.log_line("[JIT]").c_str());
+      double tau_max = 0.0;
+      for (double v : tau) tau_max = std::max(tau_max, std::abs(v));
+      RCLCPP_INFO(get_logger(),
+        "[DIAG] mode=%d |tau|max=%.2fN·m  %s",
+        cur_state, tau_max, jitter.log_line("").c_str());
     }
 
+    prev_state = cur_state;
     deadline += period;
     sleep_until(deadline);
   }
