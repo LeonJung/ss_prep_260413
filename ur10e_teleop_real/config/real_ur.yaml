@@ -41,12 +41,17 @@ leader:
   KD_USER:   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   KP_HOLD:   [100.0, 100.0, 50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,  12.0, 10.0, 10.0, 10.0]
-  # Bilateral coupling — position spring only, no velocity damping.
-  # Iter-A tuning: KD_BI=0 removes viscous drag felt by the user during
-  # fast hand motion. Contact feedback still comes through via KP_BI as
-  # tracking error grows when follower gets stuck.
+  # Bilateral coupling with deadband (Iter-A + Iter-C).
+  # Free motion produces tiny tracking residuals that used to bleed
+  # through KP_BI as a baseline resistance; the deadband zeroes those.
+  # Real contact pushes error well past threshold → full spring kicks
+  # in, giving a clear "wall" feel.
   KP_BI:     [40.0, 40.0, 25.0, 12.0, 12.0, 12.0]
   KD_BI:     [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
+  # Per-joint deadband in Nm. Continuous form: tau = sign(raw) *
+  # max(0, |raw| - threshold). Below threshold = 0 (freedrive), above =
+  # full minus threshold (smooth onset, no discontinuity).
+  TAU_BI_DEADBAND: [2.0, 2.0, 1.5, 0.5, 0.5, 0.5]
   # With KP_USER=0 the user-spring cannot exceed threshold, so OVERFORCE_USER
   # becomes irrelevant. Keep large numbers as sentinels.
   OVERFORCE_USER:       [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0]

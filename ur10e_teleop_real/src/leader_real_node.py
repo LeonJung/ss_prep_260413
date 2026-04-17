@@ -181,6 +181,7 @@ class LeaderReal(Node):
         self.KD_HOLD = np.array(lcfg['KD_HOLD'])
         self.KP_BI   = np.array(lcfg['KP_BI'])
         self.KD_BI   = np.array(lcfg['KD_BI'])
+        self.TAU_BI_DEADBAND = np.array(lcfg.get('TAU_BI_DEADBAND', [0.0]*N))
         self.OVERFORCE_USER       = np.array(lcfg['OVERFORCE_USER'])
         self.OVERFORCE_CONSTRAINT = np.array(lcfg['OVERFORCE_CONSTRAINT'])
 
@@ -414,8 +415,13 @@ class LeaderReal(Node):
                         # synchronized at the moment ACTIVE is entered.
                         ACTIVE_RAMP = 0.5
                         ramp = min(1.0, (now - active_t_start) / ACTIVE_RAMP)
-                        tau_bi = ramp * (self.KP_BI * (peer_q - q)
-                                         + self.KD_BI * (peer_dq - dq))
+                        tau_bi_raw = (self.KP_BI * (peer_q - q)
+                                      + self.KD_BI * (peer_dq - dq))
+                        # Continuous deadband: zero below threshold, smooth
+                        # onset above (no discontinuity).
+                        mag = np.abs(tau_bi_raw)
+                        excess = np.maximum(0.0, mag - self.TAU_BI_DEADBAND)
+                        tau_bi = ramp * np.sign(tau_bi_raw) * excess
                     else:
                         tau_bi = np.zeros(N)
                     tau = tau_user + tau_bi + tau_grav
