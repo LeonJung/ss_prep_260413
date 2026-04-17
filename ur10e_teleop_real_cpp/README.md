@@ -40,14 +40,16 @@ source install/setup.bash
 
 ## RT mode — permissions
 
-To actually enter SCHED_FIFO and mlockall, the binaries need the right caps:
+To actually enter SCHED_FIFO and mlockall, the binaries need
+CAP_SYS_NICE + CAP_IPC_LOCK. Use the helper:
 
 ```bash
-sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
-    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/leader_node
-sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
-    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/follower_node
+bash script/setcap_rt.sh              # grants caps to all 3 binaries
+bash script/setcap_rt.sh leader_node  # only one
+bash script/setcap_rt.sh --clear      # removes caps
 ```
+
+**Rerun after every `colcon build`** — the rebuilt binary loses its caps.
 
 Without caps the executables still run, but `--rt-mode true` will print a
 warning and fall back to normal scheduling.
@@ -57,18 +59,11 @@ warning and fall back to normal scheduling.
 Standalone timing test (no ROS, no robot — just the cyclic sleep loop):
 
 ```bash
-# before `setcap`: both runs fall through to normal scheduling
+# grant caps (rerun after every colcon build)
+bash script/setcap_rt.sh
+
+# compare
 python3 script/rt_comparison.py --duration 30
-
-# one-time: grant caps so RT actually engages
-sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
-    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/jitter_benchmark
-sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
-    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/leader_node
-sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
-    install/ur10e_teleop_real_cpp/lib/ur10e_teleop_real_cpp/follower_node
-
-# then:
 python3 script/rt_comparison.py --duration 30 --save-csv /tmp/jit
 python3 script/rt_comparison.py --duration 30 --plot   # needs matplotlib
 ```
