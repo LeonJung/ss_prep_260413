@@ -110,6 +110,10 @@ Mode 숫자:
 
 각 로봇을 **다른 PC** 에서 제어하려면 split launch files 사용.
 
+**Verified**: Zenoh RMW (`rmw_zenoh_cpp`) 환경에서 두 PC 분산 실행 확인 완료.
+Cross-subnet 이라도 zenoh 가 discovery/라우팅 처리해줘서 DDS 에 필요했던
+unicast profile 이나 `ROS_DISCOVERY_SERVER` 설정 없이 바로 동작.
+
 ### 전제
 
 - 두 PC 가 동일 **RMW** (e.g. `rmw_zenoh_cpp`) 및 **같은 `ROS_DOMAIN_ID`** (기본 0)
