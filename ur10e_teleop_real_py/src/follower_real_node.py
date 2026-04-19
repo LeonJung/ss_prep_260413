@@ -37,6 +37,11 @@ except Exception:
     pass
 from dummy_control import DummyControl
 from environment_sensing_data_emulator import EnvironmentEmulator
+try:
+    from ur_jacobian import ur_jacobian, tcp_position
+    _HAS_UR_JACOBIAN = True
+except Exception:
+    _HAS_UR_JACOBIAN = False
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -134,6 +139,26 @@ class FollowerReal(Node):
         # Joint mirror sign
         mirror_cfg = self.cfg.get('joint_mirror', {})
         self.MIRROR_SIGN = np.array(mirror_cfg.get('sign', [1]*N))
+
+        # ---- TCP workspace safety (2-tier virtual wall) ----
+        wl = self.cfg.get('workspace_limits', {}) or {}
+        self.ws_enabled = bool(wl.get('enabled', False))
+        self.ws_xyz_min = np.array(wl.get('xyz_min', [-1e9, -1e9, -1e9]),
+                                    dtype=float)
+        self.ws_xyz_max = np.array(wl.get('xyz_max', [ 1e9,  1e9,  1e9]),
+                                    dtype=float)
+        self.ws_k_wall = float(wl.get('k_wall', 2000.0))
+        self.ws_soft_penetration = float(wl.get('soft_penetration', 0.02))
+        if self.ws_enabled and not _HAS_UR_JACOBIAN:
+            self.get_logger().warn(
+                'workspace_limits.enabled=true but ur_jacobian import '
+                'failed — feature DISABLED at runtime.')
+            self.ws_enabled = False
+        if self.ws_enabled:
+            self.get_logger().info(
+                f'workspace safety ON: box={self.ws_xyz_min.tolist()} '
+                f'..{self.ws_xyz_max.tolist()}  k={self.ws_k_wall}  '
+                f'hard_pen={self.ws_soft_penetration} m')
 
     def _mirror_peer_to_local(self, peer_q: np.ndarray) -> np.ndarray:
         """Convert peer (leader) joint angles to follower coordinate frame."""
@@ -351,6 +376,34 @@ class FollowerReal(Node):
 
                 else:
                     tau = tau_grav
+
+                # ---- TCP workspace safety (2-tier virtual wall) ----
+                # Only active in ACTIVE mode — during HOMING / PAUSED /
+                # FREEDRIVE we don't override whatever the mode wants to do.
+                if self.ws_enabled and cur_state == MODE_ACTIVE:
+                    p_tcp = tcp_position(q, robot=self.robot_name)
+                    # per-axis penetration (positive when outside the box)
+                    pen_lo = self.ws_xyz_min - p_tcp   # > 0 on low-side overrun
+                    pen_hi = p_tcp - self.ws_xyz_max   # > 0 on high-side overrun
+                    pen_lo = np.maximum(pen_lo, 0.0)
+                    pen_hi = np.maximum(pen_hi, 0.0)
+                    max_pen = float(max(pen_lo.max(), pen_hi.max()))
+                    if max_pen > 0.0:
+                        # Synthetic contact force pushing back INTO the box.
+                        # On the low-side overrun (TCP below xyz_min), force
+                        # points in +axis direction (k * pen_lo); on high-side,
+                        # force points in -axis (-k * pen_hi).
+                        F = self.ws_k_wall * (pen_lo - pen_hi)   # (3,)
+                        F6 = np.concatenate([F, np.zeros(3)])    # pure force
+                        J = ur_jacobian(q, robot=self.robot_name)
+                        tau = tau + (J.T @ F6)
+                        # Hard-safety escalation
+                        if max_pen > self.ws_soft_penetration:
+                            if cur_state != MODE_PAUSED:
+                                self.get_logger().warn(
+                                    f'workspace HARD limit (pen={max_pen:.3f} m '
+                                    f'> {self.ws_soft_penetration} m) → PAUSED')
+                                self._publish_mode(MODE_PAUSED)
 
                 # Friction compensation (self-computed when firmware doesn't do it)
                 if not self.friction_comp:

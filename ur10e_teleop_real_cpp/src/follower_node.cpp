@@ -9,6 +9,8 @@
 #include <ur_client_library/types.h>
 #include <ur_client_library/ur/ur_driver.h>
 
+#include "ur10e_teleop_real_cpp/ur_jacobian.hpp"
+
 namespace ur10e_teleop_real_cpp {
 
 FollowerNode::FollowerNode(const Options& opts)
@@ -316,6 +318,32 @@ void FollowerNode::control_loop() {
       default:
         // tau already zero
         break;
+    }
+
+    // ---- TCP workspace safety (2-tier virtual wall) — ACTIVE only ----
+    if (cfg_.ws_enabled && cur_state == /*MODE_ACTIVE=*/0) {
+      auto p_tcp = tcp_position(q, opts_.robot_type);
+      double pen_lo[3], pen_hi[3];
+      double max_pen = 0.0;
+      for (int i = 0; i < 3; ++i) {
+        pen_lo[i] = std::max(0.0, cfg_.ws_xyz_min[i] - p_tcp(i));
+        pen_hi[i] = std::max(0.0, p_tcp(i) - cfg_.ws_xyz_max[i]);
+        max_pen = std::max({max_pen, pen_lo[i], pen_hi[i]});
+      }
+      if (max_pen > 0.0) {
+        Vec6d F6; F6.setZero();
+        for (int i = 0; i < 3; ++i)
+          F6(i) = cfg_.ws_k_wall * (pen_lo[i] - pen_hi[i]);
+        Mat66 J = ur_jacobian(q, opts_.robot_type);
+        Vec6d dtau = J.transpose() * F6;
+        for (int i = 0; i < 6; ++i) tau[i] += dtau(i);
+        if (max_pen > cfg_.ws_soft_penetration) {
+          RCLCPP_WARN(get_logger(),
+            "workspace HARD limit (pen=%.3f m > %.3f m) → PAUSED",
+            max_pen, cfg_.ws_soft_penetration);
+          publish_mode(/*MODE_PAUSED=*/1);
+        }
+      }
     }
 
     // clip

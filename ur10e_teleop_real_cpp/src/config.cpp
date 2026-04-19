@@ -65,6 +65,19 @@ bool load_config(const std::string& path, ControlConfig& out) {
   try_scalar(root, "auto_power_cycle",        out.auto_power_cycle);
   try_scalar(root, "timestep",                out.timestep);
 
+  // workspace_limits: {enabled, xyz_min[3], xyz_max[3], k_wall, soft_penetration}
+  if (auto wl = root["workspace_limits"]) {
+    try_scalar(wl, "enabled", out.ws_enabled);
+    try_scalar(wl, "k_wall",  out.ws_k_wall);
+    try_scalar(wl, "soft_penetration", out.ws_soft_penetration);
+    auto read3 = [](const YAML::Node& n, std::array<double, 3>& o) {
+      if (!n || !n.IsSequence() || n.size() != 3) return;
+      for (size_t i = 0; i < 3; ++i) o[i] = n[i].as<double>();
+    };
+    read3(wl["xyz_min"], out.ws_xyz_min);
+    read3(wl["xyz_max"], out.ws_xyz_max);
+  }
+
   try_vec6(root, "torque_limit",    out.torque_limit);
   out.has_leader_torque_limit =
     try_vec6_flag(root, "leader_torque_limit",   out.leader_torque_limit);

@@ -37,6 +37,13 @@ struct ControlConfig {
   // ---- auto power-cycle (Dashboard Server, port 29999) ----
   bool   auto_power_cycle         = false;
 
+  // ---- workspace (TCP bounding box, 2-tier virtual wall) ----
+  bool                    ws_enabled           = false;
+  std::array<double, 3>   ws_xyz_min           = {-1e9, -1e9, -1e9};
+  std::array<double, 3>   ws_xyz_max           = { 1e9,  1e9,  1e9};
+  double                  ws_k_wall            = 2000.0;   // N/m
+  double                  ws_soft_penetration  = 0.02;     // m (hard-escalation threshold)
+
   // ---- leader gains ----
   Vec6 leader_kp_user   = {0, 0, 0, 0, 0, 0};
   Vec6 leader_kd_user   = {0, 0, 0, 0, 0, 0};

@@ -41,6 +41,28 @@ homing_contact_threshold: 0.3  # fraction of OVERFORCE_CONSTRAINT to detect coll
 # Requires the robot to be in Remote Control mode.
 auto_power_cycle: false
 
+# --- TCP workspace safety (2-tier virtual wall) ---
+# When enabled, monitors follower's TCP position (from forward kinematics of
+# actual_q) each cycle and reacts if it leaves the bounding box.
+#
+#   SOFT tier: once TCP penetrates a wall, a synthetic contact force
+#              F_wall = k_wall * penetration is applied through the same
+#              haptic path real F/T feedback would use (J^T · F → joint torque).
+#              The user feels the wall on the leader as if it were a real
+#              obstacle.
+#
+#   HARD tier: if penetration exceeds soft_penetration threshold (i.e., the
+#              user ignored the soft warning and kept pushing), the follower
+#              node publishes MODE_PAUSED to halt motion.
+#
+# Set enabled: false (or omit the section) to disable the feature entirely.
+workspace_limits:
+  enabled: false
+  xyz_min: [-0.80, -0.80, 0.00]       # meters, base frame
+  xyz_max: [ 0.80,  0.80, 1.20]
+  k_wall:  2000.0                     # N/m  (spring stiffness into the wall)
+  soft_penetration: 0.02              # m — hard-safety escalation threshold
+
 # --- PD gains ---
 leader:
   # KP_USER = 0: pure haptic bilateral (drag leader by hand, no q_user spring).

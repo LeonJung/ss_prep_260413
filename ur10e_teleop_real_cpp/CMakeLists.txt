@@ -51,6 +51,7 @@ add_executable(follower_node
   src/follower_main.cpp
   src/config.cpp
   src/dashboard_client.cpp
+  src/ur_jacobian.cpp
 )
 ament_target_dependencies(follower_node
   rclcpp sensor_msgs std_msgs ur_client_library
