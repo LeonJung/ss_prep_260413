@@ -105,6 +105,24 @@ end
 rtde_stop()
 """
 
+# URScript B — position-control homing. Hot-swapped into the controller
+# for the duration of MODE_HOMING so movej() can settle the arm at the
+# exact target pose. Target joint angles are template-substituted into
+# the script text (no register coordination needed). When movej returns,
+# the script ends; PC re-uploads URSCRIPT_TORQUE_CONTROL and resumes
+# torque mode from zero tracking error.
+URSCRIPT_POS_HOMING_TEMPLATE = """\
+def rtde_movej_home():
+  textmsg("[rtde_movej_home] START")
+  target = [{h0}, {h1}, {h2}, {h3}, {h4}, {h5}]
+  textmsg("[rtde_movej_home] movej a={accel} v={vel}")
+  movej(target, a={accel}, v={vel})
+  textmsg("[rtde_movej_home] DONE")
+end
+
+rtde_movej_home()
+"""
+
 # UR robot_mode enum (from UR documentation)
 _ROBOT_MODE_NAMES = {
     -1: 'UNKNOWN',
@@ -391,6 +409,43 @@ class URControl:
             print(f'[URControl] writes={self._write_count}  '
                   f'|tau|max={np.abs(self._last_tau).max():.2f}  '
                   f'recv={recv}  robot_mode={mode}  safety={safety}')
+        return ok
+
+    # ---- Position-control homing (URScript hot-swap) ---------------------
+
+    def upload_pos_homing(self, home_q, accel: float = 0.8,
+                          vel: float = 0.3) -> bool:
+        """Hot-swap URSCRIPT_POS_HOMING on the UR (replacing the torque
+        loop) so the controller runs movej(home_q) natively. Target angles
+        are baked into the script text — no register coordination needed.
+
+        Caller is responsible for later calling restore_torque_script()
+        once the move completes (polled via read_joint_state())."""
+        if not self._upload_urscript or not self._connected:
+            return False
+        script = URSCRIPT_POS_HOMING_TEMPLATE.format(
+            h0=float(home_q[0]), h1=float(home_q[1]), h2=float(home_q[2]),
+            h3=float(home_q[3]), h4=float(home_q[4]), h5=float(home_q[5]),
+            accel=float(accel), vel=float(vel))
+        ok = self._send_urscript(script)
+        if ok:
+            print(f'[URControl] uploaded pos-homing URScript  target='
+                  f'{[round(float(v), 4) for v in home_q]}  a={accel}  v={vel}')
+        return ok
+
+    def restore_torque_script(self) -> bool:
+        """Re-upload the torque-loop URScript after a pos-homing hot-swap.
+        Writes cmd_mode=0 + zero tau to input registers BEFORE the upload
+        so the restored script starts in a safe state."""
+        if not self._upload_urscript or not self._connected:
+            return False
+        try:
+            self._conn.send_input(np.zeros(N), control_mode=0)
+        except Exception:
+            pass
+        ok = self._send_urscript(URSCRIPT_TORQUE_CONTROL)
+        if ok:
+            print('[URControl] restored torque-loop URScript')
         return ok
 
     def read_status(self) -> dict:

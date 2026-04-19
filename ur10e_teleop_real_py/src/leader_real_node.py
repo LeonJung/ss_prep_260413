@@ -336,6 +336,11 @@ class LeaderReal(Node):
         RESET_STARTUP_GRACE = 2.0
         # Bilateral soft-start timer (reset on each PAUSED→ACTIVE transition)
         active_t_start = startup_time
+        # Position-control homing state (URScript hot-swap)
+        homing_script_uploaded = False
+        homing_start_time = 0.0
+        HOMING_POS_TOL = 0.01   # rad; |q - home| threshold per joint
+        HOMING_TIMEOUT = 20.0   # s
         # 1Hz diagnostic log
         last_diag_t = 0.0
         q_prev_diag = q_init.copy()
@@ -434,27 +439,52 @@ class LeaderReal(Node):
 
                 elif cur_state == MODE_HOMING:
                     tau_user = np.zeros(N)
-                    dur = h_duration if h_duration > 0 else HOMING_DURATION
-                    t = max(0.0, now - h_t_start)
-                    alpha = min(t / dur, 1.0)
-                    ease = _quintic(alpha)
-                    q_des = (1.0 - ease) * q_home_start + ease * self.HOME_QPOS
-                    tau = (self.KP_HOLD * (q_des - q)
-                           - self.KD_HOLD * dq + tau_grav)
-                    # Collision detection during homing (soft threshold)
-                    homing_thresh_frac = self.cfg.get(
-                        'homing_contact_threshold', 0.3)
-                    abs_c = np.abs(tau_contact)
-                    if np.any(abs_c > self.OVERFORCE_CONSTRAINT * homing_thresh_frac):
-                        i = int(np.argmax(abs_c))
-                        self.get_logger().warn(
-                            f'HOMING stopped — contact on joint[{i}] = '
-                            f'{tau_contact[i]:+.1f} Nm')
-                        self._publish_mode(MODE_PAUSED)
-                    elif alpha >= 1.0:
-                        q_user = self.HOME_QPOS.copy()
-                        self._publish_mode(MODE_PAUSED)
-                        self.get_logger().info('HOMING complete → PAUSED')
+                    # Position-control homing via URScript hot-swap (URControl
+                    # only — DummyControl falls back to PD quintic below).
+                    if hasattr(self.robot, 'upload_pos_homing'):
+                        if not homing_script_uploaded:
+                            # First iter in HOMING: swap to movej URScript.
+                            self.get_logger().info(
+                                f'HOMING → uploading movej URScript, target='
+                                f'{self.HOME_QPOS.round(4).tolist()}')
+                            self.robot.upload_pos_homing(self.HOME_QPOS.tolist())
+                            homing_script_uploaded = True
+                            homing_start_time = now
+                        tau = np.zeros(N)  # torque loop is not running
+                        err = float(np.max(np.abs(q - self.HOME_QPOS)))
+                        elapsed = now - homing_start_time
+                        # Allow ~1 s for the hot-swap + movej to get going
+                        if elapsed > 1.0 and err < HOMING_POS_TOL:
+                            self.robot.restore_torque_script()
+                            time.sleep(0.3)   # brief settle for new URScript
+                            q_user = self.HOME_QPOS.copy()
+                            self._publish_mode(MODE_PAUSED)
+                            self.get_logger().info(
+                                f'HOMING complete (err={err:.4f} rad, '
+                                f'{elapsed:.1f}s) → torque script restored → PAUSED')
+                            homing_script_uploaded = False
+                        elif elapsed > HOMING_TIMEOUT:
+                            self.robot.restore_torque_script()
+                            time.sleep(0.3)
+                            q_user = self.HOME_QPOS.copy()
+                            self._publish_mode(MODE_PAUSED)
+                            self.get_logger().warn(
+                                f'HOMING timeout after {elapsed:.1f}s '
+                                f'(err={err:.4f} rad) → PAUSED anyway')
+                            homing_script_uploaded = False
+                    else:
+                        # DummyControl fallback — PD quintic spline.
+                        dur = h_duration if h_duration > 0 else HOMING_DURATION
+                        t = max(0.0, now - h_t_start)
+                        alpha = min(t / dur, 1.0)
+                        ease = _quintic(alpha)
+                        q_des = (1.0 - ease) * q_home_start + ease * self.HOME_QPOS
+                        tau = (self.KP_HOLD * (q_des - q)
+                               - self.KD_HOLD * dq + tau_grav)
+                        if alpha >= 1.0:
+                            q_user = self.HOME_QPOS.copy()
+                            self._publish_mode(MODE_PAUSED)
+                            self.get_logger().info('HOMING complete → PAUSED')
 
                 elif cur_state == MODE_FREEDRIVE:
                     # Zero-torque (firmware gravity comp only). User can move

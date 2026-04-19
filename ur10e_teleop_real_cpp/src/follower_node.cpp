@@ -267,6 +267,7 @@ void FollowerNode::control_loop() {
 
     // control law
     std::array<double, 6> tau{};
+    bool skip_torque_write = false;  // HOMING uses MODE_SERVOJ instead
     switch (cur_state) {
       case /*MODE_ACTIVE=*/0: {
         if (bilateral_active) {
@@ -290,20 +291,24 @@ void FollowerNode::control_loop() {
         }
         break;
       case /*MODE_HOMING=*/2: {
-        const double dur = (h_duration > 0) ? h_duration : cfg_.homing_duration;
-        const double t = std::max(0.0, now_sec - h_t_start);
-        const double alpha = std::min(t / dur, 1.0);
-        const double ease = quintic_ease_f(alpha);
-        std::array<double, 6> q_des{};
-        for (int i = 0; i < 6; ++i) {
-          q_des[i] = (1.0 - ease) * q_home_start[i] + ease * home_qpos_[i];
-          tau[i] = cfg_.follower_kp_hold[i] * (q_des[i] - q[i])
-                 - cfg_.follower_kd_hold[i] * dq[i];
-        }
-        if (alpha >= 1.0) {
+        // Position-control homing via MODE_SERVOJ — settles at the exact
+        // commanded pose so the torque loop can resume from zero error.
+        urcl::vector6d_t home_cmd;
+        for (int i = 0; i < 6; ++i) home_cmd[i] = home_qpos_[i];
+        driver_->writeJointCommand(
+            home_cmd,
+            urcl::comm::ControlMode::MODE_SERVOJ,
+            urcl::RobotReceiveTimeout::millisec(20));
+        skip_torque_write = true;
+        tau.fill(0.0);
+        double err = 0.0;
+        for (int i = 0; i < 6; ++i)
+          err = std::max(err, std::abs(q[i] - home_qpos_[i]));
+        if (err < 0.01) {
           q_target_init = home_qpos_;
           publish_mode(/*MODE_PAUSED=*/1);
-          RCLCPP_INFO(get_logger(), "HOMING complete → PAUSED");
+          RCLCPP_INFO(get_logger(),
+            "HOMING complete (err=%.4f rad) → PAUSED", err);
         }
         break;
       }
@@ -319,10 +324,12 @@ void FollowerNode::control_loop() {
       tau_cmd[i] = tau[i];
     }
 
-    driver_->writeJointCommand(
-        tau_cmd,
-        urcl::comm::ControlMode::MODE_TORQUE,
-        urcl::RobotReceiveTimeout::millisec(20));
+    if (!skip_torque_write) {
+      driver_->writeJointCommand(
+          tau_cmd,
+          urcl::comm::ControlMode::MODE_TORQUE,
+          urcl::RobotReceiveTimeout::millisec(20));
+    }
 
     publish_state(q, dq);
 

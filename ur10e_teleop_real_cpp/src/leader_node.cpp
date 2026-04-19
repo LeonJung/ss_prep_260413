@@ -318,6 +318,7 @@ void LeaderNode::control_loop() {
     // gravity compensation: firmware handles it when gravity_comp_internal
     // is true (our default). So tau_grav is always zero here.
     const double ACTIVE_RAMP = 0.5;  // soft-start window [s]
+    bool skip_torque_write = false;  // set by HOMING branch (uses MODE_SERVOJ)
 
     switch (cur_state) {
       case MODE_ACTIVE: {
@@ -347,23 +348,28 @@ void LeaderNode::control_loop() {
         }
         break;
       case MODE_HOMING: {
-        const double dur = (h_duration > 0) ? h_duration : cfg_.homing_duration;
-        const double t = std::max(0.0, now_sec - h_t_start);
-        const double alpha = std::min(t / dur, 1.0);
-        const double ease = quintic_ease(alpha);
-        std::array<double, 6> q_des{};
-        for (int i = 0; i < 6; ++i) {
-          q_des[i] = (1.0 - ease) * q_home_start[i] + ease * home_qpos_[i];
-          tau[i] = cfg_.leader_kp_hold[i] * (q_des[i] - q[i])
-                 - cfg_.leader_kd_hold[i] * dq[i];
-        }
-        // completion check — publish PAUSED, seed q_user at home
-        if (alpha >= 1.0) {
+        // Position-control homing via ur_client_library's MODE_SERVOJ.
+        // external_control.urscript runs servoj(home_q) each cycle on the
+        // controller, converging exactly at home_qpos_ so the torque loop
+        // can resume from zero tracking error.
+        urcl::vector6d_t home_cmd;
+        for (int i = 0; i < 6; ++i) home_cmd[i] = home_qpos_[i];
+        driver_->writeJointCommand(
+            home_cmd,
+            urcl::comm::ControlMode::MODE_SERVOJ,
+            urcl::RobotReceiveTimeout::millisec(20));
+        skip_torque_write = true;
+        tau.fill(0.0);
+        // Completion: |q - home| small on every joint.
+        double err = 0.0;
+        for (int i = 0; i < 6; ++i)
+          err = std::max(err, std::abs(q[i] - home_qpos_[i]));
+        if (err < 0.01) {   // ~0.57° per joint
           q_user = home_qpos_;
           publish_mode(MODE_PAUSED);
-          RCLCPP_INFO(get_logger(), "HOMING complete → PAUSED");
+          RCLCPP_INFO(get_logger(),
+            "HOMING complete (err=%.4f rad) → PAUSED", err);
         }
-        // TODO: homing collision detection when we have tau_contact
         break;
       }
       case MODE_FREEDRIVE:
@@ -378,11 +384,13 @@ void LeaderNode::control_loop() {
       tau_cmd[i] = tau[i];
     }
 
-    // ---- write torque ----
-    driver_->writeJointCommand(
-        tau_cmd,
-        urcl::comm::ControlMode::MODE_TORQUE,
-        urcl::RobotReceiveTimeout::millisec(20));
+    // ---- write torque (skipped during HOMING, which uses MODE_SERVOJ) ----
+    if (!skip_torque_write) {
+      driver_->writeJointCommand(
+          tau_cmd,
+          urcl::comm::ControlMode::MODE_TORQUE,
+          urcl::RobotReceiveTimeout::millisec(20));
+    }
 
     // ---- publish state ----
     publish_state(q, dq);
