@@ -293,10 +293,19 @@ void FollowerNode::control_loop() {
         }
         break;
       case /*MODE_HOMING=*/2: {
-        // Position-control homing via MODE_SERVOJ — settles at the exact
-        // commanded pose so the torque loop can resume from zero error.
+        // Position-control homing via MODE_SERVOJ. Ramp from q_home_start
+        // (captured on transition) to home_qpos_ over homing_duration
+        // using a quintic ease profile — commanding home_qpos_ directly
+        // exceeds UR's per-cycle joint-velocity limit.
+        const double t_elapsed = now_sec - h_t_start;
+        const double alpha = (h_duration > 0.0)
+                           ? std::clamp(t_elapsed / h_duration, 0.0, 1.0)
+                           : 1.0;
+        const double s = quintic_ease_f(alpha);
         urcl::vector6d_t home_cmd;
-        for (int i = 0; i < 6; ++i) home_cmd[i] = home_qpos_[i];
+        for (int i = 0; i < 6; ++i)
+          home_cmd[i] = q_home_start[i]
+                      + s * (home_qpos_[i] - q_home_start[i]);
         driver_->writeJointCommand(
             home_cmd,
             urcl::comm::ControlMode::MODE_SERVOJ,
@@ -306,7 +315,7 @@ void FollowerNode::control_loop() {
         double err = 0.0;
         for (int i = 0; i < 6; ++i)
           err = std::max(err, std::abs(q[i] - home_qpos_[i]));
-        if (err < 0.01) {
+        if (alpha >= 1.0 && err < 0.01) {
           q_target_init = home_qpos_;
           publish_mode(/*MODE_PAUSED=*/1);
           RCLCPP_INFO(get_logger(),

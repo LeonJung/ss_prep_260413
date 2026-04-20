@@ -354,23 +354,28 @@ void LeaderNode::control_loop() {
         }
         break;
       case MODE_HOMING: {
-        // Position-control homing via ur_client_library's MODE_SERVOJ.
-        // external_control.urscript runs servoj(home_q) each cycle on the
-        // controller, converging exactly at home_qpos_ so the torque loop
-        // can resume from zero tracking error.
+        // Position-control homing via MODE_SERVOJ with quintic ramp from
+        // q_home_start to home_qpos_ over homing_duration — commanding
+        // home_qpos_ directly exceeds UR's per-cycle velocity limit.
+        const double t_elapsed = now_sec - h_t_start;
+        const double alpha = (h_duration > 0.0)
+                           ? std::clamp(t_elapsed / h_duration, 0.0, 1.0)
+                           : 1.0;
+        const double s = quintic_ease(alpha);
         urcl::vector6d_t home_cmd;
-        for (int i = 0; i < 6; ++i) home_cmd[i] = home_qpos_[i];
+        for (int i = 0; i < 6; ++i)
+          home_cmd[i] = q_home_start[i]
+                      + s * (home_qpos_[i] - q_home_start[i]);
         driver_->writeJointCommand(
             home_cmd,
             urcl::comm::ControlMode::MODE_SERVOJ,
             urcl::RobotReceiveTimeout::millisec(20));
         skip_torque_write = true;
         tau.fill(0.0);
-        // Completion: |q - home| small on every joint.
         double err = 0.0;
         for (int i = 0; i < 6; ++i)
           err = std::max(err, std::abs(q[i] - home_qpos_[i]));
-        if (err < 0.01) {   // ~0.57° per joint
+        if (alpha >= 1.0 && err < 0.01) {
           q_user = home_qpos_;
           publish_mode(MODE_PAUSED);
           RCLCPP_INFO(get_logger(),
