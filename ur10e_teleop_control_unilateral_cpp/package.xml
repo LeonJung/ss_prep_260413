@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ur10e_teleop_control_unilateral_cpp</name>
+  <version>1.0.0</version>
+  <description>UR bilateral teleoperation (C++) — real hardware via ur_client_library, PREEMPT_RT aware.</description>
+  <maintainer email="your@email.com">UR10E Migration Project</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>ur_client_library</depend>
+  <depend>eigen3_cmake_module</depend>
+  <depend>yaml-cpp</depend>
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>
