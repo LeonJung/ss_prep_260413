@@ -39,7 +39,7 @@ homing_contact_threshold: 0.3  # fraction of OVERFORCE_CONSTRAINT to detect coll
 # and disconnect() runs Power Off (UR engages brakes automatically).
 # Leave false to keep the manual pendant workflow.
 # Requires the robot to be in Remote Control mode.
-auto_power_cycle: false
+auto_power_cycle: true
 
 # --- TCP workspace safety (2-tier virtual wall) ---
 # When enabled, monitors follower's TCP position (via forward kinematics of
