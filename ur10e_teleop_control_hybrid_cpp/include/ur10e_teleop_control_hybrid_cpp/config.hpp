@@ -91,6 +91,17 @@ struct ControlConfig {
   double hybrid_velocity_cutoff_hz  = 150.0;
   std::string hybrid_base_link = "base_link";
   std::string hybrid_tip_link  = "tool0";
+
+  // ---- energy tank (Tier C1 Two-Layer wrapper) ----
+  // When enabled, a passivity observer + tank-based modulator throttles
+  // the 4CH tracking effort so the system never dispenses more energy
+  // than it has harvested via virtual damping. Disabled by default
+  // so Phase-5 (bare 4CH Kf tuning) establishes a baseline ceiling.
+  bool   hybrid_tank_enabled        = false;
+  double hybrid_tank_e_max          = 5.0;   // J
+  double hybrid_tank_e_init         = 2.5;   // J
+  double hybrid_tank_refill_ceiling = 0.9;   // fraction of E_max
+  Vec6   hybrid_tank_d_dissipation  = {0.5, 0.5, 0.3, 0.1, 0.1, 0.1};  // Nms/rad
 };
 
 // Load config from a YAML file. Returns true on success, fills `out`.

@@ -20,6 +20,7 @@
 #include "ur10e_teleop_control_hybrid_cpp/dashboard_client.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/disturbance_observer.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/dynamics_model.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/energy_tank.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/four_channel_controller.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/rt_thread.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/velocity_estimator.hpp"
@@ -92,11 +93,12 @@ private:
   std::array<double, 6> peer_tau_{};
   bool peer_q_valid_ = false;
 
-  // ---- hybrid modules (Tier B1) ----
+  // ---- hybrid modules (Tier B1 core + C1 wrapper) ----
   std::unique_ptr<DynamicsModel>        dyn_;
   std::unique_ptr<VelocityEstimator>    vel_est_;
   std::unique_ptr<DisturbanceObserver>  dob_;
   std::unique_ptr<FourChannelController> ctrl_;
+  std::unique_ptr<EnergyTank>           tank_;  // null when disabled
 
   // mode (subscribed — can be overridden by external publishers)
   std::mutex mode_mtx_;

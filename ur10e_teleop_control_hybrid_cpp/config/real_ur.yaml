@@ -118,3 +118,15 @@ hybrid:
   velocity_cutoff_hz:  150.0  # VelocityEstimator LPF
   base_link: "base_link"
   tip_link:  "tool0"
+
+  # Two-Layer Energy Tank (Tier C1). Start disabled — enable after
+  # Phase 5 has found the bare-4CH stability ceiling.
+  tank:
+    enabled: false
+    e_max: 5.0              # J — tank capacity
+    e_init: 2.5             # J — initial level
+    refill_ceiling: 0.9     # fraction of e_max above which refill is throttled
+    # Per-joint virtual damping that refills the tank. Small values so
+    # free motion stays light; large values refill fast at the cost of
+    # a slightly "stickier" feel.
+    D_DISSIPATION: [0.5, 0.5, 0.3, 0.1, 0.1, 0.1]

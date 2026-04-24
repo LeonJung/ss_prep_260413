@@ -129,6 +129,14 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_scalar(hy, "velocity_cutoff_hz",  out.hybrid_velocity_cutoff_hz);
     try_scalar(hy, "base_link", out.hybrid_base_link);
     try_scalar(hy, "tip_link",  out.hybrid_tip_link);
+
+    if (const auto& tk = hy["tank"]) {
+      try_scalar(tk, "enabled",         out.hybrid_tank_enabled);
+      try_scalar(tk, "e_max",           out.hybrid_tank_e_max);
+      try_scalar(tk, "e_init",          out.hybrid_tank_e_init);
+      try_scalar(tk, "refill_ceiling",  out.hybrid_tank_refill_ceiling);
+      try_vec6(tk,   "D_DISSIPATION",   out.hybrid_tank_d_dissipation);
+    }
   }
 
   return true;

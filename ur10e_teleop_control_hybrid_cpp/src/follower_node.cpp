@@ -146,6 +146,20 @@ bool FollowerNode::connect_robot() {
       cfg_.hybrid_dob_cutoff_hz, cfg_.hybrid_dob_accel_cutoff_hz,
       cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm());
 
+  if (cfg_.hybrid_tank_enabled) {
+    EnergyTank::Params tp;
+    tp.E_max = cfg_.hybrid_tank_e_max;
+    tp.E_init = cfg_.hybrid_tank_e_init;
+    tp.refill_ceiling = cfg_.hybrid_tank_refill_ceiling;
+    tp.D_dissipation = vec6_to_eigen(cfg_.hybrid_tank_d_dissipation);
+    tank_ = std::make_unique<EnergyTank>(tp, cfg_.timestep);
+    RCLCPP_INFO(get_logger(),
+        "hybrid(C1): EnergyTank  E_max=%.2fJ  E_init=%.2fJ  ceiling=%.2f",
+        tp.E_max, tp.E_init, tp.refill_ceiling);
+  } else {
+    RCLCPP_INFO(get_logger(), "hybrid(C1): EnergyTank DISABLED (bare 4CH)");
+  }
+
   return true;
 }
 
@@ -340,6 +354,7 @@ void FollowerNode::control_loop() {
       }
       vel_est_->reset(q_e);
       dob_->reset(qd_zero);
+      if (tank_) tank_->reset();
     }
 
     // mirror peer → local (q, q̇, τ̂_ext)
@@ -367,7 +382,17 @@ void FollowerNode::control_loop() {
         const Eigen::Matrix<double, 6, 1> tau_4ch = ctrl_->compute(
             q_e, qd_hat, tau_ext_hat,
             q_peer_e, qd_peer_e, tau_peer_e, ramp);
-        for (int i = 0; i < 6; ++i) tau[i] = tau_4ch(i);
+        Eigen::Matrix<double, 6, 1> tau_final = tau_4ch;
+        // C1: Two-Layer Energy Tank — modulate only the tracking bracket.
+        if (tank_) {
+          const Eigen::Matrix<double, 6, 1> tau_static = ctrl_->compute(
+              q_e, qd_hat, tau_ext_hat,
+              q_peer_e, qd_peer_e, tau_peer_e, 0.0);
+          const Eigen::VectorXd tau_active = tau_4ch - tau_static;
+          const double alpha = tank_->step(tau_active, qd_hat);
+          tau_final = tau_static + alpha * tau_active;
+        }
+        for (int i = 0; i < 6; ++i) tau[i] = tau_final(i);
         break;
       }
       case /*MODE_PAUSED=*/1:
@@ -464,9 +489,16 @@ void FollowerNode::control_loop() {
       log_counter = 0;
       double tau_max = 0.0;
       for (double v : tau) tau_max = std::max(tau_max, std::abs(v));
-      RCLCPP_INFO(get_logger(),
-        "[DIAG] mode=%d |tau|max=%.2fN·m  %s",
-        cur_state, tau_max, jitter.log_line("").c_str());
+      if (tank_) {
+        RCLCPP_INFO(get_logger(),
+          "[DIAG] mode=%d |tau|max=%.2fN·m  tank E=%.2fJ α=%.2f  %s",
+          cur_state, tau_max, tank_->energy(), tank_->last_alpha(),
+          jitter.log_line("").c_str());
+      } else {
+        RCLCPP_INFO(get_logger(),
+          "[DIAG] mode=%d |tau|max=%.2fN·m  %s",
+          cur_state, tau_max, jitter.log_line("").c_str());
+      }
     }
 
     prev_state = cur_state;

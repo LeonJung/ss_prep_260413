@@ -9,11 +9,13 @@
 
 #include "ur10e_teleop_control_hybrid_cpp/disturbance_observer.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/dynamics_model.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/energy_tank.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/four_channel_controller.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/velocity_estimator.hpp"
 
 using ur10e_teleop_control_hybrid_cpp::DisturbanceObserver;
 using ur10e_teleop_control_hybrid_cpp::DynamicsModel;
+using ur10e_teleop_control_hybrid_cpp::EnergyTank;
 using ur10e_teleop_control_hybrid_cpp::FourChannelController;
 using ur10e_teleop_control_hybrid_cpp::VelocityEstimator;
 
@@ -162,6 +164,54 @@ int main(int argc, char** argv) {
     std::printf("4CH @ ramp=0:         τ    = ");
     for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_ramp0(i));
     std::printf("(expect ≈ g(q))\n");
+
+    // ---- EnergyTank sanity ----
+    EnergyTank::Params tp;
+    tp.E_max = 5.0;
+    tp.E_init = 2.5;
+    tp.refill_ceiling = 0.9;
+    tp.D_dissipation = Eigen::VectorXd::Constant(6, 1.0);
+    EnergyTank tank(tp, 0.002);
+
+    auto fmt_state = [&tank](const char* tag) {
+      std::printf("%-42s E=%.3fJ  α=%.3f  P_act=%+.3fW  refill=%+.4fJ\n",
+                  tag, tank.energy(), tank.last_alpha(),
+                  tank.last_P_active(), tank.last_refill());
+    };
+
+    std::printf("\nTank init:                                 ");
+    std::printf("E=%.3fJ (expect 2.5)\n", tank.energy());
+
+    // (1) No motion, no tau_active: no change, α=1
+    Eigen::VectorXd zero = Eigen::VectorXd::Zero(6);
+    tank.step(zero, zero);
+    fmt_state("Tank step(0,0):");
+
+    // (2) Active 5W vs D-refill 1W (from v₀=1) → net drain 4W, 500ms → -2J
+    // Start from ceiling so drain doesn't clip at 0.
+    tank.reset(4.5);
+    Eigen::VectorXd t_act(6); t_act << 5.0, 0, 0, 0, 0, 0;
+    Eigen::VectorXd v(6);     v     << 1.0, 0, 0, 0, 0, 0;   // P_diss=1W
+    for (int i = 0; i < 250; ++i) tank.step(t_act, v);
+    fmt_state("Tank 5W-drain 1W-refill, 0.5s from 4.5J:");
+
+    // (3) Sustained drain past empty → α clips to 0
+    for (int i = 0; i < 2000; ++i) tank.step(t_act, v);
+    fmt_state("Tank drain sustained 4s:");
+
+    // (4) Regenerative power (τ·q̇ < 0) with refill motion → E grows
+    tank.reset(0.0);
+    Eigen::VectorXd t_regen(6); t_regen << -1.0, 0, 0, 0, 0, 0;
+    for (int i = 0; i < 500; ++i) tank.step(t_regen, v);
+    fmt_state("Tank regen -1W for 1s (from 0):");
+
+    // (5) Damping refill only: q̇=[1,…], D=[1,…] → P_diss = 6 W refill
+    tank.reset(0.0);
+    Eigen::VectorXd v_all = Eigen::VectorXd::Ones(6);
+    for (int i = 0; i < 500; ++i) tank.step(zero, v_all);  // 1s of refill
+    fmt_state("Tank refill D·q̇² for 1s (from 0):");
+    std::printf("   ceiling = %.3fJ, E_max = %.3fJ\n",
+                tp.refill_ceiling * tp.E_max, tp.E_max);
 
     return 0;
   } catch (const std::exception& e) {
