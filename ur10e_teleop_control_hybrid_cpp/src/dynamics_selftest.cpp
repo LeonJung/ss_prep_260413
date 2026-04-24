@@ -7,9 +7,11 @@
 #include <iostream>
 #include <string>
 
+#include "ur10e_teleop_control_hybrid_cpp/disturbance_observer.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/dynamics_model.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/velocity_estimator.hpp"
 
+using ur10e_teleop_control_hybrid_cpp::DisturbanceObserver;
 using ur10e_teleop_control_hybrid_cpp::DynamicsModel;
 using ur10e_teleop_control_hybrid_cpp::VelocityEstimator;
 
@@ -82,6 +84,42 @@ int main(int argc, char** argv) {
     }
     std::printf("VelocityEstimator: final q̇̂(0)=%.4f (expected ≈1.0)\n",
                 ve.value()(0));
+
+    // DisturbanceObserver sanity: robot held still at q, with tau_applied
+    // = g(q) (perfect gravity comp). Expect τ̂_ext → 0 as filter settles.
+    DisturbanceObserver::Params dp;
+    dp.cutoff_hz = 60.0;
+    dp.accel_cutoff_hz = 100.0;
+    DisturbanceObserver dob(dyn, dp, 0.002);
+    Eigen::VectorXd qd_zero = Eigen::VectorXd::Zero(6);
+    Eigen::VectorXd g_q = dyn.gravity(q);
+    for (int i = 0; i < 2000; ++i) dob.update(q, qd_zero, g_q);
+    std::printf("\nDOB @ still, tau=g(q):   τ̂_ext = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", dob.value()(i));
+    std::printf("(expect ≈0)\n");
+
+    // Now: tau_applied = 0 (robot not fighting gravity), still held still
+    // externally. τ̂_ext should converge to g(q) (external = what holds
+    // it up).
+    dob.reset(qd_zero);
+    for (int i = 0; i < 2000; ++i) dob.update(q, qd_zero, qd_zero);
+    std::printf("DOB @ still, tau=0:      τ̂_ext = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", dob.value()(i));
+    std::printf("(expect ≈ g(q))\n");
+    std::printf("                         g(q)  = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", g_q(i));
+    std::printf("\n");
+
+    // Inject a fake external torque on joint 3 (+5 Nm). tau_applied still
+    // = g(q). Residual should ≈ 5 Nm on joint 3.
+    dob.reset(qd_zero);
+    Eigen::VectorXd tau_fake_ext(6);
+    tau_fake_ext << 0, 0, 0, 5.0, 0, 0;
+    Eigen::VectorXd tau_app = g_q - tau_fake_ext;  // robot must undershoot
+    for (int i = 0; i < 2000; ++i) dob.update(q, qd_zero, tau_app);
+    std::printf("DOB + external +5Nm j3:  τ̂_ext = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", dob.value()(i));
+    std::printf("(expect ≈ +5 on j3)\n");
 
     return 0;
   } catch (const std::exception& e) {
