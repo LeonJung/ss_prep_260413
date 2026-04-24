@@ -14,6 +14,14 @@
 
 namespace ur10e_teleop_control_hybrid_cpp {
 
+namespace {
+Eigen::VectorXd vec6_to_eigen(const Vec6& a) {
+  Eigen::VectorXd v(6);
+  for (int i = 0; i < 6; ++i) v(i) = a[i];
+  return v;
+}
+}  // namespace
+
 LeaderNode::LeaderNode(const Options& opts)
     : rclcpp::Node("leader_hybrid_node"), opts_(opts) {
   rt_cfg_.enabled      = opts.use_rt;
@@ -120,6 +128,40 @@ bool LeaderNode::connect_robot() {
     RCLCPP_INFO(get_logger(), "setFrictionCompensation(true)");
   }
 
+  // ---- hybrid (B1) modules ----
+  const std::string urdf_path =
+      opts_.resources_dir + "/" + opts_.robot_type + ".urdf";
+  try {
+    dyn_ = std::make_unique<DynamicsModel>(
+        urdf_path, cfg_.hybrid_base_link, cfg_.hybrid_tip_link);
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(get_logger(), "DynamicsModel load failed (%s): %s",
+                 urdf_path.c_str(), e.what());
+    return false;
+  }
+  vel_est_ = std::make_unique<VelocityEstimator>(
+      6, cfg_.hybrid_velocity_cutoff_hz, cfg_.timestep);
+
+  DisturbanceObserver::Params dob_p;
+  dob_p.cutoff_hz = cfg_.hybrid_dob_cutoff_hz;
+  dob_p.accel_cutoff_hz = cfg_.hybrid_dob_accel_cutoff_hz;
+  dob_p.viscous = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  dob_ = std::make_unique<DisturbanceObserver>(*dyn_, dob_p, cfg_.timestep);
+
+  FourChannelController::Params cp;
+  cp.Kp = vec6_to_eigen(cfg_.hybrid_kp);
+  cp.Kd = vec6_to_eigen(cfg_.hybrid_kd);
+  cp.Kf = vec6_to_eigen(cfg_.hybrid_kf);
+  cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  ctrl_ = std::make_unique<FourChannelController>(*dyn_, cp);
+
+  RCLCPP_INFO(get_logger(),
+      "hybrid(B1): URDF=%s  vel_fc=%.0fHz  dob_fc=%.0f/%.0fHz  "
+      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f",
+      urdf_path.c_str(), cfg_.hybrid_velocity_cutoff_hz,
+      cfg_.hybrid_dob_cutoff_hz, cfg_.hybrid_dob_accel_cutoff_hz,
+      cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm());
+
   return true;
 }
 
@@ -173,13 +215,17 @@ void LeaderNode::reset_cb(const std_msgs::msg::Int32::SharedPtr msg) {
 }
 
 void LeaderNode::publish_state(const std::array<double, 6>& q,
-                                const std::array<double, 6>& dq) {
+                                const std::array<double, 6>& dq,
+                                const std::array<double, 6>& tau_ext) {
   sensor_msgs::msg::JointState msg;
   msg.header.stamp = this->now();
   msg.name = {"shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
               "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
   msg.position.assign(q.begin(), q.end());
   msg.velocity.assign(dq.begin(), dq.end());
+  // hybrid: effort carries τ̂_ext (DOB estimate) so the peer can use it
+  // in the 4CH Kf·(τ̂_ext + τ̂_ext_peer) force-reflection term.
+  msg.effort.assign(tau_ext.begin(), tau_ext.end());
   state_pub_->publish(msg);
 }
 
@@ -210,13 +256,13 @@ void LeaderNode::control_loop() {
               (long)(period.count() / 1000),
               rt_cfg_.enabled ? "ON" : "OFF");
 
-  // ---- state variables (mirror leader_real_node.py) ----
+  // ---- state variables ----
   std::array<double, 6> q{}, dq{};
   std::array<double, 6> q_user{}, q_hold{}, q_home_start{};
   q_hold       = home_qpos_;
   q_home_start = home_qpos_;
 
-  // initial read to seed q_user
+  // initial read to seed q_user + observers
   {
     auto data = driver_->getDataPackage();
     if (data) {
@@ -227,7 +273,12 @@ void LeaderNode::control_loop() {
     }
     q_user = q;
   }
-  RCLCPP_INFO(get_logger(), "q_user seeded to actual_q");
+  Eigen::VectorXd q_e(6), qd_zero = Eigen::VectorXd::Zero(6);
+  for (int i = 0; i < 6; ++i) q_e(i) = q[i];
+  vel_est_->reset(q_e);
+  dob_->reset(qd_zero);
+  Eigen::VectorXd tau_applied_prev = Eigen::VectorXd::Zero(6);
+  RCLCPP_INFO(get_logger(), "q_user seeded; vel/DOB observers reset");
 
   int prev_state = MODE_ACTIVE;
   int log_counter = 0;
@@ -297,6 +348,12 @@ void LeaderNode::control_loop() {
       }
     }
 
+    // ---- update observers every cycle ----
+    for (int i = 0; i < 6; ++i) q_e(i) = q[i];
+    const Eigen::VectorXd qd_hat = vel_est_->update(q_e);
+    const Eigen::VectorXd tau_ext_hat =
+        dob_->update(q_e, qd_hat, tau_applied_prev);
+
     // ---- state transition ----
     if (cur_state != prev_state) {
       RCLCPP_INFO(get_logger(), "state %d → %d", prev_state, cur_state);
@@ -308,43 +365,42 @@ void LeaderNode::control_loop() {
         q_user = q;
         active_t_start = now_sec;
       }
+      // Reset observers on every transition to avoid spurious derivative
+      // spikes (HOMING moves the arm, ACTIVE entry has a q discontinuity
+      // potential, etc.).
+      vel_est_->reset(q_e);
+      dob_->reset(qd_zero);
     }
 
-    // ---- mirror peer effort → leader frame ----
-    // _ff does NOT use peer_q/peer_dq (no bilateral position coupling) —
-    // only peer_tau carries the haptic signal. Still mirror by joint sign
-    // so per-joint direction convention matches.
-    std::array<double, 6> peer_tau_local{};
+    // ---- mirror peer state (q, q̇, τ̂_ext) → leader frame ----
+    Eigen::VectorXd q_peer_e = q_e;   // seed so peer==self when invalid
+    Eigen::VectorXd qd_peer_e = qd_hat;
+    Eigen::VectorXd tau_peer_e = Eigen::VectorXd::Zero(6);
     if (peer_valid) {
-      for (int i = 0; i < 6; ++i)
-        peer_tau_local[i] = mirror_sign_[i] * raw_peer_tau[i];
+      for (int i = 0; i < 6; ++i) {
+        const double dq_peer = raw_peer_q[i] - peer_home_[i];
+        q_peer_e(i)  = home_qpos_[i] + mirror_sign_[i] * dq_peer;
+        qd_peer_e(i) = mirror_sign_[i] * raw_peer_dq[i];
+        tau_peer_e(i) = mirror_sign_[i] * raw_peer_tau[i];
+      }
     }
 
     // ---- control law ----
     std::array<double, 6> tau{};
-    // gravity compensation: firmware handles it when gravity_comp_internal
-    // is true (our default). So tau_grav is always zero here.
     const double ACTIVE_RAMP = 0.5;  // soft-start window [s]
     bool skip_torque_write = false;  // set by HOMING branch (uses MODE_SERVOJ)
 
     switch (cur_state) {
       case MODE_ACTIVE: {
-        // _ff: leader body is passive (firmware handles gravity). User drags
-        // leader by hand. F/T-reflected torque from follower is applied
-        // through K_FT * peer_effort; soft-start ramp avoids a step on
-        // PAUSED→ACTIVE transition. Light damping (KD_ACTIVE) stabilises
-        // the passive body and suppresses F/T-induced oscillation.
+        // Hybrid B1: Sensorless 4CH with DOB. Gravity/Coriolis are always
+        // fed forward (τ̂_ext cancellation too); only the Kp/Kd/Kf bracket
+        // is ramped for a soft start on PAUSED→ACTIVE.
         const double ramp = std::min(
             1.0, (now_sec - active_t_start) / ACTIVE_RAMP);
-        for (int i = 0; i < 6; ++i) {
-          double tau_user = cfg_.leader_kp_user[i] * (q_user[i] - q[i])
-                          - cfg_.leader_kd_user[i] * dq[i];
-          double tau_damp = -cfg_.leader_kd_active[i] * dq[i];
-          double tau_ft = 0.0;
-          if (peer_valid)
-            tau_ft = ramp * cfg_.leader_k_ft[i] * peer_tau_local[i];
-          tau[i] = tau_user + tau_damp + tau_ft;
-        }
+        const Eigen::Matrix<double, 6, 1> tau_4ch = ctrl_->compute(
+            q_e, qd_hat, tau_ext_hat,
+            q_peer_e, qd_peer_e, tau_peer_e, ramp);
+        for (int i = 0; i < 6; ++i) tau[i] = tau_4ch(i);
         break;
       }
       case MODE_PAUSED:
@@ -393,6 +449,7 @@ void LeaderNode::control_loop() {
     for (int i = 0; i < 6; ++i) {
       tau[i] = std::clamp(tau[i], -torque_limit_[i], torque_limit_[i]);
       tau_cmd[i] = tau[i];
+      tau_applied_prev(i) = tau[i];  // DOB reads this next cycle
     }
 
     // ---- write torque (skipped during HOMING, which uses MODE_SERVOJ) ----
@@ -403,8 +460,10 @@ void LeaderNode::control_loop() {
           urcl::RobotReceiveTimeout::millisec(20));
     }
 
-    // ---- publish state ----
-    publish_state(q, dq);
+    // ---- publish state (effort = τ̂_ext for peer's 4CH) ----
+    std::array<double, 6> tau_ext_arr{};
+    for (int i = 0; i < 6; ++i) tau_ext_arr[i] = tau_ext_hat(i);
+    publish_state(q, dq, tau_ext_arr);
 
     // ---- 1 Hz diag ----
     if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {

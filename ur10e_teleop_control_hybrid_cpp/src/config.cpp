@@ -119,6 +119,18 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_vec6(fr, "k",  out.friction_k);
   }
 
+  if (const auto& hy = root["hybrid"]) {
+    try_vec6(hy, "KP", out.hybrid_kp);
+    try_vec6(hy, "KD", out.hybrid_kd);
+    try_vec6(hy, "KF", out.hybrid_kf);
+    try_vec6(hy, "D_VISCOUS", out.hybrid_d_viscous);
+    try_scalar(hy, "dob_cutoff_hz",       out.hybrid_dob_cutoff_hz);
+    try_scalar(hy, "dob_accel_cutoff_hz", out.hybrid_dob_accel_cutoff_hz);
+    try_scalar(hy, "velocity_cutoff_hz",  out.hybrid_velocity_cutoff_hz);
+    try_scalar(hy, "base_link", out.hybrid_base_link);
+    try_scalar(hy, "tip_link",  out.hybrid_tip_link);
+  }
+
   return true;
 }
 

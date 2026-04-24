@@ -73,6 +73,24 @@ struct ControlConfig {
 
   // ---- control loop ----
   double timestep = 0.002;  // 500 Hz
+
+  // ---- hybrid (Tier B1 — Sensorless 4CH + DOB) ----
+  // 4-Channel Lawrence control law with model-based feedforward and
+  // joint-space DOB for τ̂_ext estimation.
+  //   τ_cmd = M(q){ Kp·(q_peer − q) + Kd·(q̇_peer − q̇̂)
+  //               + Kf·(τ̂_ext_peer + τ̂_ext) }
+  //         − τ̂_ext + C(q,q̇̂)·q̇̂ + D·q̇̂ + g(q)
+  // Kf = 0 recovers classic inverse-dynamics bilateral PD (Phase 4
+  // baseline); Kf > 0 adds force-reflected transparency (Phase 5).
+  Vec6 hybrid_kp = {100, 100, 60, 30, 30, 20};
+  Vec6 hybrid_kd = {20,  20,  12, 8,  8,  6};
+  Vec6 hybrid_kf = {0,   0,   0,  0,  0,  0};   // Phase-4 baseline
+  Vec6 hybrid_d_viscous = {0, 0, 0, 0, 0, 0};
+  double hybrid_dob_cutoff_hz       = 60.0;
+  double hybrid_dob_accel_cutoff_hz = 100.0;
+  double hybrid_velocity_cutoff_hz  = 150.0;
+  std::string hybrid_base_link = "base_link";
+  std::string hybrid_tip_link  = "tool0";
 };
 
 // Load config from a YAML file. Returns true on success, fills `out`.

@@ -16,7 +16,11 @@
 
 #include "ur10e_teleop_control_hybrid_cpp/config.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/dashboard_client.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/disturbance_observer.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/dynamics_model.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/four_channel_controller.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/rt_thread.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/velocity_estimator.hpp"
 
 namespace ur10e_teleop_control_hybrid_cpp {
 
@@ -69,7 +73,16 @@ private:
   std::mutex peer_mtx_;
   std::array<double, 6> peer_q_{};
   std::array<double, 6> peer_dq_{};
+  // hybrid: peer publishes τ̂_ext (DOB estimate) in the joint-state effort
+  // field.
+  std::array<double, 6> peer_tau_{};
   bool peer_q_valid_ = false;
+
+  // ---- hybrid modules (Tier B1) ----
+  std::unique_ptr<DynamicsModel>        dyn_;
+  std::unique_ptr<VelocityEstimator>    vel_est_;
+  std::unique_ptr<DisturbanceObserver>  dob_;
+  std::unique_ptr<FourChannelController> ctrl_;
 
   std::mutex mode_mtx_;
   int mode_state_ = /*MODE_ACTIVE*/ 0;

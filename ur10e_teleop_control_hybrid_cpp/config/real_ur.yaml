@@ -96,3 +96,25 @@ friction:
 
 # --- Control loop ---
 timestep: 0.002  # 500 Hz
+
+# --- Hybrid (Tier B1: Sensorless 4-Channel + DOB) ---
+# Phase-4 baseline: KF=0 so the law reduces to classic inverse-dynamics
+# bilateral PD (no force reflection). Gravity + Coriolis are fed forward
+# by the M/C/g model from `<resources_dir>/<robot_type>.urdf`.
+# Phase-5 will raise KF to render environment forces on the operator; a
+# higher KF both reduces apparent inertia (lighter arm) AND amplifies
+# contact reflection.
+#
+# KP/KD are per-joint tuning of the position/velocity coupling between
+# leader and follower. Conservative defaults — start low, raise for
+# responsiveness.
+hybrid:
+  KP:                 [100.0, 100.0,  60.0, 30.0, 30.0, 20.0]
+  KD:                 [ 20.0,  20.0,  12.0,  8.0,  8.0,  6.0]
+  KF:                 [  0.0,   0.0,   0.0,  0.0,  0.0,  0.0]   # Phase-4: zero
+  D_VISCOUS:          [  0.0,   0.0,   0.0,  0.0,  0.0,  0.0]   # modelled viscous damping
+  dob_cutoff_hz:       60.0   # Q-filter cutoff for τ̂_ext
+  dob_accel_cutoff_hz: 100.0  # q̈̂ pre-filter
+  velocity_cutoff_hz:  150.0  # VelocityEstimator LPF
+  base_link: "base_link"
+  tip_link:  "tool0"

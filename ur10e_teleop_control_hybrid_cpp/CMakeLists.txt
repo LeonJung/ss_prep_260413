@@ -32,11 +32,12 @@ add_library(rt_thread STATIC src/rt_thread.cpp)
 target_include_directories(rt_thread PUBLIC include)
 target_link_libraries(rt_thread PUBLIC pthread rt)
 
-# ---- hybrid_core: dynamics + velocity estimator + DOB (KDL-backed) ----
+# ---- hybrid_core: dynamics + velocity estimator + DOB + 4CH ctrl ----
 add_library(hybrid_core STATIC
   src/dynamics_model.cpp
   src/velocity_estimator.cpp
   src/disturbance_observer.cpp
+  src/four_channel_controller.cpp
 )
 target_include_directories(hybrid_core PUBLIC include)
 ament_target_dependencies(hybrid_core orocos_kdl_vendor kdl_parser)

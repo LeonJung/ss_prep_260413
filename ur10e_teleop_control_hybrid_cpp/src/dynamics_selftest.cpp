@@ -9,10 +9,12 @@
 
 #include "ur10e_teleop_control_hybrid_cpp/disturbance_observer.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/dynamics_model.hpp"
+#include "ur10e_teleop_control_hybrid_cpp/four_channel_controller.hpp"
 #include "ur10e_teleop_control_hybrid_cpp/velocity_estimator.hpp"
 
 using ur10e_teleop_control_hybrid_cpp::DisturbanceObserver;
 using ur10e_teleop_control_hybrid_cpp::DynamicsModel;
+using ur10e_teleop_control_hybrid_cpp::FourChannelController;
 using ur10e_teleop_control_hybrid_cpp::VelocityEstimator;
 
 int main(int argc, char** argv) {
@@ -120,6 +122,46 @@ int main(int argc, char** argv) {
     std::printf("DOB + external +5Nm j3:  τ̂_ext = ");
     for (int i = 0; i < 6; ++i) std::printf("%+.4f ", dob.value()(i));
     std::printf("(expect ≈ +5 on j3)\n");
+
+    // ---- FourChannelController sanity ----
+    FourChannelController::Params cp;
+    cp.Kp = Eigen::VectorXd::Constant(6, 10.0);
+    cp.Kd = Eigen::VectorXd::Constant(6, 1.0);
+    cp.Kf = Eigen::VectorXd::Zero(6);   // Phase-4 baseline
+    cp.D  = Eigen::VectorXd::Zero(6);
+    FourChannelController ctrl(dyn, cp);
+
+    Eigen::VectorXd tau_ext_zero = Eigen::VectorXd::Zero(6);
+
+    // (A) q == q_peer, zero velocities, zero τ̂_ext → tau should == g(q)
+    auto tau_hold = ctrl.compute(q, qd_zero, tau_ext_zero,
+                                 q, qd_zero, tau_ext_zero, 1.0);
+    std::printf("\n4CH @ matched (Kf=0): τ    = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_hold(i));
+    std::printf("\n                      g(q)  = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", g_q(i));
+    std::printf("(expect τ ≈ g(q))\n");
+
+    // (B) q_peer = q + 0.1·e₂ → Kp·M coupling term on joint 2 dominant
+    Eigen::VectorXd q_peer_test = q;
+    q_peer_test(2) += 0.1;
+    auto M_q = dyn.mass(q);
+    Eigen::VectorXd e_expect(6); e_expect.setZero(); e_expect(2) = 0.1;
+    Eigen::VectorXd tau_pd_expected = M_q * (cp.Kp.cwiseProduct(e_expect)) + g_q;
+    auto tau_pd = ctrl.compute(q, qd_zero, tau_ext_zero,
+                               q_peer_test, qd_zero, tau_ext_zero, 1.0);
+    std::printf("4CH @ q_peer+0.1·e₂:  τ    = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_pd(i));
+    std::printf("\n                      M·Kp·e+g = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_pd_expected(i));
+    std::printf("(expect match)\n");
+
+    // (C) ramp=0 → only gravity+C+D (no Kp/Kd/Kf contribution)
+    auto tau_ramp0 = ctrl.compute(q, qd_zero, tau_ext_zero,
+                                  q_peer_test, qd_zero, tau_ext_zero, 0.0);
+    std::printf("4CH @ ramp=0:         τ    = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_ramp0(i));
+    std::printf("(expect ≈ g(q))\n");
 
     return 0;
   } catch (const std::exception& e) {

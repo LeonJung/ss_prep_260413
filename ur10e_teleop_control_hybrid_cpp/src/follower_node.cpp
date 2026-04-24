@@ -13,6 +13,14 @@
 
 namespace ur10e_teleop_control_hybrid_cpp {
 
+namespace {
+Eigen::VectorXd vec6_to_eigen(const Vec6& a) {
+  Eigen::VectorXd v(6);
+  for (int i = 0; i < 6; ++i) v(i) = a[i];
+  return v;
+}
+}  // namespace
+
 FollowerNode::FollowerNode(const Options& opts)
     : rclcpp::Node("follower_hybrid_node"), opts_(opts) {
   rt_cfg_.enabled      = opts.use_rt;
@@ -103,6 +111,41 @@ bool FollowerNode::connect_robot() {
   if (cfg_.friction_comp) {
     driver_->setFrictionCompensation(true);
   }
+
+  // ---- hybrid (B1) modules ----
+  const std::string urdf_path =
+      opts_.resources_dir + "/" + opts_.robot_type + ".urdf";
+  try {
+    dyn_ = std::make_unique<DynamicsModel>(
+        urdf_path, cfg_.hybrid_base_link, cfg_.hybrid_tip_link);
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(get_logger(), "DynamicsModel load failed (%s): %s",
+                 urdf_path.c_str(), e.what());
+    return false;
+  }
+  vel_est_ = std::make_unique<VelocityEstimator>(
+      6, cfg_.hybrid_velocity_cutoff_hz, cfg_.timestep);
+
+  DisturbanceObserver::Params dob_p;
+  dob_p.cutoff_hz = cfg_.hybrid_dob_cutoff_hz;
+  dob_p.accel_cutoff_hz = cfg_.hybrid_dob_accel_cutoff_hz;
+  dob_p.viscous = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  dob_ = std::make_unique<DisturbanceObserver>(*dyn_, dob_p, cfg_.timestep);
+
+  FourChannelController::Params cp;
+  cp.Kp = vec6_to_eigen(cfg_.hybrid_kp);
+  cp.Kd = vec6_to_eigen(cfg_.hybrid_kd);
+  cp.Kf = vec6_to_eigen(cfg_.hybrid_kf);
+  cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  ctrl_ = std::make_unique<FourChannelController>(*dyn_, cp);
+
+  RCLCPP_INFO(get_logger(),
+      "hybrid(B1): URDF=%s  vel_fc=%.0fHz  dob_fc=%.0f/%.0fHz  "
+      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f",
+      urdf_path.c_str(), cfg_.hybrid_velocity_cutoff_hz,
+      cfg_.hybrid_dob_cutoff_hz, cfg_.hybrid_dob_accel_cutoff_hz,
+      cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm());
+
   return true;
 }
 
@@ -133,6 +176,12 @@ void FollowerNode::peer_cb(const sensor_msgs::msg::JointState::SharedPtr msg) {
     for (int i = 0; i < 6; ++i) peer_dq_[i] = msg->velocity[i];
   } else {
     peer_dq_.fill(0.0);
+  }
+  // hybrid: peer publishes τ̂_ext as effort for 4CH force reflection.
+  if (msg->effort.size() >= 6) {
+    for (int i = 0; i < 6; ++i) peer_tau_[i] = msg->effort[i];
+  } else {
+    peer_tau_.fill(0.0);
   }
   peer_q_valid_ = true;
 }
@@ -201,7 +250,13 @@ void FollowerNode::control_loop() {
     }
     q_target_init = q;
   }
-  RCLCPP_INFO(get_logger(), "q_target_init seeded to actual_q");
+  Eigen::VectorXd q_e(6), qd_zero = Eigen::VectorXd::Zero(6);
+  for (int i = 0; i < 6; ++i) q_e(i) = q[i];
+  vel_est_->reset(q_e);
+  dob_->reset(qd_zero);
+  Eigen::VectorXd tau_applied_prev = Eigen::VectorXd::Zero(6);
+  double active_t_start = 0.0;
+  RCLCPP_INFO(get_logger(), "q_target_init seeded; vel/DOB observers reset");
 
   // _ff: zero the wrist F/T sensor so the haptic path starts from a
   // calibrated baseline. Requires external_control.urscript to already be
@@ -255,16 +310,23 @@ void FollowerNode::control_loop() {
       h_t_start = mode_t_start_;
       h_duration = mode_duration_;
     }
-    std::array<double, 6> raw_peer_q{}, raw_peer_dq{};
+    std::array<double, 6> raw_peer_q{}, raw_peer_dq{}, raw_peer_tau{};
     bool bilateral_active = false;
     {
       std::lock_guard<std::mutex> lk(peer_mtx_);
       if (peer_q_valid_) {
         raw_peer_q = peer_q_;
         raw_peer_dq = peer_dq_;
+        raw_peer_tau = peer_tau_;
         bilateral_active = true;
       }
     }
+
+    // ---- update observers every cycle ----
+    for (int i = 0; i < 6; ++i) q_e(i) = q[i];
+    const Eigen::VectorXd qd_hat = vel_est_->update(q_e);
+    const Eigen::VectorXd tau_ext_hat =
+        dob_->update(q_e, qd_hat, tau_applied_prev);
 
     // state transition
     if (cur_state != prev_state) {
@@ -273,36 +335,39 @@ void FollowerNode::control_loop() {
         q_hold = (prev_state == /*MODE_HOMING=*/2) ? home_qpos_ : q;
       } else if (cur_state == /*MODE_HOMING=*/2) {
         q_home_start = q;
+      } else if (cur_state == /*MODE_ACTIVE=*/0) {
+        active_t_start = now_sec;
       }
+      vel_est_->reset(q_e);
+      dob_->reset(qd_zero);
     }
 
-    // mirror peer → local
-    std::array<double, 6> peer_q_local{}, peer_dq_local{};
+    // mirror peer → local (q, q̇, τ̂_ext)
+    Eigen::VectorXd q_peer_e  = q_e;
+    Eigen::VectorXd qd_peer_e = qd_hat;
+    Eigen::VectorXd tau_peer_e = Eigen::VectorXd::Zero(6);
     if (bilateral_active) {
       for (int i = 0; i < 6; ++i) {
         const double delta = raw_peer_q[i] - peer_home_[i];
-        peer_q_local[i]  = home_qpos_[i] + mirror_sign_[i] * delta;
-        peer_dq_local[i] = mirror_sign_[i] * raw_peer_dq[i];
+        q_peer_e(i)   = home_qpos_[i] + mirror_sign_[i] * delta;
+        qd_peer_e(i)  = mirror_sign_[i] * raw_peer_dq[i];
+        tau_peer_e(i) = mirror_sign_[i] * raw_peer_tau[i];
       }
     }
 
     // control law
     std::array<double, 6> tau{};
+    const double ACTIVE_RAMP = 0.5;  // soft-start window [s]
     bool skip_torque_write = false;  // HOMING uses MODE_SERVOJ instead
     switch (cur_state) {
       case /*MODE_ACTIVE=*/0: {
-        if (bilateral_active) {
-          for (int i = 0; i < 6; ++i) {
-            tau[i] = cfg_.follower_kp_track[i] * (peer_q_local[i] - q[i])
-                   + cfg_.follower_kd_track[i] * (peer_dq_local[i] - dq[i]);
-          }
-        } else {
-          // no peer yet — hold at seed
-          for (int i = 0; i < 6; ++i) {
-            tau[i] = cfg_.follower_kp_track[i] * (q_target_init[i] - q[i])
-                   - cfg_.follower_kd_track[i] * dq[i];
-          }
-        }
+        // Hybrid B1: Sensorless 4CH with DOB, symmetric with leader.
+        const double ramp = std::min(
+            1.0, (now_sec - active_t_start) / ACTIVE_RAMP);
+        const Eigen::Matrix<double, 6, 1> tau_4ch = ctrl_->compute(
+            q_e, qd_hat, tau_ext_hat,
+            q_peer_e, qd_peer_e, tau_peer_e, ramp);
+        for (int i = 0; i < 6; ++i) tau[i] = tau_4ch(i);
         break;
       }
       case /*MODE_PAUSED=*/1:
@@ -376,6 +441,7 @@ void FollowerNode::control_loop() {
     for (int i = 0; i < 6; ++i) {
       tau[i] = std::clamp(tau[i], -torque_limit_[i], torque_limit_[i]);
       tau_cmd[i] = tau[i];
+      tau_applied_prev(i) = tau[i];
     }
 
     if (!skip_torque_write) {
@@ -385,21 +451,14 @@ void FollowerNode::control_loop() {
           urcl::RobotReceiveTimeout::millisec(20));
     }
 
-    // _ff: map TCP wrench to joint-space (tau_contact = J^T · F_TCP) and
-    // publish as joint effort so leader can render it as haptic feedback.
-    // Note: this torque is NOT applied to the follower itself (firmware
-    // already resists the wrench through its PD tracking) — it is purely
-    // a signal channel.
-    std::array<double, 6> tau_contact{};
-    if (ft_valid) {
-      Mat66 J = ur_jacobian(q, opts_.robot_type);
-      Vec6d F6;
-      for (int i = 0; i < 6; ++i) F6(i) = F_tcp[i];
-      Vec6d tc = J.transpose() * F6;
-      for (int i = 0; i < 6; ++i) tau_contact[i] = tc(i);
-    }
-
-    publish_state(q, dq, tau_contact);
+    // hybrid: publish τ̂_ext (DOB estimate) as effort. Leader uses it as
+    // the τ_d term in its 4CH Kf·(τ̂_ext + τ̂_ext_peer) reflection.
+    // The F/T sensor reading (F_tcp / tau_contact) is now purely for
+    // diagnostics and can be surfaced elsewhere if needed.
+    (void)ft_valid; (void)F_tcp;
+    std::array<double, 6> tau_ext_arr{};
+    for (int i = 0; i < 6; ++i) tau_ext_arr[i] = tau_ext_hat(i);
+    publish_state(q, dq, tau_ext_arr);
 
     if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {
       log_counter = 0;
