@@ -41,6 +41,14 @@ class FourChannelController {
     // force-reflection benefit to offset this, so 0.0 is a safer
     // baseline. Ramp toward 1.0 alongside Kf in later phases.
     double tau_ext_cancel_gain{1.0};
+    // When true, use diag(M)·u_inner instead of M·u_inner — drops
+    // feedforward cross-coupling between joints. With imperfect URDF
+    // inertia, full M·u_inner amplifies wrist Kp·err onto proximal
+    // joints via off-diagonal terms (cancellation is imperfect because
+    // the real M differs from the modelled M). diag(M) eliminates this
+    // path, at the cost of slightly looser theoretical decoupling that
+    // would only matter with identified dynamics anyway.
+    bool use_diagonal_inertia{true};
   };
 
   FourChannelController(DynamicsModel& dyn, const Params& p);

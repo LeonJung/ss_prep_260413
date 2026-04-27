@@ -206,6 +206,33 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_full(i));
     std::printf("(expect ≈ -5 on j3)\n");
 
+    // (H) Cross-coupling test: only joint 3 (wrist_1) has positional err.
+    // With full M, off-diagonals project that into shoulder/elbow rows.
+    // With diag(M), only joint 3 gets a torque.
+    FourChannelController::Params cp_xfull = cp_fw;
+    cp_xfull.use_diagonal_inertia = false;
+    cp_xfull.Kp = Eigen::VectorXd::Constant(6, 0.0);
+    cp_xfull.Kp(3) = 1000.0;  // only wrist_1
+    cp_xfull.Kd = Eigen::VectorXd::Zero(6);
+    FourChannelController ctrl_xfull(dyn, cp_xfull);
+    Eigen::VectorXd q_peer_x = q;
+    q_peer_x(3) += 0.1;  // 0.1 rad of err on wrist_1 only
+    auto tau_xfull = ctrl_xfull.compute(q, qd_zero, tau_ext_zero,
+                                        q_peer_x, qd_zero, tau_ext_zero, 1.0);
+
+    FourChannelController::Params cp_xdiag = cp_xfull;
+    cp_xdiag.use_diagonal_inertia = true;
+    FourChannelController ctrl_xdiag(dyn, cp_xdiag);
+    auto tau_xdiag = ctrl_xdiag.compute(q, qd_zero, tau_ext_zero,
+                                        q_peer_x, qd_zero, tau_ext_zero, 1.0);
+
+    std::printf("4CH(full M, only wrist_1 err): τ = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_xfull(i));
+    std::printf("(off-diag → cross-talk)\n");
+    std::printf("4CH(diag M, only wrist_1 err): τ = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_xdiag(i));
+    std::printf("(non-j3 ≈ 0 — clean)\n");
+
     // ---- EnergyTank sanity ----
     EnergyTank::Params tp;
     tp.E_max = 5.0;

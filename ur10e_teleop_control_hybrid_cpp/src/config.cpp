@@ -128,6 +128,7 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_scalar(hy, "dob_accel_cutoff_hz",  out.hybrid_dob_accel_cutoff_hz);
     try_scalar(hy, "velocity_cutoff_hz",   out.hybrid_velocity_cutoff_hz);
     try_scalar(hy, "tau_ext_cancel_gain",  out.hybrid_tau_ext_cancel_gain);
+    try_scalar(hy, "use_diagonal_inertia", out.hybrid_use_diagonal_inertia);
     try_scalar(hy, "base_link", out.hybrid_base_link);
     try_scalar(hy, "tip_link",  out.hybrid_tip_link);
 

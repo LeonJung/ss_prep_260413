@@ -43,8 +43,13 @@ Eigen::Matrix<double, 6, 1> FourChannelController::compute(
                           + p_.Kf.cwiseProduct(tau_sum);
   u_inner *= ramp;
 
+  Eigen::Matrix<double, 6, 1> M_u =
+      p_.use_diagonal_inertia
+          ? Eigen::Matrix<double, 6, 1>(M.diagonal().cwiseProduct(u_inner))
+          : Eigen::Matrix<double, 6, 1>(M * u_inner);
+
   Eigen::Matrix<double, 6, 1> tau =
-        M * u_inner
+        M_u
       - p_.tau_ext_cancel_gain * tau_ext_hat
       + C
       + p_.D.cwiseProduct(q_dot_hat);

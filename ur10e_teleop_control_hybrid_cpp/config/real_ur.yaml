@@ -130,6 +130,12 @@ hybrid:
   # the peer's Kf·(τ̂_ext_peer + τ̂_ext) reflection term). Ramp this up
   # toward 1.0 alongside Kf for full SOTA transparency in later phases.
   tau_ext_cancel_gain: 0.0
+  # Use diag(M) instead of full M for the inner bracket. With imperfect
+  # URDF inertia, full M sends high wrist KP·err onto proximal joints
+  # via off-diagonal terms — observed as elbow/shoulder oscillating
+  # when the user pushes a wrist hard. Diagonal mode removes that path.
+  # Set false later if you have identified dynamics + want strict 4CH.
+  use_diagonal_inertia: true
   base_link: "base_link"
   tip_link:  "tool0"
 
