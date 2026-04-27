@@ -120,18 +120,26 @@ hybrid:
   # fix is system identification of M (next mission).
   KP:                 [100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
   KD:                 [ 20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
-  KF:                 [  0.0,   0.0,   0.0,  0.0,  0.0,  0.0]   # Phase-4: zero
-  D_VISCOUS:          [  0.0,   0.0,   0.0,  0.0,  0.0,  0.0]   # modelled viscous damping
+  # KF activates the 4CH force-reflection / apparent-inertia path. Kf
+  # is the inverse of apparent mass at a given joint (q̈ = Kf·τ_user
+  # in steady state when cancel_gain ≈ 1), so wrist values are larger
+  # to compensate for low physical inertia. These are conservative
+  # first-pass values — raise toward "passive feel" as oscillation
+  # margin allows.
+  KF:                 [  0.3,   0.3,   0.3,    0.5,    1.0,     3.0]
+  D_VISCOUS:          [  0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
   # DOB / velocity filter cutoffs — slower than first iteration so model
   # error doesn't ride into the control loop as broadband noise.
   dob_cutoff_hz:       30.0   # Q-filter cutoff for τ̂_ext (was 60)
   dob_accel_cutoff_hz: 50.0   # q̈̂ pre-filter (was 100)
   velocity_cutoff_hz:  80.0   # VelocityEstimator LPF (was 150)
-  # 0.0 disables the DOB→controller "self-cancellation" feedback locally.
-  # The DOB itself still runs and publishes τ̂_ext to the peer (used by
-  # the peer's Kf·(τ̂_ext_peer + τ̂_ext) reflection term). Ramp this up
-  # toward 1.0 alongside Kf for full SOTA transparency in later phases.
-  tau_ext_cancel_gain: 0.0
+  # τ̂_ext "self-cancellation" gain. 0 disables, 1 is the textbook 4CH
+  # value (apparent inertia → 0). κ=1 is marginally stable in the
+  # closed-loop DOB feedback (z=+1 mode), so leave a small contraction
+  # margin: 0.7 cancels most of the inertia while the loop still
+  # rejects DC bias from URDF model error in 100-500 ms. Raise toward
+  # 1.0 once transparency feel is dialed in.
+  tau_ext_cancel_gain: 0.7
   # 4CH perfect-transparency requires full M, so default is false.
   # Diagnostic-only escape hatch — set true to A/B-confirm a given
   # symptom is feedforward cross-coupling vs. some other cause. Real
