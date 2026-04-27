@@ -119,19 +119,13 @@ hybrid:
   # shoulder/elbow without identified dynamics.
   KP:                 [100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
   KD:                 [ 20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
-  # KF (legacy) seeds Kf_self AND Kf_peer for both sides — round-2
-  # symmetric baseline (stable but contact reflection felt weak).
+  # KF (legacy) seeds Kf_self AND Kf_peer for both sides. Round-2
+  # symmetric baseline + UR official URDF — the practical optimum
+  # under the URDF model. Pushing leader_KF_PEER higher (rounds 7/8)
+  # made shoulder noticeably heavier as follower-side M-model error
+  # leaked through. Lightness can't be improved further without
+  # system identification of the actual robot dynamics.
   KF:                 [  0.3,   0.3,   0.3,    0.5,    1.0,     3.0]
-  # leader_KF_PEER amplifies the leader's response to the follower's
-  # τ̂_ext. Mathematically it doesn't enter the leader's local DOB
-  # feedback loop (no stability constraint), but in dynamic motion the
-  # follower's M-model error leaks into τ̂_ext_self_f → leader sees it
-  # as τ̂_ext_peer → leader_KF_PEER amplifies the leak as a drag torque
-  # opposing user motion ("heavy" feel). Round 7 chose 3× the self
-  # gain — too aggressive, shoulder felt very heavy. Round 8 halves it
-  # to ~1.7× round-2 — keeps some of the contact-strength improvement
-  # while damping the model-error drag.
-  leader_KF_PEER:     [  0.5,   0.5,   0.5,    1.0,    2.0,     6.0]
   D_VISCOUS:          [  0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
   # DOB / velocity filter cutoffs — slower than first iteration so model
   # error doesn't ride into the control loop as broadband noise.
