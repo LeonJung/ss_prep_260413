@@ -109,44 +109,29 @@ timestep: 0.002  # 500 Hz
 # leader and follower. Conservative defaults — start low, raise for
 # responsiveness.
 hybrid:
-  # Asymmetric 4CH gains — Lawrence's 4CH is a general framework that
-  # allows different gains per side; symmetric KP is just the textbook
-  # simplification used in Buamanee. Setting leader_KP = 0 turns off
-  # the position-spring that was making the leader feel mechanically
-  # tied to the follower's pose (~290 Nm/rad apparent stiffness on the
-  # shoulder). With KP=0 the leader is "free": the user's drag is only
-  # resisted by leader_KD damping (very light) plus the residual
-  # inertia not yet cancelled by tau_ext_cancel_gain. The follower
-  # keeps its full tracking KP so it still chases the leader's pose.
-  leader_KP:    [   0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
-  leader_KD:    [   5.0,   5.0,   3.0,   15.0,   30.0,   100.0]
-  follower_KP:  [ 100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
-  follower_KD:  [  20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
-  # Per-side KF — also asymmetric. The shoulder felt heavy because the
-  # shared KF=0.3 was below the lightness threshold KF > κ/M ≈ 0.7/0.28
-  # = 2.5 for the UR3e shoulder. With cancel_gain → 0 the threshold
-  # disappears and any KF > 0 makes the leader lighter than passive.
-  # leader_KF is set well above passive on every joint; follower_KF=0
-  # makes the follower a rigid tracking PD (no environment compliance,
-  # so contacts stay crisp).
-  leader_KF:    [   3.0,   3.0,   2.0,    5.0,   10.0,    30.0]
-  follower_KF:  [   0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
-  D_VISCOUS:    [   0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
+  # SYMMETRIC 4CH (round-2 baseline). Restored after round-4 asymmetric
+  # configuration (leader_KF up 10×, follower_KF=0, κ=0) destabilised
+  # the system: idle-stable but oscillates on user contact, leader
+  # itself oscillating, all axes felt heavier including wrists. Root
+  # cause was the loop-gain inequality M·KF·(1+ε_model) > stability
+  # margin breaking down once KF was pushed past κ/M to chase
+  # "lighter than passive" — fundamentally not achievable on UR3e
+  # shoulder/elbow without identified dynamics.
+  KP:                 [100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
+  KD:                 [ 20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
+  KF:                 [  0.3,   0.3,   0.3,    0.5,    1.0,     3.0]
+  D_VISCOUS:          [  0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
   # DOB / velocity filter cutoffs — slower than first iteration so model
   # error doesn't ride into the control loop as broadband noise.
   dob_cutoff_hz:       30.0   # Q-filter cutoff for τ̂_ext (was 60)
   dob_accel_cutoff_hz: 50.0   # q̈̂ pre-filter (was 100)
   velocity_cutoff_hz:  80.0   # VelocityEstimator LPF (was 150)
-  # τ̂_ext "self-cancellation" gain. κ=1 is the textbook value but
-  # with imperfect M and the marginal-stable DOB feedback loop (z=+1
-  # mode at κ=1) it traps energy and amplifies model-error bias. With
-  # κ=0 the user's force flows through directly: q̈ = u_inner + τ_user/M.
-  # Since leader_KF is well above 0, the resulting apparent mass
-  # 1/(KF + 1/M) is BELOW physical M — i.e., lighter than a passive
-  # arm. This is the conservative, stable mode; raise κ later only if
-  # we need to decouple physical M from the closed-loop dynamics
-  # (which only pays off after system identification anyway).
-  tau_ext_cancel_gain: 0.0
+  # τ̂_ext "self-cancellation" gain. Restored to 0.7 (round-2 value)
+  # — the configuration that produced clean tracking, no cross-
+  # coupling, stable idle, and acceptable contact reflection. κ=1 is
+  # marginally stable; κ=0 disables the inertia-shaping path. 0.7 is
+  # the practical sweet spot under URDF model accuracy.
+  tau_ext_cancel_gain: 0.7
   # 4CH perfect-transparency requires full M, so default is false.
   # Diagnostic-only escape hatch — set true to A/B-confirm a given
   # symptom is feedforward cross-coupling vs. some other cause. Real
