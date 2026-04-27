@@ -123,10 +123,15 @@ hybrid:
   # symmetric baseline (stable but contact reflection felt weak).
   KF:                 [  0.3,   0.3,   0.3,    0.5,    1.0,     3.0]
   # leader_KF_PEER amplifies the leader's response to the follower's
-  # τ̂_ext (i.e. environment contact). It is NOT in the leader's own
-  # DOB feedback loop, so raising it doesn't trigger the KF·M < ~0.5
-  # stability bound. ~3× the self gain delivers crisper "wall feel".
-  leader_KF_PEER:     [  1.0,   1.0,   1.0,    1.5,    3.0,    10.0]
+  # τ̂_ext. Mathematically it doesn't enter the leader's local DOB
+  # feedback loop (no stability constraint), but in dynamic motion the
+  # follower's M-model error leaks into τ̂_ext_self_f → leader sees it
+  # as τ̂_ext_peer → leader_KF_PEER amplifies the leak as a drag torque
+  # opposing user motion ("heavy" feel). Round 7 chose 3× the self
+  # gain — too aggressive, shoulder felt very heavy. Round 8 halves it
+  # to ~1.7× round-2 — keeps some of the contact-strength improvement
+  # while damping the model-error drag.
+  leader_KF_PEER:     [  0.5,   0.5,   0.5,    1.0,    2.0,     6.0]
   D_VISCOUS:          [  0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
   # DOB / velocity filter cutoffs — slower than first iteration so model
   # error doesn't ride into the control loop as broadband noise.
