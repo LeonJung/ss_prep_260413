@@ -109,8 +109,15 @@ timestep: 0.002  # 500 Hz
 # leader and follower. Conservative defaults — start low, raise for
 # responsiveness.
 hybrid:
-  KP:                 [100.0, 100.0,  60.0, 30.0, 30.0, 20.0]
-  KD:                 [ 20.0,  20.0,  12.0,  8.0,  8.0,  6.0]
+  # KP/KD per joint. The 4CH formulation outputs τ = M(q)·(KP·err + KD·ė)
+  # so the actuator-side stiffness scales with M(q). UR's wrist inertias
+  # are O(0.0001–0.05), four orders of magnitude smaller than shoulders,
+  # so wrist KP must be much larger to give comparable Nm/rad tracking.
+  # Targets ω_n = √KP per joint:
+  #   shoulders/elbow ≈ 8–10 rad/s   (gentle, conservative)
+  #   wrist_1 ≈ 32 rad/s   wrist_2 ≈ 71 rad/s   wrist_3 ≈ 173 rad/s
+  KP:                 [100.0, 100.0,  60.0, 1000.0, 5000.0, 30000.0]
+  KD:                 [ 20.0,  20.0,  12.0,   60.0,  140.0,   350.0]
   KF:                 [  0.0,   0.0,   0.0,  0.0,  0.0,  0.0]   # Phase-4: zero
   D_VISCOUS:          [  0.0,   0.0,   0.0,  0.0,  0.0,  0.0]   # modelled viscous damping
   # DOB / velocity filter cutoffs — slower than first iteration so model
