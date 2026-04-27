@@ -33,7 +33,6 @@ Eigen::Matrix<double, 6, 1> FourChannelController::compute(
     double ramp) {
   const auto& M  = dyn_.mass(q);
   const auto& C  = dyn_.coriolis(q, q_dot_hat);
-  const auto& g  = dyn_.gravity(q);
 
   const Eigen::VectorXd e_pos = q_peer - q;
   const Eigen::VectorXd e_vel = qd_peer - q_dot_hat;
@@ -48,8 +47,10 @@ Eigen::Matrix<double, 6, 1> FourChannelController::compute(
         M * u_inner
       - tau_ext_hat
       + C
-      + p_.D.cwiseProduct(q_dot_hat)
-      + g;
+      + p_.D.cwiseProduct(q_dot_hat);
+  if (!p_.firmware_grav_comp) {
+    tau += dyn_.gravity(q);
+  }
   return tau;
 }
 

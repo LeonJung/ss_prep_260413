@@ -130,6 +130,7 @@ bool FollowerNode::connect_robot() {
   dob_p.cutoff_hz = cfg_.hybrid_dob_cutoff_hz;
   dob_p.accel_cutoff_hz = cfg_.hybrid_dob_accel_cutoff_hz;
   dob_p.viscous = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  dob_p.firmware_grav_comp = cfg_.gravity_comp_internal;
   dob_ = std::make_unique<DisturbanceObserver>(*dyn_, dob_p, cfg_.timestep);
 
   FourChannelController::Params cp;
@@ -137,14 +138,16 @@ bool FollowerNode::connect_robot() {
   cp.Kd = vec6_to_eigen(cfg_.hybrid_kd);
   cp.Kf = vec6_to_eigen(cfg_.hybrid_kf);
   cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  cp.firmware_grav_comp = cfg_.gravity_comp_internal;
   ctrl_ = std::make_unique<FourChannelController>(*dyn_, cp);
 
   RCLCPP_INFO(get_logger(),
       "hybrid(B1): URDF=%s  vel_fc=%.0fHz  dob_fc=%.0f/%.0fHz  "
-      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f",
+      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f  fw_grav_comp=%s",
       urdf_path.c_str(), cfg_.hybrid_velocity_cutoff_hz,
       cfg_.hybrid_dob_cutoff_hz, cfg_.hybrid_dob_accel_cutoff_hz,
-      cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm());
+      cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm(),
+      cp.firmware_grav_comp ? "true" : "false");
 
   if (cfg_.hybrid_tank_enabled) {
     EnergyTank::Params tp;

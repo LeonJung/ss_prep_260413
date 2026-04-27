@@ -30,6 +30,10 @@ class FourChannelController {
     Eigen::VectorXd Kd;        // size 6
     Eigen::VectorXd Kf;        // size 6
     Eigen::VectorXd D;         // modeled viscous damping, size 6
+    // When the actuator path itself adds g(q) (UR firmware grav-comp),
+    // omit +g(q) from the controller output — sending it again would
+    // double-compensate.
+    bool firmware_grav_comp{false};
   };
 
   FourChannelController(DynamicsModel& dyn, const Params& p);

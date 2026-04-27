@@ -31,9 +31,15 @@ class DisturbanceObserver {
     double cutoff_hz{60.0};         // Q-filter cutoff for τ̂_ext
     double accel_cutoff_hz{100.0};  // pre-filter on q̈̂
     Eigen::VectorXd viscous;        // per-joint D (size 6, zero-init if empty)
+    // When the actuator path itself adds g(q) (UR firmware grav-comp),
+    // the actually-applied torque is τ_we_sent + g, so the residual must
+    // omit +g to avoid a constant gravity-shaped bias in τ̂_ext.
+    bool firmware_grav_comp{false};
   };
 
   DisturbanceObserver(DynamicsModel& dyn, const Params& p, double dt);
+
+  bool firmware_grav_comp() const { return firmware_grav_comp_; }
 
   // One RT cycle. Returns τ̂_ext (6x1).
   //   q           : measured joint position
@@ -57,6 +63,7 @@ class DisturbanceObserver {
   double alpha_q_;    // α for Q-filter
   double alpha_a_;    // α for accel pre-filter
   Eigen::VectorXd D_; // viscous
+  bool firmware_grav_comp_;
 
   bool initialized_;
   Eigen::VectorXd qd_prev_;

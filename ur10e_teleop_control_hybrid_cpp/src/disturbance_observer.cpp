@@ -15,7 +15,8 @@ double lpf_alpha(double cutoff_hz, double dt) {
 DisturbanceObserver::DisturbanceObserver(DynamicsModel& dyn,
                                          const Params& p,
                                          double dt)
-    : dyn_(dyn), dt_(dt), initialized_(false) {
+    : dyn_(dyn), dt_(dt),
+      firmware_grav_comp_(p.firmware_grav_comp), initialized_(false) {
   if (dt_ <= 0.0)
     throw std::invalid_argument("DisturbanceObserver: dt <= 0");
   if (p.cutoff_hz <= 0.0 || p.accel_cutoff_hz <= 0.0)
@@ -57,14 +58,19 @@ const Eigen::VectorXd& DisturbanceObserver::update(
   q_ddot_hat_ = alpha_a_ * qdd_raw + (1.0 - alpha_a_) * q_ddot_hat_;
   qd_prev_ = q_dot_hat;
 
-  // Residual: model-predicted torque minus commanded torque
+  // Residual: model-predicted torque minus commanded torque.
+  // When the firmware compensates gravity, the actually-applied torque
+  // is τ_we_sent + g, so τ_applied effectively already contains +g and
+  // we must omit it from the residual to avoid a gravity-shaped bias.
   const auto& M = dyn_.mass(q);
   const auto& Cqd = dyn_.coriolis(q, q_dot_hat);
-  const auto& g = dyn_.gravity(q);
 
-  Eigen::VectorXd residual = M * q_ddot_hat_ + Cqd + g
+  Eigen::VectorXd residual = M * q_ddot_hat_ + Cqd
                              + D_.cwiseProduct(q_dot_hat)
                              - tau_applied;
+  if (!firmware_grav_comp_) {
+    residual += dyn_.gravity(q);
+  }
 
   // Q-filter
   tau_ext_hat_ = alpha_q_ * residual + (1.0 - alpha_q_) * tau_ext_hat_;

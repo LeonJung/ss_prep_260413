@@ -165,6 +165,25 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_ramp0(i));
     std::printf("(expect ≈ g(q))\n");
 
+    // (D) firmware_grav_comp=true: 4CH should NOT add g(q) to its output
+    FourChannelController::Params cp_fw = cp;
+    cp_fw.firmware_grav_comp = true;
+    FourChannelController ctrl_fw(dyn, cp_fw);
+    auto tau_fw_match = ctrl_fw.compute(q, qd_zero, tau_ext_zero,
+                                        q, qd_zero, tau_ext_zero, 1.0);
+    std::printf("4CH(fw_grav) @ matched: τ  = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_fw_match(i));
+    std::printf("(expect ≈ 0)\n");
+
+    // (E) firmware_grav_comp=true: DOB at rest, τ_applied=0 → τ̂_ext ≈ 0
+    DisturbanceObserver::Params dp_fw = dp;
+    dp_fw.firmware_grav_comp = true;
+    DisturbanceObserver dob_fw(dyn, dp_fw, 0.002);
+    for (int i = 0; i < 2000; ++i) dob_fw.update(q, qd_zero, qd_zero);
+    std::printf("DOB(fw_grav) @ tau=0:   τ̂_ext = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", dob_fw.value()(i));
+    std::printf("(expect ≈ 0 — fw provides g)\n");
+
     // ---- EnergyTank sanity ----
     EnergyTank::Params tp;
     tp.E_max = 5.0;
