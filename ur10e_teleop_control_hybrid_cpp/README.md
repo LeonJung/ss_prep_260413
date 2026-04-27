@@ -1,32 +1,103 @@
 # ur10e_teleop_control_hybrid_cpp
 
 C++ implementation of bilateral force-feedback teleoperation for real UR
-robots. Uses `ur_client_library` for the UR I/O layer and supports
-PREEMPT_RT kernel scheduling (SCHED_FIFO + mlockall) for tight control-loop
-timing.
+robots (UR3e leader + UR10e follower) combining two SOTA techniques:
 
-Sibling of [`ur10e_teleop_real_py`](../ur10e_teleop_real_py/) — same topic
-namespace, same control semantics, same config schema. Only one of the
-two packages is launched at a time.
+- **Tier B1** — Sensorless 4-Channel Lawrence control with model-based
+  feedforward (`M·u + C·q̇ + D·q̇`) and a joint-space Disturbance Observer
+  for τ̂_ext estimation, after Buamanee et al., *"Fast Bilateral
+  Teleoperation and Imitation Learning Using Sensorless Force Control
+  via Accurate Dynamics Model"*, arXiv:2507.06174 (2025).
+- **Tier C1** — Two-Layer Energy-Tank passivity wrapper modulating the
+  4CH tracking bracket, after Franken/Stramigioli (2011) and Minelli
+  et al. (2023–24).
+
+Built on top of `ur_client_library` for the UR I/O layer and supports
+PREEMPT_RT kernel scheduling (SCHED_FIFO + mlockall) for tight
+control-loop timing.
+
+The package was created by cloning
+[`ur10e_teleop_control_ff_cpp`](../ur10e_teleop_control_ff_cpp/) and
+replacing its passive-leader + F/T-reflection control with the 4CH+DOB
+formulation. The state machine, RT plumbing, dashboard handshake, and
+launch infrastructure are inherited unchanged.
 
 ## Status
 
-Feature-complete port of `_py`:
+What's coded and verified in software (selftest):
 
-| feature                                  | _py | _cpp |
-|------------------------------------------|-----|------|
-| 4-mode state machine (ACTIVE/PAUSED/HOMING/FREEDRIVE) | ✅ | ✅ |
-| Bilateral PD + continuous deadband       | ✅ | ✅ |
-| ACTIVE-entry soft-start ramp (0.5 s)     | ✅ | ✅ |
-| Quintic-spline auto-homing               | ✅ | ✅ |
-| Reset counter → HOMING (with startup grace) | ✅ | ✅ |
-| Per-robot torque limits                  | ✅ | ✅ |
-| Joint mirror transform                   | ✅ | ✅ |
-| firmware friction_comp via URScript      | ✅ | ✅ |
-| 1 Hz [DIAG] status log                   | ✅ | ✅ |
-| PREEMPT_RT scheduling (SCHED_FIFO + mlockall) | —  | ✅ |
-| Jitter benchmark utility                 | —  | ✅ |
-| tau_contact (F/T-derived) + OVER-FORCE   | —  | — (both TODO) |
+| layer                                              | status |
+|----------------------------------------------------|--------|
+| `DynamicsModel` — KDL-backed M(q), C(q,q̇)q̇, g(q)   | ✅ |
+| `VelocityEstimator` — first-order LPF on diff(q)   | ✅ |
+| `DisturbanceObserver` — Q-filter form, fw-grav-aware| ✅ |
+| `FourChannelController` — full M, per-side gains, split Kf_self / Kf_peer | ✅ |
+| `EnergyTank` — Two-Layer wrapper (refill, drain, α-throttle) | ✅ (HW-untested) |
+| Selftest covering all of the above                 | ✅ |
+
+What's verified on real hardware (UR3e + UR10e):
+
+| behaviour                                          | status |
+|----------------------------------------------------|--------|
+| Cross-coupling-free position tracking              | ✅ |
+| DOB-based contact reflection                       | ✅ (weak under URDF model) |
+| Stable PAUSED / ACTIVE / HOMING / FREEDRIVE        | ✅ |
+| Idle stability (no drift, no oscillation)          | ✅ |
+| "Apparent inertia < physical inertia" on shoulder/elbow | ❌ — hard limit; see *Tuning journey* |
+
+## Control law (compact)
+
+For each side (leader, follower) at every 2 ms tick:
+
+```
+q̇̂          = VelocityEstimator(q)
+τ̂_ext       = DisturbanceObserver(q, q̇̂, τ_applied_prev)   # Q-filter, omits +g if firmware grav-comps
+u_inner    = Kp ⊙ (q_peer − q)
+           + Kd ⊙ (q̇_peer − q̇̂)
+           + Kf_self ⊙ τ̂_ext
+           + Kf_peer ⊙ τ̂_ext_peer
+τ_4ch      = M(q) · (ramp · u_inner)
+           − τ_ext_cancel_gain · τ̂_ext
+           + C(q,q̇̂)·q̇̂
+           + D ⊙ q̇̂
+           + (firmware_grav_comp ? 0 : g(q))
+
+# Two-Layer wrapper (when enabled):
+τ_static   = τ_4ch with ramp = 0
+τ_active   = τ_4ch − τ_static
+α          = EnergyTank.step(τ_active, q̇̂)        # ∈ [0, 1]
+τ_cmd      = τ_static + α · τ_active
+```
+
+`τ_cmd` is clipped to per-joint torque limits, then written to the UR
+via RTDE in `MODE_TORQUE` (or `MODE_SERVOJ` during HOMING).
+
+## Architecture
+
+```
+                    /ur10e/mode (Float64MultiArray)
+                            ↓
++-------------------+                    +-------------------+
+| leader_hybrid_node|◀── /ur10e/leader/  | follower_hybrid_  |
+| (UR3e, port 50001)|    joint_state ──▶ | node              |
+|                   |                    | (UR10e, port 50011)|
+| DynamicsModel     |                    |                   |
+| VelocityEstimator |                    | (same modules)    |
+| DisturbanceObserver|                    |                   |
+| FourChannelController                   |                  |
+| EnergyTank (opt)  |                    |                   |
+|        |          |                    |        |          |
+|     UrDriver      |                    |     UrDriver     |
++--------+----------+                    +--------+----------+
+         |                                        |
+    RTDE / URScript                          RTDE / URScript
+         |                                        |
+    [UR3e robot]                             [UR10e robot]
+```
+
+Joint-state effort field carries each side's `τ̂_ext` so the peer can
+use it as `τ̂_ext_peer` in its 4CH coupling term — no F/T sensor
+required.
 
 ## Dependencies
 
@@ -35,10 +106,10 @@ source /opt/ros/<your-distro>/setup.bash   # humble | jazzy | rolling | ...
 bash script/install.sh
 ```
 
-Auto-detects `ROS_DISTRO` so the same script works on Humble, Jazzy, etc.
+Auto-detects `ROS_DISTRO`. Installs:
 
-Installs:
 - `ros-<DISTRO>-{rclcpp,sensor-msgs,std-msgs,ament-cmake,ur-client-library}`
+- `ros-<DISTRO>-{kdl-parser,orocos-kdl-vendor}` (added vs `_ff_cpp`)
 - `libeigen3-dev`, `libyaml-cpp-dev`, `libcap2-bin`
 
 ## Build
@@ -49,37 +120,15 @@ colcon build --packages-select ur10e_teleop_control_hybrid_cpp
 source install/setup.bash
 ```
 
-### ⚠️ `--symlink-install` caveat
+`--symlink-install` caveat: same as `_ff_cpp` — `setcap_rt.sh` resolves
+the symlink and applies caps to the real build-side binary; rerun after
+every build.
 
-`colcon build --symlink-install` places a SYMLINK at
-`install/.../<binary>` pointing into `build/`. Linux's `setcap` refuses
-symlinks with `"filename must be a regular file"`. The helper
-`setcap_rt.sh` compensates by calling `readlink -f` and applying caps to
-the real build-side file, but after every rebuild the build-side file
-is overwritten and caps are lost — **re-run `setcap_rt.sh` after every
-build** (you need to anyway; see below).
-
-If you prefer, build that one package without symlink-install:
-```bash
-colcon build --packages-select ur10e_teleop_control_hybrid_cpp  # no --symlink-install
-```
-Other packages in the workspace can still use `--symlink-install`; only
-this one needs a real binary for setcap.
-
-## RT capabilities (one-time per build)
+## RT capabilities (re-run after every build)
 
 ```bash
 bash script/setcap_rt.sh
 ```
-
-Paths are auto-discovered from `ros2 pkg prefix`, so it works regardless
-of your workspace name or ROS distro — just source the workspace first.
-
-Options:
-- `bash script/setcap_rt.sh leader_node`   — specific binary
-- `bash script/setcap_rt.sh --clear`        — remove caps (debug)
-
-**Re-run after every `colcon build`** — rebuilt binaries lose their caps.
 
 Without caps the executables still run, but `--rt-mode true` prints a
 warning and falls back to normal scheduling.
@@ -89,16 +138,8 @@ warning and falls back to normal scheduling.
 ### Single PC (both nodes)
 
 ```bash
-# non-RT
-ros2 launch ur10e_teleop_control_hybrid_cpp teleop_real.launch.py
-
-# both nodes RT
 ros2 launch ur10e_teleop_control_hybrid_cpp teleop_real.launch.py \
     leader_rt:=true follower_rt:=true
-
-# only leader RT (mixed environment)
-ros2 launch ur10e_teleop_control_hybrid_cpp teleop_real.launch.py \
-    leader_rt:=true follower_rt:=false
 ```
 
 ### Distributed (leader on PC A, follower on PC B)
@@ -106,17 +147,14 @@ ros2 launch ur10e_teleop_control_hybrid_cpp teleop_real.launch.py \
 ```bash
 # PC A — UR3e side
 ros2 launch ur10e_teleop_control_hybrid_cpp teleop_real_leader.launch.py rt:=true
-
 # PC B — UR10e side
 ros2 launch ur10e_teleop_control_hybrid_cpp teleop_real_follower.launch.py rt:=true
 ```
 
-Each PC chooses its own `rt:=true|false` independently, so a setup
-where only one of the two PCs has the PREEMPT_RT kernel works cleanly.
+### Mode topic
 
-### Mode topic (from anywhere)
+After auto-homing finishes, switch to bilateral:
 
-After homing completes, switch to bilateral:
 ```bash
 ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray \
     "data: [0.0, 0.0, 0.0]"
@@ -124,39 +162,72 @@ ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray \
 
 Modes: 0=ACTIVE · 1=PAUSED · 2=HOMING · 3=FREEDRIVE.
 
-## RT vs non-RT benchmark
+## Self-test (no robot needed)
 
-Standalone timing test (no ROS, no robot — just the cyclic sleep loop):
+Verifies dynamics model, DOB, 4CH compute, energy tank — all the
+math-only modules:
 
 ```bash
-bash script/setcap_rt.sh                      # caps granted once
-python3 script/rt_comparison.py --duration 30 --rt-cpu 2
-python3 script/rt_comparison.py --duration 30 --rt-cpu 2 --load
-python3 script/rt_comparison.py --duration 30 --plot   # matplotlib
+ros2 run ur10e_teleop_control_hybrid_cpp dynamics_selftest \
+    src/ur10e_teleop_control_hybrid_cpp/resources/ur10e.urdf
 ```
 
-`--load` spawns `N-1` busy processes so the RT advantage surfaces;
-`--rt-cpu N` pins the RT thread to a specific core.
+## Configuration (`config/real_ur.yaml`)
 
-Direct binary (CSV to stdout, summary to stderr):
-```bash
-jitter_benchmark --rt-mode true --duration 30 --period-us 2000 > run.csv
+Hybrid-specific block:
+
+| key                       | meaning                                                |
+|---------------------------|--------------------------------------------------------|
+| `KP`, `KD`                | shared bilateral PD gains (legacy; seed both sides)    |
+| `KF`                      | shared force-feedback gain (legacy; seeds Kf_self & Kf_peer for both sides) |
+| `leader_KP`, `leader_KD`, `leader_KF`     | leader-only overrides              |
+| `follower_KP`, `follower_KD`, `follower_KF`| follower-only overrides           |
+| `leader_KF_PEER`, `follower_KF_PEER`       | per-channel split (peer reflection only) |
+| `D_VISCOUS`               | modeled viscous damping (vec6)                         |
+| `dob_cutoff_hz`           | Q-filter cutoff for τ̂_ext (default 30)                 |
+| `dob_accel_cutoff_hz`     | q̈̂ pre-filter cutoff (default 50)                      |
+| `velocity_cutoff_hz`      | q̇̂ filter cutoff (default 80)                           |
+| `tau_ext_cancel_gain`     | scale on −τ̂_ext term (κ in math; default 0.7)          |
+| `use_diagonal_inertia`    | diagnostic only — drops M off-diagonals (default false)|
+| `tank.enabled`, `tank.e_max`, `tank.e_init`, `tank.refill_ceiling`, `tank.D_DISSIPATION` | EnergyTank parameters |
+
+The current YAML is the **round-9 baseline** (see *Tuning journey*):
+symmetric KP/KD/KF + UR-official URDF + κ=0.7 + tank disabled.
+
+## Tuning journey (HW iteration record)
+
+This section is the lab-notebook record of nine hardware-tuning rounds.
+Useful when a future contributor wonders "why are the numbers what they
+are." All commits are on branch `main` of `git@github.com:LeonJung/ss_prep_260413`.
+
+| round | what changed | observed | takeaway |
+|------:|-------------|----------|----------|
+| 1 | First HW run with stock 4CH, KF=0, κ=0.7, full-M, fw_grav_comp=true | wrists drift up after ACTIVE; user grip stops drift; oscillation under user motion | gravity double-comp + DOB feedback under URDF model error |
+| 2 | Add `firmware_grav_comp` flag (omit +g(q) in 4CH and DOB residual) | initial idle holds, but motion → release re-drifts | DOB picks up firmware-grav-comp residual + URDF dynamic error |
+| 3 | Add `tau_ext_cancel_gain` knob (κ); set to 0; lower DOB & velocity cutoffs | shoulders/elbow track cleanly, all three wrists frozen (stiction, M·KP too small) | M·u_inner formulation gives tiny actuator gain on low-inertia joints |
+| 4 | Wrist KP up: [30,30,20] → [1000,5000,30000] | wrist tracks; pushing wrist makes elbow / shoulder surge then bounce | high KP × M off-diagonal × URDF model error → cross-coupling |
+| 5 | Halve wrist KP back to [500,2000,10000]; full M kept | tracks, cross-coupling damped to acceptable | linear amplitude scaling — but not a real fix |
+| 6 | Replace URDFs with UR-official ROS2 description (UR10e wrist_3 mass 0.615 → 0.202) | cross-coupling gone, tracking responsive, idle stable; wrist now correctly heavier; shoulder still heavy; contact reflection feels weak | URDF accuracy IS the gating factor for 4CH transparency |
+| 7 | Split KF into Kf_self / Kf_peer; raise leader_KF_PEER 3× | shoulder *much* heavier, tracking lag, contact crisper | high Kf_peer amplifies follower-side M-model leakage as drag |
+| 8 | Halve leader_KF_PEER back (1.7× round-2) | shoulder still heavy, slight contact lag returning | contact-strength vs free-motion-drag are coupled by model error |
+| 9 | Revert leader_KF_PEER → match Kf_self (round-6 baseline restored) | round-6 behaviour: cross-coupling-free, stable, shoulder mildly heavy, contact mildly weak | this is the **practical optimum under the URDF model** |
+
+### The fundamental inequality
+
+For UR3e shoulder M ≈ 0.28, κ = 0.7:
+
+```
+"lighter than passive"   requires KF_self > κ / M ≈ 2.5
+"closed-loop stability" requires KF_self < ~0.5 / M ≈ 1.79     (with model-error margin)
 ```
 
-### What to expect
+The two ranges **do not overlap**. Pushing past the stability limit
+(round 4, round 7's wrists) triggers the M-model-error feedback we saw.
+Staying inside it (round 6/9) leaves the shoulder noticeably heavier
+than passive.
 
-On a PREEMPT_RT kernel:
-| metric | non-RT | RT |
-|---|---|---|
-| mean | ≈ target | ≈ target |
-| worst-case (idle) | target +100-300 µs | target +50-200 µs |
-| worst-case (under load) | **target +ms possible** | target +few-hundred µs |
-
-PREEMPT_RT kernel already improves non-RT threads dramatically; SCHED_FIFO
-on top gives the final tightening, mostly in worst-case (tail) latency.
-
-On a normal (non-PREEMPT_RT) kernel the gap is much wider (ms vs hundreds
-of µs).
+The only known way to widen the stability bound is to shrink the
+`(M_real − M_model)` term — i.e., **system identification**. See TODO.
 
 ## CLI args (both executables)
 
@@ -165,125 +236,94 @@ of µs).
 | `--robot-ip IP`         | UR3e: .94 / UR10e: .92 | robot's IP |
 | `--robot ur3e\|ur10e`    | ur3e / ur10e           | robot type |
 | `--config PATH`         | —                      | YAML config path |
-| `--resources-dir PATH`  | —                      | dir with rtde_*_recipe.txt + external_control.urscript |
+| `--resources-dir PATH`  | —                      | dir with `ur*.urdf` + `rtde_*_recipe.txt` + `external_control.urscript` |
 | `--rt-mode true\|false`  | false                  | enable SCHED_FIFO + mlockall |
 | `--rt` / `--no-rt`       | —                      | shortcut |
 | `--rt-priority N`       | 80                     | SCHED_FIFO priority (1..99) |
 | `--rt-cpu N`            | -1                     | pin control thread to CPU core |
 
-The launch files pass `--resources-dir` automatically from the installed
-`share/ur10e_teleop_control_hybrid_cpp/resources`.
+Launch files pass `--config` and `--resources-dir` automatically from
+the installed `share/ur10e_teleop_control_hybrid_cpp/`.
+
+## RT vs non-RT benchmark
+
+```bash
+bash script/setcap_rt.sh
+python3 script/rt_comparison.py --duration 30 --rt-cpu 2
+python3 script/rt_comparison.py --duration 30 --rt-cpu 2 --load
+```
+
+Same as `_ff_cpp` — see that package's README for expected percentile
+behaviour. The 4CH/DOB stack adds ~6 µs (KDL `M+C+g` call) per cycle on
+top of the existing PD; well under the 2 ms budget.
 
 ## TODO
 
-Mirrored in `ur10e_teleop_real_py/README.md` — changes should land in
-both packages.
+### 🔴 High priority — blocking further transparency improvement
 
-### 🔴 High priority
+- [ ] **System Identification of UR3e and UR10e dynamics**
+      The single fix for the inequality above. Steps:
+        1. Define excitation trajectories (Fourier-series sweep per joint
+           or random, satisfying joint/torque limits).
+        2. Add a "data collection" mode in leader/follower nodes that
+           runs the trajectory and logs (t, q, q̇, τ_we_send,
+           actual_TCP_force) at 500 Hz to CSV.
+        3. Build the regression matrix Φ(q, q̇, q̈) (Hollerbach–Khalil
+           form, ~37 parameters per arm) and solve `θ = (ΦᵀΦ)⁻¹Φᵀτ`
+           by least-squares (SVD-truncated for ill-conditioned cols).
+        4. Cross-validate on a held-out trajectory.
+        5. Replace `DynamicsModel`'s URDF source with the identified
+           parameter set (extend `DynamicsModel` to accept either a
+           URDF path or an inline parameter struct).
+      Reference: Buamanee et al. 2025 §4; the `shamilmamedov/dynamic_calibration`
+      MATLAB reference for the regressor structure.
 
-- [ ] **Auto power-on / brake-release + graceful shutdown**
-      Currently the operator runs Power On → Booting → Release Brakes
-      on each teach pendant before every session, and powers the
-      robot back down afterwards. Automate via UR Dashboard Server
-      (port 29999):
-        startup:  `power on` → wait BOOTING → IDLE → `brake release`
-                  → wait RUNNING → then URScript upload + homing
-        shutdown: reverse — stop URScript, `brake engage` (from a safe
-                  pose), `power off`, close dashboard socket
-      Implementation sketch:
-        - add a `dashboard_client` module (C++): open TCP to :29999,
-          send commands, poll `robotmode`/`safetymode` with per-step
-          timeouts
-        - leader_node / follower_node call startup in `connect_robot()`
-          and shutdown in `stop()`
-        - opt-in via config flag `auto_power_cycle: true`
+### 🟡 Medium priority — completes the original B1+C1 mission
 
-- [ ] **Position-control homing (fix for PAUSED→ACTIVE jerk)**
-      Root cause of the follower jerk: torque-based homing via
-      KP_HOLD*(q_des − q) can't settle exactly at home. The spring
-      balance point is home + (gravity + friction)/KP_HOLD, not home
-      itself. At ACTIVE entry tracking error is nonzero → KP_TRACK
-      fires a kick.
+- [ ] **Hardware validation of the EnergyTank wrapper (Tier C1)**
+      Code is complete and selftested; never run on real arms.
+      Workflow:
+        1. From the round-9 baseline, set `tank.enabled: true` in YAML.
+        2. Confirm idle behaviour unchanged (`α ≈ 1.0` in `[DIAG]`).
+        3. Probe ACTIVE-mode contact transients — push the follower into
+           a stiff fixture; tank should maintain `α = 1` while the
+           refill mechanism replenishes from D·q̇² dissipation.
+        4. Stress test: deliberately low `tank.e_max` to trigger
+           α throttling; verify the leader feels softer rather than
+           losing stability.
+        5. With tank on, retry pushing KF higher than the round-9
+           baseline and see whether the passivity bound widens
+           (this is the central C1 claim).
 
-      Plan — two URScript programs, hot-swapped via port 30002 at
-      HOMING ↔ non-HOMING transitions:
+- [ ] **Architecture A/B option: passive leader + DOB force reflection**
+      The `ur10e_teleop_control_ff_cpp` pattern (KP_USER=0, K_FT × peer
+      effort) gives the user a genuinely free leader at the cost of
+      symmetric 4CH transparency math. Reuse this package's DOB
+      output as the peer-effort signal in place of `_ff_cpp`'s
+      `J^T·F_TCP` so the architecture pivot stays sensorless.
+      Should be a few hours of plumbing inside a clone of `_ff_cpp`.
 
-        URScript A — existing torque-loop (direct_torque)
-          Used for PAUSED / ACTIVE / FREEDRIVE.
+### 🟢 Lower priority / inherited from `_ff_cpp` lineage
 
-        URScript B — native position control (movej / servoj to home)
-          Used only for HOMING. Settles at the exact commanded q.
+- [ ] **Auto power-on / brake-release + graceful shutdown** (UR Dashboard
+      Server, port 29999). Already partially in `dashboard_client.cpp`;
+      verify and finish.
 
-      Transition flow:
-        user sends MODE_HOMING
-          → node stops current torque writes
-          → uploads URScript B with target home_q in payload
-          → URScript B runs movej, reports completion
-          → node uploads URScript A (torque loop)
-          → node publishes MODE_PAUSED
-        user later sends MODE_ACTIVE / etc. — torque loop handles it.
+- [ ] **Position-control homing (fix for PAUSED→ACTIVE jerk)**.
+      Hot-swap two URScript programs on port 30002 — torque loop for
+      ACTIVE/PAUSED/FREEDRIVE, position loop (`movej`/`servoj`) only
+      during HOMING. Removes the gravity-balance offset that makes the
+      torque loop start with a non-zero error on ACTIVE entry.
 
-      Hot-swap via port 30002 takes ~1 s; homing already takes ~5 s so
-      no user-visible latency added. The torque loop starts from
-      exactly zero error, so there's no kick on the first active cycle.
+- [ ] **TCP workspace safety — 2-tier virtual wall**. SOFT layer injects
+      `J^T · K_wall · penetration` torque, HARD layer auto-PAUSES on
+      excess penetration. Roughly 15 µs / cycle.
 
-### 🟡 Medium priority
-
-- [ ] **F/T sensor integration — OVER-FORCE detection + contact torque**
-      `actual_TCP_force` is in the RTDE output recipe but unused.
-      Convert to joint-space via J^T·F (requires UR Jacobian; DH
-      params available) and feed into:
-        - existing over-force detection path (currently zeros →
-          never fires)
-        - HOMING collision detection (currently disabled for same reason)
-        - optional: explicit haptic feedback onto leader for crisper
-          "freedrive vs contact" distinction
-
-- [ ] **TCP workspace safety — 2-tier virtual wall**
-      Bounding box in base frame (xyz_min, xyz_max). Two layers:
-        (i)  SOFT safety — when follower's TCP touches the box, inject
-             a synthetic contact force through the same haptic path
-             the real F/T feedback would use:
-               F_wall = K_wall * penetration  (spring into the wall)
-               tau   += J^T * F_wall          (mapped to joint torque)
-             User feels the wall on leader exactly like a physical
-             obstacle. Great for "gentle reminder" behavior.
-        (ii) HARD safety — if user keeps pushing past the soft wall
-             and penetration exceeds a deeper threshold (or |F_wall|
-             exceeds a cutoff), escalate to MODE_PAUSED.
-      Opt-in via config:
-        workspace_limits:
-          xyz_min: [...]
-          xyz_max: [...]
-          k_wall: 2000              # N/m, soft-wall stiffness
-          soft_penetration: 0.02    # m, threshold before hard escalation
-      Performance: estimated overhead ~15 µs/cycle on top of the
-      existing Jacobian work for the F/T integration item — negligible
-      (< 1% of a 2 ms cycle). Shares the Jacobian module with that item.
-
-## Architecture overview
-
-```
-+-----------------+        +-----------------+
-| leader_real_     |        | follower_real_  |
-| node (UR3e)     |<------>| node (UR10e)    |
-|                 |  ROS   |                 |
-| rclcpp + rt_     |        | rclcpp + rt_    |
-| thread::SCHED_   |        | thread::SCHED_  |
-| FIFO @ prio 80  |        | FIFO @ prio 80  |
-|        |        |        |        |        |
-|     UrDriver    |        |     UrDriver    |
-+--------+--------+        +--------+--------+
-         |                          |
-    RTDE/URScript              RTDE/URScript
-         |                          |
-    [UR3e robot]               [UR10e robot]
-```
+- [ ] **OVER-FORCE detection via DOB τ̂_ext or RTDE `actual_TCP_force`**.
+      Trigger MODE_PAUSED on threshold breach. Currently the relevant
+      thresholds are in YAML but not wired.
 
 ## Comparison script
 
-`script/rt_comparison.py`:
-- Runs the standalone benchmark twice (non-RT + RT) with optional load
-- Parses CSV, prints percentile stats (mean/min/p50/p90/p99/p99.9/max)
-- `--save-csv DIR` for raw dump
-- `--plot` for matplotlib histogram
+`script/rt_comparison.py` — same usage as in `_ff_cpp` (no behaviour
+change in this package).
