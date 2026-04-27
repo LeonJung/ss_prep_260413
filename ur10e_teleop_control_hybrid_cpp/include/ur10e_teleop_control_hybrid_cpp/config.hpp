@@ -92,10 +92,12 @@ struct ControlConfig {
   // 0.0 = DOB feedback off (stable PD baseline). Ramp toward 1.0
   // alongside Kf for SOTA transparency.
   double hybrid_tau_ext_cancel_gain  = 0.0;
-  // Use diag(M)·u_inner instead of M·u_inner. Removes feedforward
-  // cross-coupling — important when high wrist KP would otherwise
-  // amplify wrist error onto proximal joints via M's off-diagonals.
-  bool   hybrid_use_diagonal_inertia = true;
+  // Use diag(M)·u_inner instead of M·u_inner. The 4CH formulation's
+  // perfect-transparency claim *requires* full M, so this defaults to
+  // false. The flag is kept only as a diagnostic escape hatch — flip
+  // to true if you need to isolate inter-joint cross-coupling caused
+  // by URDF-vs-firmware inertia model error during debugging.
+  bool   hybrid_use_diagonal_inertia = false;
   std::string hybrid_base_link = "base_link";
   std::string hybrid_tip_link  = "tool0";
 
