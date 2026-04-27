@@ -45,7 +45,7 @@ Eigen::Matrix<double, 6, 1> FourChannelController::compute(
 
   Eigen::Matrix<double, 6, 1> tau =
         M * u_inner
-      - tau_ext_hat
+      - p_.tau_ext_cancel_gain * tau_ext_hat
       + C
       + p_.D.cwiseProduct(q_dot_hat);
   if (!p_.firmware_grav_comp) {

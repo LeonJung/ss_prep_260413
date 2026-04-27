@@ -34,6 +34,13 @@ class FourChannelController {
     // omit +g(q) from the controller output — sending it again would
     // double-compensate.
     bool firmware_grav_comp{false};
+    // Scale on the −τ̂_ext "self-cancellation" term. Mathematically the
+    // 4CH derivation expects 1.0, but with imperfect M/C/g (URDF vs the
+    // firmware's calibrated values) τ̂_ext picks up a model-error bias
+    // that, when subtracted, drives the arm. At Kf = 0 there is no
+    // force-reflection benefit to offset this, so 0.0 is a safer
+    // baseline. Ramp toward 1.0 alongside Kf in later phases.
+    double tau_ext_cancel_gain{1.0};
   };
 
   FourChannelController(DynamicsModel& dyn, const Params& p);

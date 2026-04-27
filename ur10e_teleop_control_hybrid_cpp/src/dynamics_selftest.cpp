@@ -184,6 +184,28 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 6; ++i) std::printf("%+.4f ", dob_fw.value()(i));
     std::printf("(expect ≈ 0 — fw provides g)\n");
 
+    // (F) cancel_gain=0: τ̂_ext should NOT enter the controller output
+    FourChannelController::Params cp_no_cancel = cp_fw;
+    cp_no_cancel.tau_ext_cancel_gain = 0.0;
+    FourChannelController ctrl_no_cancel(dyn, cp_no_cancel);
+    Eigen::VectorXd tau_ext_inj(6);
+    tau_ext_inj << 0, 0, 0, 5.0, 0, 0;  // pretend DOB sees +5 Nm on j3
+    auto tau_no_cancel = ctrl_no_cancel.compute(q, qd_zero, tau_ext_inj,
+                                                q, qd_zero, tau_ext_zero, 1.0);
+    std::printf("4CH(cancel=0) @ τ̂=+5j3: τ  = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_no_cancel(i));
+    std::printf("(expect ≈ 0 — DOB ignored)\n");
+
+    // (G) cancel_gain=1: same scenario, expect −5 on j3
+    FourChannelController::Params cp_full = cp_fw;
+    cp_full.tau_ext_cancel_gain = 1.0;
+    FourChannelController ctrl_full(dyn, cp_full);
+    auto tau_full = ctrl_full.compute(q, qd_zero, tau_ext_inj,
+                                      q, qd_zero, tau_ext_zero, 1.0);
+    std::printf("4CH(cancel=1) @ τ̂=+5j3: τ  = ");
+    for (int i = 0; i < 6; ++i) std::printf("%+.4f ", tau_full(i));
+    std::printf("(expect ≈ -5 on j3)\n");
+
     // ---- EnergyTank sanity ----
     EnergyTank::Params tp;
     tp.E_max = 5.0;

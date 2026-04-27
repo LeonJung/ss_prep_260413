@@ -155,15 +155,17 @@ bool LeaderNode::connect_robot() {
   cp.Kf = vec6_to_eigen(cfg_.hybrid_kf);
   cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
   cp.firmware_grav_comp = cfg_.gravity_comp_internal;
+  cp.tau_ext_cancel_gain = cfg_.hybrid_tau_ext_cancel_gain;
   ctrl_ = std::make_unique<FourChannelController>(*dyn_, cp);
 
   RCLCPP_INFO(get_logger(),
       "hybrid(B1): URDF=%s  vel_fc=%.0fHz  dob_fc=%.0f/%.0fHz  "
-      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f  fw_grav_comp=%s",
+      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f  fw_grav_comp=%s  τ̂_cancel=%.2f",
       urdf_path.c_str(), cfg_.hybrid_velocity_cutoff_hz,
       cfg_.hybrid_dob_cutoff_hz, cfg_.hybrid_dob_accel_cutoff_hz,
       cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm(),
-      cp.firmware_grav_comp ? "true" : "false");
+      cp.firmware_grav_comp ? "true" : "false",
+      cp.tau_ext_cancel_gain);
 
   if (cfg_.hybrid_tank_enabled) {
     EnergyTank::Params tp;

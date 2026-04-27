@@ -86,9 +86,12 @@ struct ControlConfig {
   Vec6 hybrid_kd = {20,  20,  12, 8,  8,  6};
   Vec6 hybrid_kf = {0,   0,   0,  0,  0,  0};   // Phase-4 baseline
   Vec6 hybrid_d_viscous = {0, 0, 0, 0, 0, 0};
-  double hybrid_dob_cutoff_hz       = 60.0;
-  double hybrid_dob_accel_cutoff_hz = 100.0;
-  double hybrid_velocity_cutoff_hz  = 150.0;
+  double hybrid_dob_cutoff_hz        = 30.0;
+  double hybrid_dob_accel_cutoff_hz  = 50.0;
+  double hybrid_velocity_cutoff_hz   = 80.0;
+  // 0.0 = DOB feedback off (stable PD baseline). Ramp toward 1.0
+  // alongside Kf for SOTA transparency.
+  double hybrid_tau_ext_cancel_gain  = 0.0;
   std::string hybrid_base_link = "base_link";
   std::string hybrid_tip_link  = "tool0";
 
