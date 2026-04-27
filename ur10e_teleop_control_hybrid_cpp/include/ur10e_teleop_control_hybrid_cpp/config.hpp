@@ -82,9 +82,19 @@ struct ControlConfig {
   //         − τ̂_ext + C(q,q̇̂)·q̇̂ + D·q̇̂ + g(q)
   // Kf = 0 recovers classic inverse-dynamics bilateral PD (Phase 4
   // baseline); Kf > 0 adds force-reflected transparency (Phase 5).
+  // Symmetric defaults retained as a fallback when YAML has the legacy
+  // shared `KP`/`KD` keys but no per-side override.
   Vec6 hybrid_kp = {100, 100, 60, 30, 30, 20};
   Vec6 hybrid_kd = {20,  20,  12, 8,  8,  6};
   Vec6 hybrid_kf = {0,   0,   0,  0,  0,  0};   // Phase-4 baseline
+  // Asymmetric 4CH per-side gains — Lawrence's general 4CH allows
+  // channel-specific gains, so leader_KP=0 makes the leader a free
+  // (passive + force-reflected) frame while the follower retains
+  // tracking authority.
+  Vec6 hybrid_leader_kp   = {0,   0,   0,    0,    0,     0};
+  Vec6 hybrid_leader_kd   = {5,   5,   3,   15,   30,   100};
+  Vec6 hybrid_follower_kp = {100, 100, 60, 500, 2000, 10000};
+  Vec6 hybrid_follower_kd = {20,  20,  12,  45,   90,   200};
   Vec6 hybrid_d_viscous = {0, 0, 0, 0, 0, 0};
   double hybrid_dob_cutoff_hz        = 30.0;
   double hybrid_dob_accel_cutoff_hz  = 50.0;

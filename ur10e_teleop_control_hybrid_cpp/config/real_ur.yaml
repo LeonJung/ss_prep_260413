@@ -109,17 +109,19 @@ timestep: 0.002  # 500 Hz
 # leader and follower. Conservative defaults — start low, raise for
 # responsiveness.
 hybrid:
-  # KP/KD per joint. The 4CH formulation outputs τ = M(q)·(KP·err + KD·ė).
-  # Closed-loop should be q̈ = u_inner with ω_n = √KP, but that decoupling
-  # relies on M_model = M_real. Our M_model comes straight from the
-  # public URDF, which differs from the UR firmware's calibrated
-  # inertias — so the previous high wrist KPs (1000/5000/30000) sent
-  # large feedforward torques into proximal joint rows via M's off-
-  # diagonals, leaking through as the observed wrist→elbow/shoulder
-  # surge. Halve wrist KP for an empirical sweet-spot pass; the proper
-  # fix is system identification of M (next mission).
-  KP:                 [100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
-  KD:                 [ 20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
+  # Asymmetric 4CH gains — Lawrence's 4CH is a general framework that
+  # allows different gains per side; symmetric KP is just the textbook
+  # simplification used in Buamanee. Setting leader_KP = 0 turns off
+  # the position-spring that was making the leader feel mechanically
+  # tied to the follower's pose (~290 Nm/rad apparent stiffness on the
+  # shoulder). With KP=0 the leader is "free": the user's drag is only
+  # resisted by leader_KD damping (very light) plus the residual
+  # inertia not yet cancelled by tau_ext_cancel_gain. The follower
+  # keeps its full tracking KP so it still chases the leader's pose.
+  leader_KP:    [   0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
+  leader_KD:    [   5.0,   5.0,   3.0,   15.0,   30.0,   100.0]
+  follower_KP:  [ 100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
+  follower_KD:  [  20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
   # KF activates the 4CH force-reflection / apparent-inertia path. Kf
   # is the inverse of apparent mass at a given joint (q̈ = Kf·τ_user
   # in steady state when cancel_gain ≈ 1), so wrist values are larger

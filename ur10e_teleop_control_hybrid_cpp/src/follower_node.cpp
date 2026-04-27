@@ -134,8 +134,8 @@ bool FollowerNode::connect_robot() {
   dob_ = std::make_unique<DisturbanceObserver>(*dyn_, dob_p, cfg_.timestep);
 
   FourChannelController::Params cp;
-  cp.Kp = vec6_to_eigen(cfg_.hybrid_kp);
-  cp.Kd = vec6_to_eigen(cfg_.hybrid_kd);
+  cp.Kp = vec6_to_eigen(cfg_.hybrid_follower_kp);
+  cp.Kd = vec6_to_eigen(cfg_.hybrid_follower_kd);
   cp.Kf = vec6_to_eigen(cfg_.hybrid_kf);
   cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
   cp.firmware_grav_comp = cfg_.gravity_comp_internal;

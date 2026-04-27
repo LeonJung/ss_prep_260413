@@ -120,8 +120,25 @@ bool load_config(const std::string& path, ControlConfig& out) {
   }
 
   if (const auto& hy = root["hybrid"]) {
-    try_vec6(hy, "KP", out.hybrid_kp);
-    try_vec6(hy, "KD", out.hybrid_kd);
+    // Legacy shared (if user keeps the old YAML shape). When present,
+    // these seed both leader and follower side gains, which can then
+    // be overridden by leader_KP / follower_KP below.
+    Vec6 shared_kp;
+    if (try_vec6_flag(hy, "KP", shared_kp)) {
+      out.hybrid_kp = shared_kp;
+      out.hybrid_leader_kp = shared_kp;
+      out.hybrid_follower_kp = shared_kp;
+    }
+    Vec6 shared_kd;
+    if (try_vec6_flag(hy, "KD", shared_kd)) {
+      out.hybrid_kd = shared_kd;
+      out.hybrid_leader_kd = shared_kd;
+      out.hybrid_follower_kd = shared_kd;
+    }
+    try_vec6(hy, "leader_KP",   out.hybrid_leader_kp);
+    try_vec6(hy, "leader_KD",   out.hybrid_leader_kd);
+    try_vec6(hy, "follower_KP", out.hybrid_follower_kp);
+    try_vec6(hy, "follower_KD", out.hybrid_follower_kd);
     try_vec6(hy, "KF", out.hybrid_kf);
     try_vec6(hy, "D_VISCOUS", out.hybrid_d_viscous);
     try_scalar(hy, "dob_cutoff_hz",        out.hybrid_dob_cutoff_hz);
