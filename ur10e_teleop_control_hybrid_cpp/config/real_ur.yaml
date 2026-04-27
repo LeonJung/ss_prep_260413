@@ -122,26 +122,31 @@ hybrid:
   leader_KD:    [   5.0,   5.0,   3.0,   15.0,   30.0,   100.0]
   follower_KP:  [ 100.0, 100.0,  60.0,  500.0, 2000.0, 10000.0]
   follower_KD:  [  20.0,  20.0,  12.0,   45.0,   90.0,   200.0]
-  # KF activates the 4CH force-reflection / apparent-inertia path. Kf
-  # is the inverse of apparent mass at a given joint (q̈ = Kf·τ_user
-  # in steady state when cancel_gain ≈ 1), so wrist values are larger
-  # to compensate for low physical inertia. These are conservative
-  # first-pass values — raise toward "passive feel" as oscillation
-  # margin allows.
-  KF:                 [  0.3,   0.3,   0.3,    0.5,    1.0,     3.0]
-  D_VISCOUS:          [  0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
+  # Per-side KF — also asymmetric. The shoulder felt heavy because the
+  # shared KF=0.3 was below the lightness threshold KF > κ/M ≈ 0.7/0.28
+  # = 2.5 for the UR3e shoulder. With cancel_gain → 0 the threshold
+  # disappears and any KF > 0 makes the leader lighter than passive.
+  # leader_KF is set well above passive on every joint; follower_KF=0
+  # makes the follower a rigid tracking PD (no environment compliance,
+  # so contacts stay crisp).
+  leader_KF:    [   3.0,   3.0,   2.0,    5.0,   10.0,    30.0]
+  follower_KF:  [   0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
+  D_VISCOUS:    [   0.0,   0.0,   0.0,    0.0,    0.0,     0.0]
   # DOB / velocity filter cutoffs — slower than first iteration so model
   # error doesn't ride into the control loop as broadband noise.
   dob_cutoff_hz:       30.0   # Q-filter cutoff for τ̂_ext (was 60)
   dob_accel_cutoff_hz: 50.0   # q̈̂ pre-filter (was 100)
   velocity_cutoff_hz:  80.0   # VelocityEstimator LPF (was 150)
-  # τ̂_ext "self-cancellation" gain. 0 disables, 1 is the textbook 4CH
-  # value (apparent inertia → 0). κ=1 is marginally stable in the
-  # closed-loop DOB feedback (z=+1 mode), so leave a small contraction
-  # margin: 0.7 cancels most of the inertia while the loop still
-  # rejects DC bias from URDF model error in 100-500 ms. Raise toward
-  # 1.0 once transparency feel is dialed in.
-  tau_ext_cancel_gain: 0.7
+  # τ̂_ext "self-cancellation" gain. κ=1 is the textbook value but
+  # with imperfect M and the marginal-stable DOB feedback loop (z=+1
+  # mode at κ=1) it traps energy and amplifies model-error bias. With
+  # κ=0 the user's force flows through directly: q̈ = u_inner + τ_user/M.
+  # Since leader_KF is well above 0, the resulting apparent mass
+  # 1/(KF + 1/M) is BELOW physical M — i.e., lighter than a passive
+  # arm. This is the conservative, stable mode; raise κ later only if
+  # we need to decouple physical M from the closed-loop dynamics
+  # (which only pays off after system identification anyway).
+  tau_ext_cancel_gain: 0.0
   # 4CH perfect-transparency requires full M, so default is false.
   # Diagnostic-only escape hatch — set true to A/B-confirm a given
   # symptom is feedforward cross-coupling vs. some other cause. Real

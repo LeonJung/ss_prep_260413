@@ -139,7 +139,17 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_vec6(hy, "leader_KD",   out.hybrid_leader_kd);
     try_vec6(hy, "follower_KP", out.hybrid_follower_kp);
     try_vec6(hy, "follower_KD", out.hybrid_follower_kd);
-    try_vec6(hy, "KF", out.hybrid_kf);
+
+    // Legacy shared KF seeds both sides; per-side overrides win.
+    Vec6 shared_kf;
+    if (try_vec6_flag(hy, "KF", shared_kf)) {
+      out.hybrid_kf = shared_kf;
+      out.hybrid_leader_kf = shared_kf;
+      out.hybrid_follower_kf = shared_kf;
+    }
+    try_vec6(hy, "leader_KF",   out.hybrid_leader_kf);
+    try_vec6(hy, "follower_KF", out.hybrid_follower_kf);
+
     try_vec6(hy, "D_VISCOUS", out.hybrid_d_viscous);
     try_scalar(hy, "dob_cutoff_hz",        out.hybrid_dob_cutoff_hz);
     try_scalar(hy, "dob_accel_cutoff_hz",  out.hybrid_dob_accel_cutoff_hz);

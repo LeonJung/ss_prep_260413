@@ -136,7 +136,7 @@ bool FollowerNode::connect_robot() {
   FourChannelController::Params cp;
   cp.Kp = vec6_to_eigen(cfg_.hybrid_follower_kp);
   cp.Kd = vec6_to_eigen(cfg_.hybrid_follower_kd);
-  cp.Kf = vec6_to_eigen(cfg_.hybrid_kf);
+  cp.Kf = vec6_to_eigen(cfg_.hybrid_follower_kf);
   cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
   cp.firmware_grav_comp = cfg_.gravity_comp_internal;
   cp.tau_ext_cancel_gain = cfg_.hybrid_tau_ext_cancel_gain;
