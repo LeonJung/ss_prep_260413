@@ -12,24 +12,32 @@ namespace ur10e_teleop_control_hybrid_cpp {
 // and a Disturbance Observer for sensorless τ̂_ext estimation (Tier B1,
 // "Fast Bilateral Teleoperation" style).
 //
-//   τ_cmd = M(q){ Kp ⊙ (q_peer − q)
-//               + Kd ⊙ (q̇_peer − q̇̂)
-//               + Kf ⊙ (τ̂_ext_peer + τ̂_ext) }
+//   τ_cmd = M(q){ Kp     ⊙ (q_peer − q)
+//               + Kd     ⊙ (q̇_peer − q̇̂)
+//               + Kf_self ⊙ τ̂_ext
+//               + Kf_peer ⊙ τ̂_ext_peer }
 //         − τ̂_ext
 //         + C(q,q̇̂)·q̇̂ + D ⊙ q̇̂ + g(q)
 //
-// ⊙ is element-wise (per-joint gains). Kf = 0 recovers inverse-dynamics
-// bilateral PD.
+// ⊙ is element-wise (per-joint gains). Buamanee's symmetric Kf is the
+// special case Kf_self = Kf_peer; Lawrence's general 4CH allows them
+// to differ (channels C₁ vs C₄, etc.). Splitting matters here because
+// Kf_self enters the closed-loop DOB feedback (stability constraint
+// Kf_self < ~0.5/M) while Kf_peer is a pure input gain on the peer's
+// τ̂_ext — no self-stability constraint, so it can be raised freely
+// to amplify contact reflection. Kf_self = Kf_peer = 0 recovers
+// inverse-dynamics bilateral PD.
 //
 // This class does not own the observer/dynamics modules; the caller
 // holds them as members and passes references. All sizes must be 6.
 class FourChannelController {
  public:
   struct Params {
-    Eigen::VectorXd Kp;        // size 6
-    Eigen::VectorXd Kd;        // size 6
-    Eigen::VectorXd Kf;        // size 6
-    Eigen::VectorXd D;         // modeled viscous damping, size 6
+    Eigen::VectorXd Kp;       // size 6
+    Eigen::VectorXd Kd;       // size 6
+    Eigen::VectorXd Kf_self;  // size 6 — gain on own DOB estimate
+    Eigen::VectorXd Kf_peer;  // size 6 — gain on peer DOB estimate
+    Eigen::VectorXd D;        // modeled viscous damping, size 6
     // When the actuator path itself adds g(q) (UR firmware grav-comp),
     // omit +g(q) from the controller output — sending it again would
     // double-compensate.
@@ -70,7 +78,6 @@ class FourChannelController {
       double ramp = 1.0);
 
   const Params& params() const { return p_; }
-  void set_kf(const Eigen::VectorXd& kf) { p_.Kf = kf; }
 
  private:
   DynamicsModel& dyn_;

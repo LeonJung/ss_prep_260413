@@ -150,10 +150,11 @@ bool LeaderNode::connect_robot() {
   dob_ = std::make_unique<DisturbanceObserver>(*dyn_, dob_p, cfg_.timestep);
 
   FourChannelController::Params cp;
-  cp.Kp = vec6_to_eigen(cfg_.hybrid_leader_kp);
-  cp.Kd = vec6_to_eigen(cfg_.hybrid_leader_kd);
-  cp.Kf = vec6_to_eigen(cfg_.hybrid_leader_kf);
-  cp.D  = vec6_to_eigen(cfg_.hybrid_d_viscous);
+  cp.Kp      = vec6_to_eigen(cfg_.hybrid_leader_kp);
+  cp.Kd      = vec6_to_eigen(cfg_.hybrid_leader_kd);
+  cp.Kf_self = vec6_to_eigen(cfg_.hybrid_leader_kf);
+  cp.Kf_peer = vec6_to_eigen(cfg_.hybrid_leader_kf_peer);
+  cp.D       = vec6_to_eigen(cfg_.hybrid_d_viscous);
   cp.firmware_grav_comp = cfg_.gravity_comp_internal;
   cp.tau_ext_cancel_gain = cfg_.hybrid_tau_ext_cancel_gain;
   cp.use_diagonal_inertia = cfg_.hybrid_use_diagonal_inertia;
@@ -161,11 +162,11 @@ bool LeaderNode::connect_robot() {
 
   RCLCPP_INFO(get_logger(),
       "hybrid(B1): URDF=%s  vel_fc=%.0fHz  dob_fc=%.0f/%.0fHz  "
-      "|Kp|=%.1f |Kd|=%.1f |Kf|=%.3f  fw_grav_comp=%s  τ̂_cancel=%.2f  "
-      "M=%s",
+      "|Kp|=%.1f |Kd|=%.1f |Kf_self|=%.3f |Kf_peer|=%.3f  "
+      "fw_grav_comp=%s  τ̂_cancel=%.2f  M=%s",
       urdf_path.c_str(), cfg_.hybrid_velocity_cutoff_hz,
       cfg_.hybrid_dob_cutoff_hz, cfg_.hybrid_dob_accel_cutoff_hz,
-      cp.Kp.norm(), cp.Kd.norm(), cp.Kf.norm(),
+      cp.Kp.norm(), cp.Kd.norm(), cp.Kf_self.norm(), cp.Kf_peer.norm(),
       cp.firmware_grav_comp ? "true" : "false",
       cp.tau_ext_cancel_gain,
       cp.use_diagonal_inertia ? "diag" : "full");

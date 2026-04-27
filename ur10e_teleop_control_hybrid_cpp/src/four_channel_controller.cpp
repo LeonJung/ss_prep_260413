@@ -17,10 +17,11 @@ FourChannelController::FourChannelController(DynamicsModel& dyn,
                                              const Params& p)
     : dyn_(dyn), p_(p) {
   const std::size_t n = dyn_.n_joints();
-  require_size(p_.Kp, n, "Kp");
-  require_size(p_.Kd, n, "Kd");
-  require_size(p_.Kf, n, "Kf");
-  require_size(p_.D,  n, "D");
+  require_size(p_.Kp,      n, "Kp");
+  require_size(p_.Kd,      n, "Kd");
+  require_size(p_.Kf_self, n, "Kf_self");
+  require_size(p_.Kf_peer, n, "Kf_peer");
+  require_size(p_.D,       n, "D");
 }
 
 Eigen::Matrix<double, 6, 1> FourChannelController::compute(
@@ -36,11 +37,11 @@ Eigen::Matrix<double, 6, 1> FourChannelController::compute(
 
   const Eigen::VectorXd e_pos = q_peer - q;
   const Eigen::VectorXd e_vel = qd_peer - q_dot_hat;
-  const Eigen::VectorXd tau_sum = tau_ext_hat_peer + tau_ext_hat;
 
   Eigen::VectorXd u_inner = p_.Kp.cwiseProduct(e_pos)
                           + p_.Kd.cwiseProduct(e_vel)
-                          + p_.Kf.cwiseProduct(tau_sum);
+                          + p_.Kf_self.cwiseProduct(tau_ext_hat)
+                          + p_.Kf_peer.cwiseProduct(tau_ext_hat_peer);
   u_inner *= ramp;
 
   Eigen::Matrix<double, 6, 1> M_u =

@@ -140,15 +140,32 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_vec6(hy, "follower_KP", out.hybrid_follower_kp);
     try_vec6(hy, "follower_KD", out.hybrid_follower_kd);
 
-    // Legacy shared KF seeds both sides; per-side overrides win.
+    // Legacy shared KF seeds Kf_self AND Kf_peer for both sides
+    // (Buamanee-symmetric form). Per-side and per-channel overrides
+    // come below.
     Vec6 shared_kf;
     if (try_vec6_flag(hy, "KF", shared_kf)) {
       out.hybrid_kf = shared_kf;
       out.hybrid_leader_kf = shared_kf;
+      out.hybrid_leader_kf_peer = shared_kf;
       out.hybrid_follower_kf = shared_kf;
+      out.hybrid_follower_kf_peer = shared_kf;
     }
-    try_vec6(hy, "leader_KF",   out.hybrid_leader_kf);
-    try_vec6(hy, "follower_KF", out.hybrid_follower_kf);
+    // Per-side legacy: sets BOTH self and peer for that side.
+    Vec6 leader_kf_legacy;
+    if (try_vec6_flag(hy, "leader_KF", leader_kf_legacy)) {
+      out.hybrid_leader_kf = leader_kf_legacy;
+      out.hybrid_leader_kf_peer = leader_kf_legacy;
+    }
+    Vec6 follower_kf_legacy;
+    if (try_vec6_flag(hy, "follower_KF", follower_kf_legacy)) {
+      out.hybrid_follower_kf = follower_kf_legacy;
+      out.hybrid_follower_kf_peer = follower_kf_legacy;
+    }
+    // Per-channel overrides (last wins). Use these to amplify contact
+    // reflection (KF_PEER) without affecting DOB self-feedback stability.
+    try_vec6(hy, "leader_KF_PEER",   out.hybrid_leader_kf_peer);
+    try_vec6(hy, "follower_KF_PEER", out.hybrid_follower_kf_peer);
 
     try_vec6(hy, "D_VISCOUS", out.hybrid_d_viscous);
     try_scalar(hy, "dob_cutoff_hz",        out.hybrid_dob_cutoff_hz);

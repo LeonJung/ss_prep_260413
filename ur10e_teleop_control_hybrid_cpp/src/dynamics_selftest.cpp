@@ -127,10 +127,11 @@ int main(int argc, char** argv) {
 
     // ---- FourChannelController sanity ----
     FourChannelController::Params cp;
-    cp.Kp = Eigen::VectorXd::Constant(6, 10.0);
-    cp.Kd = Eigen::VectorXd::Constant(6, 1.0);
-    cp.Kf = Eigen::VectorXd::Zero(6);   // Phase-4 baseline
-    cp.D  = Eigen::VectorXd::Zero(6);
+    cp.Kp      = Eigen::VectorXd::Constant(6, 10.0);
+    cp.Kd      = Eigen::VectorXd::Constant(6, 1.0);
+    cp.Kf_self = Eigen::VectorXd::Zero(6);   // Phase-4 baseline
+    cp.Kf_peer = Eigen::VectorXd::Zero(6);
+    cp.D       = Eigen::VectorXd::Zero(6);
     FourChannelController ctrl(dyn, cp);
 
     Eigen::VectorXd tau_ext_zero = Eigen::VectorXd::Zero(6);
