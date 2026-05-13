@@ -6,8 +6,71 @@ PREEMPT_RT kernel scheduling (SCHED_FIFO + mlockall) for tight control-loop
 timing.
 
 Sibling of [`ur10e_teleop_real_py`](../ur10e_teleop_real_py/) — same topic
-namespace, same control semantics, same config schema. Only one of the
-two packages is launched at a time.
+namespace, same RT/launch/state-machine infrastructure, same config
+schema. **Control semantics differ**: passive leader + TCP F/T reflection
+(아래 참조). Only one of these packages is launched at a time.
+
+## Control law — Passive Leader + TCP F/T Reflection
+
+비대칭 양방향. Leader는 위치 결합을 가지지 않고 follower의 **접촉 토크**
+신호만 받는다. Follower는 표준 PD로 leader 자세를 추적.
+
+### Leader (passive + force reflection)
+
+```
+τ_lead_i = −KD_ACTIVE_i · q̇_lead_i        # velocity damping
+         + K_FT_i · τ̂_ext_peer_i           # force reflection
+```
+
+| term | meaning |
+|------|---------|
+| `−KD_ACTIVE·q̇` | 자기 속도에 비례한 점성 마찰 — 에너지를 빼낸다. KP_USER=0이라 위치 스프링 없음 ⇒ **passive leader**. |
+| `K_FT · τ̂_ext_peer` | peer(follower)의 외부 접촉 토크를 K_FT 배 해서 leader 토크로 흘림. 보통 0.5(보수적) — 1.0이면 1:1 반사, 그러나 진동 위험 증가. |
+
+### `τ̂_ext_peer`는 어떻게 만들어지나
+
+Follower 측에서 UR RTDE의 `actual_TCP_force` (6-DoF 카르테시안 wrench)를
+analytical Jacobian transpose로 조인트 토크로 매핑:
+
+```
+τ̂_ext = J(q)^T · F_TCP
+```
+
+**가상일률 원리**: 조인트 가상변위 `δq`에 대한 일 `τ^T·δq` = TCP 가상변위에
+대한 일 `F^T·(J·δq)` ⇒ `τ = J^T · F`. 즉 카르테시안 힘을 조인트 토크로
+옮기는 표준 방법.
+
+구현: `src/leader_node.cpp:343–346` (τ_ft 계산 진입점).
+
+### Follower
+
+```
+τ_foll_i = KP_TRACK_i · (q_lead_i − q_foll_i)
+         − KD_TRACK_i · q̇_foll_i
+```
+
+`KD`가 **자기 속도**(상대 속도 아님)에 걸려, leader가 빠르게 움직이면
+follower가 살짝 뒤처지는 게 의도된 동역학.
+
+### Gain handling (asymmetric)
+
+```yaml
+leader:
+  KP_USER:   [0, 0, 0, 0, 0, 0]           # off — passive
+  KD_ACTIVE: [3, 3, 2, 1.5, 1.5, 1]       # light damping only
+  K_FT:      [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+follower:
+  KP_TRACK:  [300, 300, 150, 100, 100, 80]
+  KD_TRACK:  [30, 30, 20, 10, 10, 10]
+```
+
+전체 설정: `config/real_ur.yaml:58–77`.
+
+### Stability
+
+Passive leader 자체가 안정성을 보장 — 사용자가 외부 에너지 소스이고
+컨트롤러는 항상 에너지를 빼내거나 보존하는 방향으로 작용. K_FT가 너무
+크면 force loop이 진동할 수 있어 0.5에서 시작해 천천히 올리는 게 안전.
 
 ## Status
 

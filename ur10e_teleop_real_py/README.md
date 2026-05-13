@@ -9,6 +9,60 @@ behavior on top of `ur_client_library` with optional PREEMPT_RT scheduling
 for tighter worst-case timing. Same ROS topic namespace, same config
 schema — launch **one or the other**, not both.
 
+## Control law — Bilateral PD + Continuous Deadband
+
+Position–position symmetric coupling. Both sides exchange only `q, q̇`
+(no force channel). UR firmware handles `friction_comp` and
+`gravity_comp_internal`; the PC contributes only the two equations
+below.
+
+### Leader (bilateral PD with continuous deadband)
+
+```
+Δq_i  = q_peer_i − q_lead_i
+τ_lead_i = sign(Δq_i) · max(0, |KP_BI_i · Δq_i| − DB_i)
+```
+
+Term-by-term:
+
+| term | meaning |
+|------|---------|
+| `Δq_i = q_peer − q` | peer(follower) 위치에서 본인 위치를 뺀 위치 오차. 부호는 leader를 끌어야 할 방향. |
+| `KP_BI · Δq` | 선형 스프링 토크(Hooke). deadband가 없다면 그대로 흘러나가는 양. |
+| `\|·\|` | 절댓값으로 "크기"만 본다. |
+| `− DB` | deadband 폭만큼 빼서, 작은 오차는 음수가 되도록. |
+| `max(0, ·)` | 음수(=오차가 임계 미만) 영역을 0으로 클리핑 — free motion에서 끈적임 제거. |
+| `sign(Δq) ·` | 마지막에 원래 부호를 다시 붙여 방향 복원. |
+
+**왜 "continuous" deadband인가** — 단순 discrete deadband(임계 미만 0,
+초과시 `KP·Δq`)는 임계 직후 토크가 점프하면서 chatter를 만든다. 이 식은
+임계 직후에도 0에서 시작해 선형 증가하므로 통과 지점이 매끄럽다.
+구현: `src/leader_real_node.py:416–437`.
+
+### Follower (standard PD tracking)
+
+```
+τ_foll_i = KP_TRACK_i · (q_lead_i − q_foll_i)
+         + KD_TRACK_i · (q̇_lead_i − q̇_foll_i)
+```
+
+`KD`가 **상대 속도** `(q̇_lead − q̇_foll)`에 걸리는 것이 포인트 —
+절대 속도 `−q̇_foll`만 쓰면 leader가 움직일 때 따라가지 못한다.
+
+### Gain handling (비대칭)
+
+Leader는 약하게(사용자가 손으로 누르는 힘과 균형), follower는 강하게(추적
+성능). 기본값:
+
+| param | joint 0..5 |
+|-------|------------|
+| `leader.KP_BI` (Nm/rad)   | 100, 100, 70, 35, 35, 30 |
+| `leader.TAU_BI_DEADBAND` (Nm) | 10, 10, 6.5, 4.5, 4.5, 3.8 |
+| `follower.KP_TRACK`       | 300, 300, 150, 100, 100, 80 |
+| `follower.KD_TRACK`       | 30, 30, 20, 10, 10, 10 |
+
+전체 설정은 `config/real_ur.yaml:66–95`.
+
 ## Package Structure
 
 ```

@@ -1,13 +1,55 @@
 # ur10e_teleop_control_unilateral_cpp
 
-C++ implementation of bilateral force-feedback teleoperation for real UR
-robots. Uses `ur_client_library` for the UR I/O layer and supports
-PREEMPT_RT kernel scheduling (SCHED_FIFO + mlockall) for tight control-loop
-timing.
+C++ implementation of **unilateral** (one-way) teleoperation for real UR
+robots — leader는 peer 신호를 사용하지 않고, follower만 leader의 자세를
+추적한다. 같은 인프라(state machine, soft-start, RT 등) 위에서 백채널만
+끊은 controlled baseline으로, ff_cpp / hybrid_cpp 와의 비교용. Uses
+`ur_client_library` for the UR I/O layer and supports PREEMPT_RT kernel
+scheduling (SCHED_FIFO + mlockall) for tight control-loop timing.
 
 Sibling of [`ur10e_teleop_real_py`](../ur10e_teleop_real_py/) — same topic
-namespace, same control semantics, same config schema. Only one of the
-two packages is launched at a time.
+namespace, same RT/launch/state-machine infrastructure, same config schema.
+**Control semantics differ**: real_py는 양방향 PD인 반면 본 패키지는 단방향.
+Only one of these packages is launched at a time.
+
+## Control law — Unilateral baseline (no haptic backpath)
+
+의도적으로 leader→follower 단방향. Leader는 peer 신호(`peer_q`,
+`peer_dq`)를 받기는 하지만 토크 계산에 쓰지 않는다 — `leader_node.cpp:306`
+에 `// _unilateral: no backward haptic path. Leader doesn't use peer_q`
+명시.
+
+### Leader (light damping만)
+
+```
+τ_lead_i = −KD_ACTIVE_i · q̇_lead_i        (또는 0)
+```
+
+위치 스프링 없음(`KP_USER = 0`). 사용자가 손으로 직접 끌어주고, 본인
+속도에 비례하는 점성 마찰만 가한다. → 안정성은 자동 확보(passive),
+대신 환경 정보는 사용자에게 전혀 돌아오지 않음.
+
+### Follower (PD tracking)
+
+```
+τ_foll_i = KP_TRACK_i · (q_lead_i − q_foll_i)
+         + KD_TRACK_i · (q̇_lead_i − q̇_foll_i)
+```
+
+`real_cpp`의 follower 식과 동일. KD가 상대 속도에 걸려 leader 속도 변화를
+따라간다.
+
+### 다른 3개와의 관계
+
+| 패키지 | leader 백채널 | follower 채널 |
+|--------|--------------|--------------|
+| **unilateral_cpp** | ❌ 없음 | q, q̇ (PD) |
+| real_cpp / real_py | peer q (Bilateral PD + deadband) | q, q̇ (PD) |
+| ff_cpp | peer τ_TCP (F/T reflection) | q, q̇ (PD) |
+| hybrid_cpp | peer q, q̇, τ̂_ext (4CH+DOB) | q, q̇, τ̂_ext_peer |
+
+본 패키지는 "haptic 없음" reference — 위 3개의 transparency/stability
+trade-off를 측정할 때의 anchor point.
 
 ## Status
 

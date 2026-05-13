@@ -45,32 +45,108 @@ What's verified on real hardware (UR3e + UR10e):
 | Idle stability (no drift, no oscillation)          | ✅ |
 | "Apparent inertia < physical inertia" on shoulder/elbow | ❌ — hard limit; see *Tuning journey* |
 
-## Control law (compact)
+## Control law — 4-Channel + Disturbance Observer (+ optional Energy Tank)
 
-For each side (leader, follower) at every 2 ms tick:
+매 2 ms tick마다 양쪽(leader, follower)에서 아래 4단계를 거친다.
+
+### 1) 속도 추정
 
 ```
-q̇̂          = VelocityEstimator(q)
-τ̂_ext       = DisturbanceObserver(q, q̇̂, τ_applied_prev)   # Q-filter, omits +g if firmware grav-comps
-u_inner    = Kp ⊙ (q_peer − q)
-           + Kd ⊙ (q̇_peer − q̇̂)
-           + Kf_self ⊙ τ̂_ext
-           + Kf_peer ⊙ τ̂_ext_peer
-τ_4ch      = M(q) · (ramp · u_inner)
-           − τ_ext_cancel_gain · τ̂_ext
-           + C(q,q̇̂)·q̇̂
-           + D ⊙ q̇̂
-           + (firmware_grav_comp ? 0 : g(q))
-
-# Two-Layer wrapper (when enabled):
-τ_static   = τ_4ch with ramp = 0
-τ_active   = τ_4ch − τ_static
-α          = EnergyTank.step(τ_active, q̇̂)        # ∈ [0, 1]
-τ_cmd      = τ_static + α · τ_active
+q̇̂ = LPF_80Hz( d/dt q )
 ```
 
-`τ_cmd` is clipped to per-joint torque limits, then written to the UR
-via RTDE in `MODE_TORQUE` (or `MODE_SERVOJ` during HOMING).
+관측된 위치를 시간 미분하면 잡음이 크므로 1차 저역통과 필터(컷오프 80 Hz)로
+매끄럽게 만든다. 이 q̇̂가 DOB와 inner law의 속도 입력 모두에 쓰임.
+
+### 2) Disturbance Observer (DOB) — sensorless τ̂_ext
+
+강체 동역학:
+
+```
+M(q)·q̈ + C(q,q̇)·q̇ + g(q) = τ_applied + τ_ext
+```
+
+좌변(model)을 알면 외란은:
+
+```
+τ̂_ext = Q(s) · [ M(q)·q̈̂  +  C(q,q̇̂)·q̇̂  +  g(q)  −  τ_applied ]
+```
+
+| term | meaning |
+|------|---------|
+| `M(q)` | inertia matrix (URDF → KDL 계산). |
+| `C·q̇̂` | Coriolis+원심항. |
+| `g(q)` | 중력 토크. UR 펌웨어가 grav-comp을 켜면 생략(`fw_grav_comp` 플래그). |
+| `τ_applied` | 이전 step 명령 토크. |
+| `Q(s)` | 2차 저역통과 (cutoff 30 Hz) — 모델 오차/미분 잡음이 ext에 새는 걸 막는 realizability filter. |
+
+핵심: **F/T 센서 없이도** "모델이 예측한 토크"와 "실제 가속이 가리키는
+토크"의 차이가 환경 외란. URDF 정확도가 그대로 추정 품질이 되며, 그래서
+`dynamics_selftest`가 사전 검증 단계에 있다. 구현: `src/disturbance_observer.cpp`.
+
+### 3) 4-Channel Inner Law (Lawrence)
+
+```
+u_i = Kp_i · (q_peer_i − q_i)
+    + Kd_i · (q̇̂_peer_i − q̇̂_i)
+    + Kf_self_i · τ̂_ext_i
+    + Kf_peer_i · τ̂_ext_peer_i
+```
+
+Lawrence(1993) 4-channel framework — 양방향 teleop의 정보 흐름을 4 채널로
+분해. 양쪽이 같은 식을 돌리면 forward / backward 양 방향이 자동 성립.
+
+| 채널 | 의미 |
+|------|------|
+| C1/C2 (P) | `Kp·Δq` — 위치 결합. 양쪽에서 보면 leader→foll, foll→leader 두 방향. |
+| C3/C4 (F) | `Kf_peer·τ̂_ext_peer` — peer의 외력을 받음. |
+| (확장) | `Kf_self·τ̂_ext` — 본인이 받는 외력을 추가 토크로(보통 0이거나 작음). |
+
+이론적 transparency 최대화에는 `C1=C3, C2=C4`의 특정 조합이 필요(Lawrence).
+이게 9차원 + κ 튜닝이 까다로운 이유. 구현:
+`src/four_channel_controller.cpp:41–60`.
+
+### 4) Outer (Computed-Torque) Law
+
+```
+τ_4ch = M(q) · ( ramp · u )
+      − κ · τ̂_ext                     # κ = tau_ext_cancel_gain (≈ 0.7)
+      + C(q,q̇̂) · q̇̂
+      + D ⊙ q̇̂
+      + ( fw_grav_comp ? 0 : g(q) )
+```
+
+| term | meaning |
+|------|---------|
+| `M·(ramp·u)` | inner law(가속 명령)에 mass shaping ⇒ 토크 단위. `ramp`는 ACTIVE 진입시 0→1. |
+| `−κ·τ̂_ext` | 본인이 받는 외란을 **부분적**으로 cancel. κ=1이면 완전 stiff, κ=0이면 외란을 그대로 느낌. 0.7이 trade-off 지점. |
+| `C·q̇̂` | Coriolis feedforward — 빠른 다관절 동작의 관성 결합 상쇄. |
+| `D⊙q̇̂` | 점성 댐핑(기본 0). 안정성 보강용 knob. |
+| `g(q)` | 중력 FF. 펌웨어 grav-comp가 켜져있으면 이중 보상 방지 위해 생략. |
+
+### 5) (옵션) Energy Tank — Two-Layer Passivity
+
+기본 disabled. 켜면:
+
+```
+P_out = (τ_4ch − τ_static) · q̇̂                   # controller가 로봇에 주입하는 파워
+Ė_tank = D_dissip · q̇̂²  −  P_out                 # 가상 마찰로 충전, 출력으로 소진
+E_tank ∈ [0, E_max]                              # E_max=5 J, 충전 천장 0.9·E_max
+α = (E_tank > 0 ? 1 : 0)                         # binary throttle
+τ_cmd = τ_static + α · (τ_4ch − τ_static)
+```
+
+직관: "이 컨트롤러가 system으로 보내는 누적 에너지는 시스템에서 빼낸
+가상 마찰 손실을 초과할 수 없다" — 이게 **passivity**. Passive
+environment에 결합되어 있으면 passivity ⇒ stability. 모델 오차가 컨트롤러를
+공격적으로 만들어 탱크를 비우면 α=0으로 토크가 잠시 꺼지면서 발산을 차단.
+
+구현: `src/energy_tank.cpp:26–64`.
+
+### 최종 출력
+
+`τ_cmd`는 per-joint 토크 리밋으로 clip 후 RTDE `MODE_TORQUE`로 UR에 송신
+(HOMING 중에는 `MODE_SERVOJ`).
 
 ## Architecture
 

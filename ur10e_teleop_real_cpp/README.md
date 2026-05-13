@@ -9,6 +9,47 @@ Sibling of [`ur10e_teleop_real_py`](../ur10e_teleop_real_py/) — same topic
 namespace, same control semantics, same config schema. Only one of the
 two packages is launched at a time.
 
+## Control law — Bilateral PD + Continuous Deadband
+
+동일한 위치-위치 양방향 결합. Leader/follower가 `q, q̇` 만 교환하고
+UR 펌웨어가 friction/gravity 보상. PC 측 토크 계산은 아래 두 식이 전부.
+
+### Leader
+
+```
+Δq_i      = q_peer_i − q_lead_i
+τ_lead_i  = sign(Δq_i) · max(0, |KP_BI_i · Δq_i| − DB_i)
+```
+
+| term | meaning |
+|------|---------|
+| `KP_BI·Δq` | 양방향 결합 스프링 토크. |
+| `−DB` 후 `max(0, ·)` | deadband 미만은 0으로 클리핑 — free motion 끈적임 차단. |
+| `sign(Δq)·` | 마지막에 부호 복원으로 방향 유지. |
+
+연속 deadband(통과 시점에 토크 점프 없음) 로직: `src/leader_node.cpp:340–346`.
+
+### Follower
+
+```
+τ_foll_i = KP_TRACK_i · (q_lead_i − q_foll_i)
+         + KD_TRACK_i · (q̇_lead_i − q̇_foll_i)
+```
+
+`KD`가 **상대 속도** 차에 걸려 leader가 빠르게 움직여도 추적 가능.
+
+### Gain handling
+
+비대칭. `_py` sibling과 같은 `config/real_ur.yaml` 공유 — leader는 약하게,
+follower는 강하게.
+
+| param | joint 0..5 |
+|-------|------------|
+| `leader.KP_BI` (Nm/rad)       | 100, 100, 70, 35, 35, 30 |
+| `leader.TAU_BI_DEADBAND` (Nm) | 10, 10, 6.5, 4.5, 4.5, 3.8 |
+| `follower.KP_TRACK`           | 300, 300, 150, 100, 100, 80 |
+| `follower.KD_TRACK`           | 30, 30, 20, 10, 10, 10 |
+
 ## Status
 
 Feature-complete port of `_py`:
