@@ -1,5 +1,6 @@
 #include "ur10e_teleop_unilateral_vive_cpp/vive_tracker.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <thread>
@@ -9,6 +10,13 @@
 namespace ur10e_teleop_unilateral_vive_cpp {
 
 namespace {
+
+// OpenVR's VR_Init is process-singleton. Multiple ViveTracker instances
+// (bimanual leader = 2) share one session via this refcount. The first
+// init() does the actual VR_Init; subsequent ones grab the existing
+// IVRSystem* via vr::VRSystem(). The matching shutdown calls only call
+// VR_Shutdown when the last user releases.
+std::atomic<int> g_openvr_refcount{0};
 
 // Convert OpenVR's 3×4 matrix to Eigen 4×4.
 Eigen::Matrix4d to_eigen(const vr::HmdMatrix34_t& m) {
@@ -38,15 +46,28 @@ ViveTracker::~ViveTracker() { shutdown(); }
 bool ViveTracker::init(const Config& cfg) {
   if (open_.load()) return true;
 
-  vr::EVRInitError err = vr::VRInitError_None;
-  system_ = vr::VR_Init(&err, vr::VRApplication_Background);
-  if (err != vr::VRInitError_None || system_ == nullptr) {
-    std::fprintf(stderr,
-        "[ViveTracker] VR_Init failed: %s\n",
-        vr::VR_GetVRInitErrorAsEnglishDescription(err));
-    system_ = nullptr;
-    return false;
+  // First user does VR_Init; later users just grab the shared IVRSystem.
+  if (g_openvr_refcount.load() == 0) {
+    vr::EVRInitError err = vr::VRInitError_None;
+    system_ = vr::VR_Init(&err, vr::VRApplication_Background);
+    if (err != vr::VRInitError_None || system_ == nullptr) {
+      std::fprintf(stderr,
+          "[ViveTracker] VR_Init failed: %s\n",
+          vr::VR_GetVRInitErrorAsEnglishDescription(err));
+      system_ = nullptr;
+      return false;
+    }
+  } else {
+    system_ = vr::VRSystem();
+    if (system_ == nullptr) {
+      std::fprintf(stderr,
+          "[ViveTracker] VRSystem() returned null with refcount=%d "
+          "(another tracker initialized OpenVR but the interface is gone)\n",
+          g_openvr_refcount.load());
+      return false;
+    }
   }
+  g_openvr_refcount.fetch_add(1);
 
   // Find target tracker. Poll for up to init_timeout_sec since the
   // device may take a moment to show up after SteamVR start.
@@ -75,14 +96,19 @@ bool ViveTracker::init(const Config& cfg) {
   std::fprintf(stderr,
       "[ViveTracker] no tracker found within %.1fs (target_serial='%s')\n",
       cfg.init_timeout_sec, cfg.target_serial.c_str());
-  vr::VR_Shutdown();
+  // Release our refcount; if we were the only holder, tear down OpenVR.
+  if (g_openvr_refcount.fetch_sub(1) == 1) {
+    vr::VR_Shutdown();
+  }
   system_ = nullptr;
   return false;
 }
 
 void ViveTracker::shutdown() {
   if (open_.exchange(false)) {
-    vr::VR_Shutdown();
+    if (g_openvr_refcount.fetch_sub(1) == 1) {
+      vr::VR_Shutdown();
+    }
     system_ = nullptr;
   }
 }
