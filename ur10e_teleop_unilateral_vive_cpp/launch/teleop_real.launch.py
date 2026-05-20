@@ -26,14 +26,18 @@ def generate_launch_description():
     left_serial_arg = DeclareLaunchArgument(
         'left_serial', default_value='LHR-B4BFDF90',
         description='Left tracker serial (empty = disabled)')
+    # Empty calib path → node uses auto-tare. Set to a real YAML once
+    # a calibration is captured.
     left_calib_arg = DeclareLaunchArgument(
-        'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml')
+        'left_calib', default_value='',
+        description='Left tracker→UR-base YAML (empty = auto-tare)')
 
     right_serial_arg = DeclareLaunchArgument(
         'right_serial', default_value='LHR-C21814A6',
         description='Right tracker serial (empty = disabled)')
     right_calib_arg = DeclareLaunchArgument(
-        'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml')
+        'right_calib', default_value='',
+        description='Right tracker→UR-base YAML (empty = auto-tare)')
 
     follower_ip_arg = DeclareLaunchArgument(
         'follower_ip', default_value='169.254.186.92',

@@ -26,16 +26,18 @@ def generate_launch_description():
     left_serial_arg = DeclareLaunchArgument(
         'left_serial', default_value='LHR-B4BFDF90',
         description='Left-hand Vive tracker serial (empty = side disabled)')
+    # Default empty → node falls back to auto-tare on first ACTIVE poll.
+    # Set to a real calibration YAML once one is captured.
     left_calib_arg = DeclareLaunchArgument(
-        'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml',
-        description='Left tracker→UR-base YAML transform')
+        'left_calib', default_value='',
+        description='Left tracker→UR-base YAML transform (empty = auto-tare)')
 
     right_serial_arg = DeclareLaunchArgument(
         'right_serial', default_value='LHR-C21814A6',
         description='Right-hand Vive tracker serial (empty = side disabled)')
     right_calib_arg = DeclareLaunchArgument(
-        'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml',
-        description='Right tracker→UR-base YAML transform')
+        'right_calib', default_value='',
+        description='Right tracker→UR-base YAML transform (empty = auto-tare)')
 
     rate_arg = DeclareLaunchArgument('rate_hz', default_value='500.0')
     rt_arg = DeclareLaunchArgument('rt', default_value='false')
