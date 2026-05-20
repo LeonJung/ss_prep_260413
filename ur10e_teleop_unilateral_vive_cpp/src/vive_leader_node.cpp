@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "ur10e_teleop_unilateral_vive_cpp/ur_ik.hpp"
+#include "ur10e_teleop_unilateral_vive_cpp/ur_jacobian.hpp"
 
 namespace ur10e_teleop_unilateral_vive_cpp {
 
@@ -62,14 +63,15 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
       if (arm.calib.load(a.calib_path)) {
         RCLCPP_INFO(get_logger(), "%s calib loaded: %s",
                     side_label, a.calib_path.c_str());
+        arm.tare_pending = false;  // explicit calibration overrides auto-tare
       } else {
         RCLCPP_WARN(get_logger(),
-          "%s calib load failed (%s) — using identity",
+          "%s calib load failed (%s) — will auto-tare on first ACTIVE poll",
           side_label, a.calib_path.c_str());
       }
     } else {
       RCLCPP_WARN(get_logger(),
-        "%s side: no calib path provided — using identity transform",
+        "%s side: no calib path — will auto-tare on first ACTIVE poll",
         side_label);
     }
 
@@ -225,6 +227,19 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
     case MODE_FREEDRIVE: {
       Eigen::Matrix4d T_tracker;
       if (arm.tracker && arm.tracker->poll(T_tracker)) {
+        // Auto-tare: first valid tracker pose in ACTIVE becomes the
+        // origin. Calibration is set such that this tracker pose maps
+        // exactly to the UR's home-pose end-effector frame.
+        if (arm.tare_pending) {
+          Eigen::Matrix4d T_ur_home;
+          forward_kinematics(home_qpos_, opts_.robot_type, T_ur_home);
+          arm.calib =
+              Calibration(T_ur_home * T_tracker.inverse());
+          arm.tare_pending = false;
+          RCLCPP_INFO(get_logger(),
+              "%s: auto-tare captured. current tracker pose ↦ UR home EE",
+              arm.opts.topic_prefix.c_str());
+        }
         const Eigen::Matrix4d T_ee = arm.calib.apply(T_tracker);
         std::array<double, 6> q_sol;
         if (ur_ik_solve(T_ee, arm.q, opts_.robot_type, q_sol)) {

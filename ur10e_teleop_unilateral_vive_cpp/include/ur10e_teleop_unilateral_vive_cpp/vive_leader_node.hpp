@@ -89,6 +89,10 @@ class ViveLeaderNode : public rclcpp::Node {
     std::array<double, 6> dq{};
     std::array<double, 6> q_prev{};
     std::array<double, 6> q_home_start{};
+    // auto-tare: first ACTIVE-mode tracker pose becomes the UR-home
+    // reference. Set false once a real calibration has been applied
+    // (either loaded from YAML in ctor or captured here).
+    bool tare_pending{true};
   };
 
   void control_loop();
