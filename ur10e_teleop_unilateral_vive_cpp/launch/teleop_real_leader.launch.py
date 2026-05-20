@@ -20,20 +20,18 @@ def generate_launch_description():
         'robot', default_value='ur3e',
         description='UR model used as the IK target.')
 
-    # Tracker serials default = PC e's paired hardware (confirmed via
-    # OpenVR enumeration 2026-05-20). Left/right assignment is arbitrary;
-    # if the operator's left hand actually drives the right topic, swap
-    # at launch with left_serial:= / right_serial:= override.
-    # Base stations on the same setup: LHB-45131F3B, LHB-BB0267D2.
+    # PC e's paired Vive trackers, left/right confirmed by operator's
+    # hand-swing test (2026-05-20). Base stations on the same setup:
+    # LHB-45131F3B, LHB-BB0267D2.
     left_serial_arg = DeclareLaunchArgument(
-        'left_serial', default_value='LHR-C21814A6',
+        'left_serial', default_value='LHR-B4BFDF90',
         description='Left-hand Vive tracker serial (empty = side disabled)')
     left_calib_arg = DeclareLaunchArgument(
         'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml',
         description='Left tracker→UR-base YAML transform')
 
     right_serial_arg = DeclareLaunchArgument(
-        'right_serial', default_value='LHR-B4BFDF90',
+        'right_serial', default_value='LHR-C21814A6',
         description='Right-hand Vive tracker serial (empty = side disabled)')
     right_calib_arg = DeclareLaunchArgument(
         'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml',
