@@ -84,7 +84,18 @@ target_link_libraries(follower_node
 add_executable(jitter_benchmark src/jitter_benchmark.cpp)
 target_link_libraries(jitter_benchmark rt_thread)
 
-install(TARGETS vive_leader_node follower_node jitter_benchmark
+# ---- 3-point calibration utility (interactive CLI, no ROS) ----
+add_executable(vive_calibrate
+  src/vive_calibrate_main.cpp
+  src/vive_tracker.cpp
+  src/calibration.cpp
+)
+target_link_libraries(vive_calibrate
+  yaml-cpp
+  ${OPENVR_LIBRARY}
+)
+
+install(TARGETS vive_leader_node follower_node jitter_benchmark vive_calibrate
   DESTINATION lib/${PROJECT_NAME}
 )
 
