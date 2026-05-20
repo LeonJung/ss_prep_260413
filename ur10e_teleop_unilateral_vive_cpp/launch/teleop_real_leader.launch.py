@@ -1,9 +1,8 @@
 """
-teleop_real_leader.launch.py — Vive-tracker-based leader (distributed setup).
+teleop_real_leader.launch.py — Bimanual Vive-tracker leader (distributed).
 
-Replaces the UR3e leader from ur10e_teleop_control_unilateral_cpp with a
-node driven by a Vive tracker via SteamVR/OpenVR. Same output topic
-schema, so the existing follower works without modification.
+Single process drives both trackers (left + right) and publishes to two
+topic namespaces. Leave one side's serial empty for single-arm mode.
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -19,13 +18,22 @@ def generate_launch_description():
 
     robot_arg = DeclareLaunchArgument(
         'robot', default_value='ur3e',
-        description='UR model used as the IK target (matches follower mirror_sign)')
-    calib_arg = DeclareLaunchArgument(
-        'calib', default_value=f'{pkg_share}/config/calibration.yaml',
-        description='YAML file with the tracker→UR-base transform')
-    tracker_serial_arg = DeclareLaunchArgument(
-        'tracker_serial', default_value='',
-        description='Vive tracker serial (empty = first tracker found)')
+        description='UR model used as the IK target.')
+
+    left_serial_arg = DeclareLaunchArgument(
+        'left_serial', default_value='',
+        description='Left-hand Vive tracker serial (empty = side disabled)')
+    left_calib_arg = DeclareLaunchArgument(
+        'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml',
+        description='Left tracker→UR-base YAML transform')
+
+    right_serial_arg = DeclareLaunchArgument(
+        'right_serial', default_value='',
+        description='Right-hand Vive tracker serial (empty = side disabled)')
+    right_calib_arg = DeclareLaunchArgument(
+        'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml',
+        description='Right tracker→UR-base YAML transform')
+
     rate_arg = DeclareLaunchArgument('rate_hz', default_value='500.0')
     rt_arg = DeclareLaunchArgument('rt', default_value='false')
 
@@ -37,14 +45,19 @@ def generate_launch_description():
         arguments=[
             '--robot', LaunchConfiguration('robot'),
             '--config', config,
-            '--calib', LaunchConfiguration('calib'),
-            '--tracker-serial', LaunchConfiguration('tracker_serial'),
+            '--left-serial', LaunchConfiguration('left_serial'),
+            '--left-calib', LaunchConfiguration('left_calib'),
+            '--right-serial', LaunchConfiguration('right_serial'),
+            '--right-calib', LaunchConfiguration('right_calib'),
             '--rate-hz', LaunchConfiguration('rate_hz'),
             '--rt-mode', LaunchConfiguration('rt'),
         ],
     )
 
     return LaunchDescription([
-        robot_arg, calib_arg, tracker_serial_arg, rate_arg, rt_arg,
+        robot_arg,
+        left_serial_arg, left_calib_arg,
+        right_serial_arg, right_calib_arg,
+        rate_arg, rt_arg,
         leader,
     ])

@@ -126,14 +126,44 @@ ros2 topic pub --once /ur10e/mode std_msgs/msg/Float64MultiArray \
 
 Modes: 0=ACTIVE · 1=PAUSED · 2=HOMING · 3=FREEDRIVE.
 
+## Bimanual mode
+
+`vive_leader_node` is a bimanual leader: one process drives up to two
+trackers (left + right) over a single OpenVR session and publishes to
+two separate topic prefixes:
+
+```
+left  → /ur10e/left/leader/joint_state
+right → /ur10e/right/leader/joint_state
+mode  → /ur10e/mode    (shared, latched)
+reset → /ur10e/reset   (shared, latched)
+```
+
+Single-arm mode = leave one side's serial empty.
+
+```bash
+# Both hands
+ros2 run ur10e_teleop_unilateral_vive_cpp vive_leader_node \
+    --left-serial  LHR-AAAAAAAA --left-calib  config/calibration_left.yaml \
+    --right-serial LHR-BBBBBBBB --right-calib config/calibration_right.yaml
+
+# Right hand only
+ros2 run ur10e_teleop_unilateral_vive_cpp vive_leader_node \
+    --right-serial LHR-BBBBBBBB --right-calib config/calibration_right.yaml
+```
+
 ## CLI args (`vive_leader_node`)
 
 | flag | default | meaning |
 |---|---|---|
 | `--robot ur3e\|ur10e\|ur5e` | `ur3e` | IK target frame (must match follower's mirror_sign) |
 | `--config PATH`             | —      | YAML config (shared with parent package) |
-| `--calib PATH`              | —      | YAML with `T_ur_from_tracker` (4×4) |
-| `--tracker-serial S`        | —      | Specific tracker; empty = first found |
+| `--left-serial S`           | —      | Left-hand Vive tracker serial (empty = disabled) |
+| `--left-calib PATH`         | —      | Left-hand YAML calibration |
+| `--left-prefix PFX`         | `/ur10e/left` | Topic prefix for left arm |
+| `--right-serial S`          | —      | Right-hand Vive tracker serial (empty = disabled) |
+| `--right-calib PATH`        | —      | Right-hand YAML calibration |
+| `--right-prefix PFX`        | `/ur10e/right` | Topic prefix for right arm |
 | `--rate-hz F`               | 500    | Control loop rate |
 | `--rt-mode true\|false`     | false  | SCHED_FIFO + mlockall on the control thread |
 | `--rt-priority N`           | 80     | SCHED_FIFO priority (1..99) |

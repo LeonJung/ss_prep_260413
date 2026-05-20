@@ -1,10 +1,10 @@
 """
-teleop_real.launch.py — Vive leader + UR10e follower on one PC.
+teleop_real.launch.py — Bimanual Vive leader + UR10e follower(s), single PC.
 
-Usage:
-  ros2 launch ur10e_teleop_unilateral_vive_cpp teleop_real.launch.py
-  ros2 launch ur10e_teleop_unilateral_vive_cpp teleop_real.launch.py \\
-      leader_rt:=true follower_rt:=true
+For bimanual operation you typically run two follower instances (one per
+UR10e arm) with distinct robot IPs. The default below covers the
+single-arm case; uncomment / duplicate the follower block for the right
+arm when bimanual hardware is online.
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -19,24 +19,26 @@ def generate_launch_description():
     config = f'{pkg_share}/config/real_ur.yaml'
     resources = f'{pkg_share}/resources'
 
-    robot_arg = DeclareLaunchArgument(
-        'robot', default_value='ur3e',
-        description='UR model the IK targets (matches follower mirror_sign).')
-    calib_arg = DeclareLaunchArgument(
-        'calib', default_value=f'{pkg_share}/config/calibration.yaml',
-        description='YAML file with the tracker→UR-base transform')
-    tracker_serial_arg = DeclareLaunchArgument(
-        'tracker_serial', default_value='',
-        description='Vive tracker serial (empty = first tracker found)')
+    robot_arg = DeclareLaunchArgument('robot', default_value='ur3e')
+
+    left_serial_arg = DeclareLaunchArgument(
+        'left_serial', default_value='',
+        description='Left tracker serial (empty = disabled)')
+    left_calib_arg = DeclareLaunchArgument(
+        'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml')
+
+    right_serial_arg = DeclareLaunchArgument(
+        'right_serial', default_value='',
+        description='Right tracker serial (empty = disabled)')
+    right_calib_arg = DeclareLaunchArgument(
+        'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml')
+
     follower_ip_arg = DeclareLaunchArgument(
         'follower_ip', default_value='169.254.186.92',
-        description='Follower (UR10e) IP')
-    leader_rt_arg = DeclareLaunchArgument(
-        'leader_rt', default_value='false',
-        description='Enable PREEMPT_RT on the Vive leader node')
-    follower_rt_arg = DeclareLaunchArgument(
-        'follower_rt', default_value='false',
-        description='Enable PREEMPT_RT on the follower node')
+        description='Follower (UR10e) IP — primary arm')
+
+    leader_rt_arg = DeclareLaunchArgument('leader_rt', default_value='false')
+    follower_rt_arg = DeclareLaunchArgument('follower_rt', default_value='false')
 
     leader = Node(
         package='ur10e_teleop_unilateral_vive_cpp',
@@ -46,8 +48,10 @@ def generate_launch_description():
         arguments=[
             '--robot', LaunchConfiguration('robot'),
             '--config', config,
-            '--calib', LaunchConfiguration('calib'),
-            '--tracker-serial', LaunchConfiguration('tracker_serial'),
+            '--left-serial', LaunchConfiguration('left_serial'),
+            '--left-calib', LaunchConfiguration('left_calib'),
+            '--right-serial', LaunchConfiguration('right_serial'),
+            '--right-calib', LaunchConfiguration('right_calib'),
             '--rt-mode', LaunchConfiguration('leader_rt'),
         ],
     )
@@ -66,7 +70,10 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        robot_arg, calib_arg, tracker_serial_arg, follower_ip_arg,
+        robot_arg,
+        left_serial_arg, left_calib_arg,
+        right_serial_arg, right_calib_arg,
+        follower_ip_arg,
         leader_rt_arg, follower_rt_arg,
         leader, follower,
     ])

@@ -1,18 +1,21 @@
-// vive_leader_node.hpp — Leader node driven by a Vive tracker.
+// vive_leader_node.hpp — Bimanual Vive-tracker leader.
 //
-// Drop-in replacement for the UR3e-based leader in
-// ur10e_teleop_control_unilateral_cpp. Publishes the same topics
-//   /ur10e/leader/joint_state    (sensor_msgs/JointState)
-//   /ur10e/mode                  (std_msgs/Float64MultiArray)
-// so the existing follower (UR10e) needs no modification.
+// One process drives up to two trackers (left + right) simultaneously
+// from a single OpenVR session. Each tracker is independent:
+//   - own SteamVR serial
+//   - own tracker→UR-base calibration
+//   - own UR3e IK virtual joint state
+//   - own /<prefix>/leader/joint_state topic
+// but they share the mode state machine and the reset path.
 //
-// Pipeline:
-//   ViveTracker.poll()  →  Calibration.apply()  →  ur_ik_solve()
-//                                                    →  JointState publish
+// Bimanual layout (default):
+//   left  → /ur10e/left/leader/joint_state
+//   right → /ur10e/right/leader/joint_state
+//   mode  → /ur10e/mode             (latched, shared)
+//   reset → /ur10e/reset            (latched, shared)
 //
-// Mode semantics inherit from the UR3e leader's 4-mode state machine
-// (ACTIVE / PAUSED / HOMING / FREEDRIVE). HOMING / PAUSED freeze the
-// virtual joint output; ACTIVE / FREEDRIVE pass the IK result through.
+// Single-arm fallback: leave one side's serial empty; only the
+// configured side runs.
 
 #pragma once
 #include <array>
@@ -21,6 +24,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <Eigen/Dense>
 #include <rclcpp/rclcpp.hpp>
@@ -35,8 +39,6 @@
 
 namespace ur10e_teleop_unilateral_vive_cpp {
 
-// Mode constants — must stay numerically identical to the UR3e leader
-// so a Float64MultiArray published from anywhere works for both.
 enum Mode : int {
   MODE_ACTIVE    = 0,
   MODE_PAUSED    = 1,
@@ -44,66 +46,82 @@ enum Mode : int {
   MODE_FREEDRIVE = 3,
 };
 
+// Per-arm configuration. tracker_serial="" disables this side.
+struct ArmOptions {
+  std::string tracker_serial;        // "" = disabled
+  std::string calib_path;            // YAML; "" = identity transform
+  std::string topic_prefix{"/ur10e/left"};  // publish to <prefix>/leader/joint_state
+};
+
 class ViveLeaderNode : public rclcpp::Node {
  public:
   struct Options {
-    std::string robot_type{"ur3e"};        // IK target frame (matches mirror_sign in follower)
+    ArmOptions left;
+    ArmOptions right;
+
+    std::string robot_type{"ur3e"};
     std::string config_path;
-    std::string calib_path;                // YAML with T_ur_from_tracker
-    std::string tracker_serial;            // empty = first tracker found
     double      control_rate_hz{500.0};
     bool        use_rt = false;
     int         rt_priority = 80;
     int         rt_cpu = -1;
     double      tracker_init_timeout_sec{10.0};
-    // Low-pass on joint velocity (numerical diff is noisy at high rate):
-    //   dq_filt[k] = alpha * dq_raw + (1 - alpha) * dq_filt[k-1]
     double      dq_filter_alpha{0.2};
   };
 
   explicit ViveLeaderNode(const Options& opts);
   ~ViveLeaderNode() override;
 
-  // Start tracker + control thread. Returns false if tracker init failed.
+  // Init trackers (one per configured arm) + start control thread.
+  // Returns false if any configured arm failed to bind its tracker.
   bool run();
   void stop();
 
  private:
+  // Per-arm runtime state.
+  struct Arm {
+    ArmOptions opts;
+    std::unique_ptr<ViveTracker> tracker;
+    Calibration calib;
+    rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr state_pub;
+    // current published joint state
+    std::array<double, 6> q{};
+    std::array<double, 6> dq{};
+    std::array<double, 6> q_prev{};
+    std::array<double, 6> q_home_start{};
+  };
+
   void control_loop();
+  void tick_arm(Arm& arm, int cur_state, double t_now,
+                double m_t_start, double m_duration);
 
   // ROS callbacks
-  void peer_cb(const sensor_msgs::msg::JointState::SharedPtr msg);
   void mode_cb(const std_msgs::msg::Float64MultiArray::SharedPtr msg);
   void reset_cb(const std_msgs::msg::Int32::SharedPtr msg);
 
-  // publishers
-  void publish_state(const std::array<double, 6>& q,
-                     const std::array<double, 6>& dq);
+  // pub helpers
+  void publish_arm_state(Arm& arm);
   void publish_mode(int mode, double t_start = 0.0, double duration = 0.0);
 
   Options opts_;
   ControlConfig cfg_;
   RTConfig rt_cfg_;
 
-  std::unique_ptr<ViveTracker> tracker_;
-  Calibration calib_;
+  // shared sessions / state
+  std::vector<Arm> arms_;          // 1 or 2 entries depending on Options
 
-  // ROS pubs / subs (same topic schema as the UR3e leader)
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr state_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr mode_pub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr peer_sub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr mode_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr reset_sub_;
 
-  // mode state machine
+  // mode state machine (shared across arms)
   std::mutex mode_mtx_;
   int mode_state_ = MODE_PAUSED;
   double mode_t_start_ = 0.0;
   double mode_duration_ = 0.0;
   std::atomic<int> reset_counter_{0};
 
-  // resolved once in ctor
-  Vec6 home_qpos_{};
+  Vec6 home_qpos_{};       // shared default home (same for both arms for now)
 
   std::atomic<bool> running_{false};
   std::thread control_thread_;
