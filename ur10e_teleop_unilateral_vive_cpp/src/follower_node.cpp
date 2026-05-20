@@ -42,17 +42,32 @@ FollowerNode::FollowerNode(const Options& opts)
   rclcpp::QoS latched_qos{1};
   latched_qos.reliable().transient_local();
 
+  // Topic layout — bimanual prefixes (/ur10e/left, /ur10e/right) for
+  // the Vive leader pairing; empty prefix preserves the legacy layout.
+  // mode/reset are always global so a single mode toggle drives both arms.
+  const std::string& pfx = opts_.topic_prefix;
+  const std::string leader_topic   = pfx.empty()
+      ? std::string("/ur10e/leader/joint_state")
+      : (pfx + "/leader/joint_state");
+  const std::string follower_topic = pfx.empty()
+      ? std::string("/ur10e/follower/joint_state")
+      : (pfx + "/follower/joint_state");
+
   state_pub_ = create_publisher<sensor_msgs::msg::JointState>(
-      "/ur10e/follower/joint_state", state_qos);
+      follower_topic, state_qos);
   mode_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
       "/ur10e/mode", latched_qos);
 
   peer_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-      "/ur10e/leader/joint_state", state_qos,
+      leader_topic, state_qos,
       std::bind(&FollowerNode::peer_cb, this, std::placeholders::_1));
   mode_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
       "/ur10e/mode", latched_qos,
       std::bind(&FollowerNode::mode_cb, this, std::placeholders::_1));
+
+  RCLCPP_INFO(get_logger(),
+              "topics: sub=%s  pub=%s  mode=/ur10e/mode",
+              leader_topic.c_str(), follower_topic.c_str());
 
   if (!connect_robot()) {
     throw std::runtime_error("FollowerNode: robot connection failed");

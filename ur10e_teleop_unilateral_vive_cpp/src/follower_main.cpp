@@ -13,8 +13,13 @@ namespace {
 void print_usage(const char* prog) {
   std::fprintf(stderr,
     "Usage: %s [--robot-ip IP] [--robot ur10e|ur3e] [--config PATH]\n"
+    "         [--topic-prefix /ur10e/left|/ur10e/right]\n"
+    "         [--port-base N] (PC-side reverse port; default 50011)\n"
     "         [--rt-mode true|false] [--rt-priority N] [--rt-cpu N]\n"
-    "Defaults: robot-ip=169.254.186.92  robot=ur10e  rt-mode=false\n",
+    "Defaults: robot-ip=169.254.186.92  robot=ur10e  rt-mode=false\n"
+    "When --topic-prefix is empty the legacy /ur10e/{leader,follower}\n"
+    "topics are used (single-arm). For bimanual: launch one follower\n"
+    "per side with --topic-prefix=/ur10e/left and --topic-prefix=/ur10e/right.\n",
     prog);
 }
 
@@ -44,6 +49,9 @@ int main(int argc, char** argv) {
     else if (a == "--robot")       opts.robot_type = need("--robot");
     else if (a == "--config")      opts.config_path = need("--config");
     else if (a == "--resources-dir") opts.resources_dir = need("--resources-dir");
+    else if (a == "--topic-prefix") opts.topic_prefix = need("--topic-prefix");
+    else if (a == "--port-base")   opts.reverse_port_base =
+                                       static_cast<uint32_t>(std::atoi(need("--port-base")));
     else if (a == "--rt-mode")     opts.use_rt = parse_bool(need("--rt-mode"));
     else if (a == "--rt")          opts.use_rt = true;
     else if (a == "--no-rt")       opts.use_rt = false;

@@ -33,6 +33,11 @@ public:
     // Follower's PC-side ports offset (from leader's 50001) so a same-PC
     // combined launch doesn't collide.
     uint32_t reverse_port_base = 50011;
+    // Topic prefix — set to "/ur10e/left" or "/ur10e/right" for a
+    // bimanual setup so this follower pairs with the corresponding
+    // arm of the Vive leader. Empty preserves the legacy
+    // "/ur10e/leader/..." / "/ur10e/follower/..." topics.
+    std::string topic_prefix;
   };
 
   explicit FollowerNode(const Options& opts);
