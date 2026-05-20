@@ -20,15 +20,17 @@ def generate_launch_description():
         'robot', default_value='ur3e',
         description='UR model used as the IK target.')
 
+    # Tracker serials (default = the lab's bound hardware).
+    # Base stations for reference: left=LHB-043E34DD, right=LHB-2A702AFE.
     left_serial_arg = DeclareLaunchArgument(
-        'left_serial', default_value='',
+        'left_serial', default_value='LHR-1491CE9D',
         description='Left-hand Vive tracker serial (empty = side disabled)')
     left_calib_arg = DeclareLaunchArgument(
         'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml',
         description='Left tracker→UR-base YAML transform')
 
     right_serial_arg = DeclareLaunchArgument(
-        'right_serial', default_value='',
+        'right_serial', default_value='LHR-668A5267',
         description='Right-hand Vive tracker serial (empty = side disabled)')
     right_calib_arg = DeclareLaunchArgument(
         'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml',

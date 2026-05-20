@@ -21,14 +21,16 @@ def generate_launch_description():
 
     robot_arg = DeclareLaunchArgument('robot', default_value='ur3e')
 
+    # Lab-bound hardware (override via launch args if relocated).
+    # Base stations: left=LHB-043E34DD, right=LHB-2A702AFE.
     left_serial_arg = DeclareLaunchArgument(
-        'left_serial', default_value='',
+        'left_serial', default_value='LHR-1491CE9D',
         description='Left tracker serial (empty = disabled)')
     left_calib_arg = DeclareLaunchArgument(
         'left_calib', default_value=f'{pkg_share}/config/calibration_left.yaml')
 
     right_serial_arg = DeclareLaunchArgument(
-        'right_serial', default_value='',
+        'right_serial', default_value='LHR-668A5267',
         description='Right tracker serial (empty = disabled)')
     right_calib_arg = DeclareLaunchArgument(
         'right_calib', default_value=f'{pkg_share}/config/calibration_right.yaml')
