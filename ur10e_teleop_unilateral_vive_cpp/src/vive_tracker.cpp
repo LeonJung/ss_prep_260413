@@ -78,16 +78,25 @@ bool ViveTracker::init(const Config& cfg) {
   while (clk::now() < t_deadline) {
     for (std::uint32_t i = 0; i < vr::k_unMaxTrackedDeviceCount; ++i) {
       if (!system_->IsTrackedDeviceConnected(i)) continue;
-      auto cls = system_->GetTrackedDeviceClass(i);
-      if (cls != vr::TrackedDeviceClass_GenericTracker) continue;
       const std::string sn = device_serial(system_, i);
-      if (!cfg.target_serial.empty() && sn != cfg.target_serial) continue;
+      // Serial-based matching is class-agnostic — Vive trackers assigned
+      // a hand role in SteamVR's "Manage Vive Trackers" report as
+      // TrackedDeviceClass_Controller, not GenericTracker. When no
+      // serial is given, fall back to the first GenericTracker.
+      if (!cfg.target_serial.empty()) {
+        if (sn != cfg.target_serial) continue;
+      } else {
+        auto cls = system_->GetTrackedDeviceClass(i);
+        if (cls != vr::TrackedDeviceClass_GenericTracker) continue;
+      }
       device_idx_ = i;
       serial_     = sn;
       open_.store(true);
       std::fprintf(stderr,
-          "[ViveTracker] using tracker idx=%u serial=%s\n",
-          device_idx_, serial_.c_str());
+          "[ViveTracker] using device idx=%u class=%d serial=%s\n",
+          device_idx_,
+          static_cast<int>(system_->GetTrackedDeviceClass(i)),
+          serial_.c_str());
       return true;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -96,6 +105,25 @@ bool ViveTracker::init(const Config& cfg) {
   std::fprintf(stderr,
       "[ViveTracker] no tracker found within %.1fs (target_serial='%s')\n",
       cfg.init_timeout_sec, cfg.target_serial.c_str());
+  // Diagnostic dump: what does SteamVR actually see right now?
+  std::fprintf(stderr, "[ViveTracker] visible OpenVR devices:\n");
+  for (std::uint32_t i = 0; i < vr::k_unMaxTrackedDeviceCount; ++i) {
+    if (!system_->IsTrackedDeviceConnected(i)) continue;
+    auto cls = system_->GetTrackedDeviceClass(i);
+    const char* cls_name = "Other";
+    switch (cls) {
+      case vr::TrackedDeviceClass_Invalid:           cls_name = "Invalid"; break;
+      case vr::TrackedDeviceClass_HMD:               cls_name = "HMD"; break;
+      case vr::TrackedDeviceClass_Controller:        cls_name = "Controller"; break;
+      case vr::TrackedDeviceClass_GenericTracker:    cls_name = "GenericTracker"; break;
+      case vr::TrackedDeviceClass_TrackingReference: cls_name = "TrackingReference"; break;
+      case vr::TrackedDeviceClass_DisplayRedirect:   cls_name = "DisplayRedirect"; break;
+      default: break;
+    }
+    std::fprintf(stderr, "  idx=%u  class=%s(%d)  serial=%s\n",
+                 i, cls_name, static_cast<int>(cls),
+                 device_serial(system_, i).c_str());
+  }
   // Release our refcount; if we were the only holder, tear down OpenVR.
   if (g_openvr_refcount.fetch_sub(1) == 1) {
     vr::VR_Shutdown();
