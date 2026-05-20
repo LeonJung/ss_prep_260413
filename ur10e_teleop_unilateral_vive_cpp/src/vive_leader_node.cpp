@@ -255,6 +255,15 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
         }
       } else {
         q_target = arm.q;  // tracker lost — hold
+        static int lost_div = 0;
+        if ((lost_div++ % 500) == 0) {
+          RCLCPP_WARN(get_logger(),
+              "%s: tracker poll returned false (tare_pending=%s) — "
+              "check SteamVR shows the tracker as tracking (green) and "
+              "that base stations are visible to it",
+              arm.opts.topic_prefix.c_str(),
+              arm.tare_pending ? "yes" : "no");
+        }
       }
       break;
     }

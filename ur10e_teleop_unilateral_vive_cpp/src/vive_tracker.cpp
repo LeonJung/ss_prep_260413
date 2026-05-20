@@ -145,13 +145,22 @@ bool ViveTracker::poll(Eigen::Matrix4d& out_T) {
   if (!open_.load() || system_ == nullptr) return false;
 
   vr::TrackedDevicePose_t poses[vr::k_unMaxTrackedDeviceCount];
+  // RawAndUncalibrated: pose relative to the first base station the
+  // system saw, no room/standing calibration required. Standing /
+  // Seated universes need a chaperone setup that null-HMD configs
+  // typically don't have, so eTrackingResult never reaches Running_OK
+  // there. Raw works on bare base-stations-plus-trackers setups.
   system_->GetDeviceToAbsoluteTrackingPose(
-      vr::TrackingUniverseStanding, 0.0f, poses,
+      vr::TrackingUniverseRawAndUncalibrated, 0.0f, poses,
       vr::k_unMaxTrackedDeviceCount);
 
   const auto& p = poses[device_idx_];
-  if (!p.bDeviceIsConnected || !p.bPoseIsValid ||
-      p.eTrackingResult != vr::TrackingResult_Running_OK) {
+  if (!p.bDeviceIsConnected || !p.bPoseIsValid) return false;
+  // Accept Running_OK (in range) and Running_OutOfRange (still tracked
+  // but the system thinks it's outside the expected play area — fine
+  // for our purposes). Reject Calibrating/Fallback/Uninitialized.
+  if (p.eTrackingResult != vr::TrackingResult_Running_OK &&
+      p.eTrackingResult != vr::TrackingResult_Running_OutOfRange) {
     return false;
   }
   out_T = to_eigen(p.mDeviceToAbsoluteTracking);
