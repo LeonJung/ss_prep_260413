@@ -1,0 +1,10 @@
+# calibration.yaml — tracker-frame → UR-base-frame rigid transform.
+#
+# Identity placeholder. Replace with the output of the calibration
+# routine (Calibration::solve_from_points / script/calibrate.py).
+# Format: 4×4 row-major homogeneous transform.
+T_ur_from_tracker:
+  - [1.0, 0.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0, 0.0]
+  - [0.0, 0.0, 1.0, 0.0]
+  - [0.0, 0.0, 0.0, 1.0]
