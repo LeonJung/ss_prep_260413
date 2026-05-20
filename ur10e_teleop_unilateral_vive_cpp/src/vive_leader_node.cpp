@@ -285,15 +285,23 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
       break;
   }
 
-  // dq with LPF
-  const double dt = 1.0 / opts_.control_rate_hz;
-  const double a  = opts_.dq_filter_alpha;
+  // LPF on q (smooths IK output jitter / tracker noise before the
+  // follower's PD sees it). dq is computed from the FILTERED q so
+  // it's automatically consistent — no separate raw vs filtered
+  // estimates fighting each other.
+  const double dt   = 1.0 / opts_.control_rate_hz;
+  const double aq   = opts_.q_filter_alpha;
+  const double adq  = opts_.dq_filter_alpha;
+  std::array<double, 6> q_new{};
   for (int i = 0; i < 6; ++i) {
-    const double dq_raw = (q_target[i] - arm.q_prev[i]) / dt;
-    arm.dq[i] = a * dq_raw + (1.0 - a) * arm.dq[i];
+    q_new[i] = aq * q_target[i] + (1.0 - aq) * arm.q[i];
+  }
+  for (int i = 0; i < 6; ++i) {
+    const double dq_raw = (q_new[i] - arm.q[i]) / dt;
+    arm.dq[i] = adq * dq_raw + (1.0 - adq) * arm.dq[i];
   }
   arm.q_prev = arm.q;
-  arm.q = q_target;
+  arm.q = q_new;
 }
 
 void ViveLeaderNode::mode_cb(

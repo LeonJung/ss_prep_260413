@@ -66,7 +66,14 @@ class ViveLeaderNode : public rclcpp::Node {
     int         rt_priority = 80;
     int         rt_cpu = -1;
     double      tracker_init_timeout_sec{10.0};
-    double      dq_filter_alpha{0.2};
+    // LPF on the published joint position (q). Vive tracking + DLS IK
+    // residuals inject ~mm/sub-deg jitter every cycle which the
+    // follower's KP turns into a visible shake. Single-pole IIR:
+    //   q[k] = a · q_target + (1-a) · q[k-1]
+    // a=0.1 @ 500Hz → ~8Hz cutoff, smoothes human-scale motion fine.
+    double      q_filter_alpha{0.1};
+    // LPF on dq (already had this; dq is just q's numerical diff).
+    double      dq_filter_alpha{0.1};
   };
 
   explicit ViveLeaderNode(const Options& opts);
