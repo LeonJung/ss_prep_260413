@@ -93,6 +93,11 @@ class ViveLeaderNode : public rclcpp::Node {
     // reference. Set false once a real calibration has been applied
     // (either loaded from YAML in ctor or captured here).
     bool tare_pending{true};
+    // Per-side home (UR3e joint space — used by the IK and by the
+    // HOMING interpolation in this node). Defaults to the
+    // (shared) ControlConfig::leader_home and is overridden in ctor
+    // when the side-specific leader_home_{left,right} is present.
+    Vec6 home_qpos{};
   };
 
   void control_loop();

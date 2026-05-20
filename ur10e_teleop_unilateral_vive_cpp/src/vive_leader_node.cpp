@@ -41,7 +41,8 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
 
   // Build the per-arm runtime list from the configured ArmOptions.
   // An arm with empty tracker_serial is skipped (single-arm fallback).
-  auto add_arm = [&](const ArmOptions& a, const char* side_label) {
+  auto add_arm = [&](const ArmOptions& a, const char* side_label,
+                     const Vec6& side_home) {
     if (a.tracker_serial.empty() && a.calib_path.empty() &&
         a.topic_prefix.empty()) {
       // fully unconfigured — skip
@@ -55,9 +56,10 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
     }
     Arm arm;
     arm.opts = a;
-    arm.q = home_qpos_;
-    arm.q_prev = home_qpos_;
-    arm.q_home_start = home_qpos_;
+    arm.home_qpos = side_home;
+    arm.q = arm.home_qpos;
+    arm.q_prev = arm.home_qpos;
+    arm.q_home_start = arm.home_qpos;
 
     if (!a.calib_path.empty()) {
       if (arm.calib.load(a.calib_path)) {
@@ -82,8 +84,8 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
     arms_.push_back(std::move(arm));
   };
 
-  add_arm(opts.left,  "left");
-  add_arm(opts.right, "right");
+  add_arm(opts.left,  "left",  cfg_.leader_home_left);
+  add_arm(opts.right, "right", cfg_.leader_home_right);
 
   if (arms_.empty()) {
     RCLCPP_ERROR(get_logger(),
@@ -232,7 +234,7 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
         // exactly to the UR's home-pose end-effector frame.
         if (arm.tare_pending) {
           Eigen::Matrix4d T_ur_home;
-          forward_kinematics(home_qpos_, opts_.robot_type, T_ur_home);
+          forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
           arm.calib =
               Calibration(T_ur_home * T_tracker.inverse());
           arm.tare_pending = false;
@@ -273,7 +275,7 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
       const double s = quintic(tau);
       for (int i = 0; i < 6; ++i) {
         q_target[i] =
-            arm.q_home_start[i] + s * (home_qpos_[i] - arm.q_home_start[i]);
+            arm.q_home_start[i] + s * (arm.home_qpos[i] - arm.q_home_start[i]);
       }
       break;
     }

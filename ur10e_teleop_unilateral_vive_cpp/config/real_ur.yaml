@@ -19,8 +19,18 @@ follower_torque_limit:  [80.0, 80.0, 50.0, 15.0, 10.0, 8.0] # UR10e
 #   std         per joint                = [0.017, 0.030, 0.017, 0.039, 0.014, 0.040]
 #   fit verdict : OK  (max std 2.3° — eyeball sync precision)
 # leader_home  = pose 1's leader_q;  follower_home = leader_home + mean_offset
+# Single-arm defaults (parent unilateral package). For bimanual, also set
+# *_left / *_right below; right keeps the original values, left applies
+# the user-specified mirror across the operator's saggital plane:
+#   lq0 = -q0,  lq1 = -π - q1,  lq2 = -q2,
+#   lq3 = -π - q3,  lq4 = -q4,  lq5 = q5
 leader_home:   [ 2.2984, -1.3313,  2.2127, -0.8611,  2.2772,  0.0376]
 follower_home: [ 2.3092, -1.3226,  2.2141, -0.9007,  2.2723,  0.0357]
+
+leader_home_right:   [ 2.2984, -1.3313,  2.2127, -0.8611,  2.2772,  0.0376]
+leader_home_left:    [-2.2984, -1.81029, -2.2127, -2.28049, -2.2772,  0.0376]
+follower_home_right: [ 2.3092, -1.3226,  2.2141, -0.9007,  2.2723,  0.0357]
+follower_home_left:  [-2.3092, -1.81899, -2.2141, -2.24089, -2.2723,  0.0357]
 
 # --- Joint mirroring ---
 # Both arms home to essentially the same joint values (measured), so no

@@ -87,6 +87,21 @@ bool load_config(const std::string& path, ControlConfig& out) {
   try_vec6(root, "leader_home",    out.leader_home);
   try_vec6(root, "follower_home",  out.follower_home);
 
+  // Bimanual side-specific homes. If the YAML doesn't carry them, fall
+  // back to the single-arm leader_home / follower_home.
+  out.has_leader_home_left =
+      try_vec6_flag(root, "leader_home_left",  out.leader_home_left);
+  out.has_leader_home_right =
+      try_vec6_flag(root, "leader_home_right", out.leader_home_right);
+  out.has_follower_home_left =
+      try_vec6_flag(root, "follower_home_left",  out.follower_home_left);
+  out.has_follower_home_right =
+      try_vec6_flag(root, "follower_home_right", out.follower_home_right);
+  if (!out.has_leader_home_left)    out.leader_home_left    = out.leader_home;
+  if (!out.has_leader_home_right)   out.leader_home_right   = out.leader_home;
+  if (!out.has_follower_home_left)  out.follower_home_left  = out.follower_home;
+  if (!out.has_follower_home_right) out.follower_home_right = out.follower_home;
+
   if (root["joint_mirror"] && root["joint_mirror"]["sign"]) {
     try_vec6(root["joint_mirror"], "sign", out.mirror_sign);
   }

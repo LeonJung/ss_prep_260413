@@ -23,8 +23,20 @@ struct ControlConfig {
   bool has_follower_torque_limit = false;
 
   // ---- per-robot home (rad) ----
+  // Single-arm defaults (parent unilateral package style).
   Vec6 leader_home   = {0, 0, 0, 0, 0, 0};
   Vec6 follower_home = {0, 0, 0, 0, 0, 0};
+  // Bimanual side-specific homes. Defaults equal the single-arm values
+  // above so single-arm configs keep working unchanged. Override one
+  // or both per side in YAML if a bimanual physical mounting needs them.
+  Vec6 leader_home_left;
+  Vec6 leader_home_right;
+  Vec6 follower_home_left;
+  Vec6 follower_home_right;
+  bool has_leader_home_left{false};
+  bool has_leader_home_right{false};
+  bool has_follower_home_left{false};
+  bool has_follower_home_right{false};
 
   // ---- joint mirroring ----
   Vec6 mirror_sign = {1, 1, 1, 1, 1, 1};

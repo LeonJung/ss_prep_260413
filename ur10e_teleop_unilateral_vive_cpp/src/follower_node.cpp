@@ -27,11 +27,25 @@ FollowerNode::FollowerNode(const Options& opts)
     }
   }
 
-  home_qpos_   = cfg_.follower_home;
-  peer_home_   = cfg_.leader_home;
+  // Side-aware home selection. Defaults track the single-arm
+  // follower_home / leader_home unless the YAML provides
+  // *_left / *_right and this follower is namespaced via --topic-prefix.
+  const bool is_left  = (opts_.topic_prefix == "/ur10e/left");
+  const bool is_right = (opts_.topic_prefix == "/ur10e/right");
+  home_qpos_ = is_left  ? cfg_.follower_home_left
+            : is_right ? cfg_.follower_home_right
+                       : cfg_.follower_home;
+  peer_home_ = is_left  ? cfg_.leader_home_left
+            : is_right ? cfg_.leader_home_right
+                       : cfg_.leader_home;
   mirror_sign_ = cfg_.mirror_sign;
   torque_limit_ = cfg_.has_follower_torque_limit
       ? cfg_.follower_torque_limit : cfg_.torque_limit;
+  RCLCPP_INFO(get_logger(),
+      "side=%s  home_qpos=[%.3f %.3f %.3f %.3f %.3f %.3f]",
+      is_left ? "left" : is_right ? "right" : "(single-arm)",
+      home_qpos_[0], home_qpos_[1], home_qpos_[2],
+      home_qpos_[3], home_qpos_[4], home_qpos_[5]);
 
   RCLCPP_INFO(get_logger(),
     "FollowerNode  robot=%s  ip=%s  rt=%s  prio=%d  cpu=%d",
