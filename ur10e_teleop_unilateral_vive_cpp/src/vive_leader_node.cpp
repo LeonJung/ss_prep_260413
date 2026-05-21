@@ -270,32 +270,38 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
     case MODE_FREEDRIVE: {
       Eigen::Matrix4d T_tracker;
       if (arm.tracker && arm.tracker->poll(T_tracker)) {
-        // Auto-tare: first valid tracker pose in ACTIVE becomes the
-        // origin. Calibration is set such that this tracker pose maps
-        // exactly to the UR's home-pose end-effector frame.
+        // Fallback tare: if startup tare in run() was skipped (briefly
+        // invalid poll), do it on first valid ACTIVE poll instead.
         if (arm.tare_pending) {
           Eigen::Matrix4d T_ur_home;
           forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
-
-          // What would the current calibration map this tracker pose to?
           const Eigen::Matrix4d T_now_ur = arm.calib.apply(T_tracker);
-          // Shift the calibration translation by the position delta so
-          // T_now (tracker) maps to T_ur_home position. Rotation part
-          // of the calibration is left untouched, preserving the
-          // axis alignment captured by vive_calibrate.
           Eigen::Matrix4d C = arm.calib.transform();
-          const Eigen::Vector3d delta =
-              T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3);
-          C.block<3, 1>(0, 3) += delta;
+          C.block<3, 1>(0, 3) +=
+              (T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
           arm.calib = Calibration(C);
-
           arm.tare_pending = false;
           RCLCPP_INFO(get_logger(),
-              "%s: tare → current tracker pose ↦ UR home EE "
-              "(translation re-anchored; rotation kept)",
+              "%s: fallback tare (startup poll was invalid)",
               arm.opts.topic_prefix.c_str());
         }
-        const Eigen::Matrix4d T_ee = arm.calib.apply(T_tracker);
+
+        // Build IK target. Position comes from calib.apply(T_tracker)
+        // — the rotation part of the calibration carries the axis
+        // alignment (X/Y/Z direction mapping) captured by vive_calibrate.
+        // Orientation is locked to home_EE: we do NOT track the
+        // tracker's rotation, because mixing the tracker's hand-hold
+        // orientation with the calibration rotation produces an EE
+        // orientation that's effectively random, which forces IK into
+        // wildly different q for the same position (the "jumped
+        // forward at startup" failure mode). Position-only tracking
+        // is the simplest stable choice for now — wrist tracking can
+        // be re-added later as a deliberate option.
+        const Eigen::Matrix4d T_calibrated = arm.calib.apply(T_tracker);
+        Eigen::Matrix4d T_ee;
+        forward_kinematics(arm.home_qpos, opts_.robot_type, T_ee);
+        T_ee.block<3, 1>(0, 3) = T_calibrated.block<3, 1>(0, 3);
+
         std::array<double, 6> q_sol;
         if (ur_ik_solve(T_ee, arm.q, opts_.robot_type, q_sol)) {
           q_target = q_sol;
