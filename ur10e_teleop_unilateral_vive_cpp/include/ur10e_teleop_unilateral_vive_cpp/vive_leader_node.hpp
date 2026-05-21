@@ -59,7 +59,11 @@ class ViveLeaderNode : public rclcpp::Node {
     ArmOptions left;
     ArmOptions right;
 
-    std::string robot_type{"ur3e"};
+    std::string robot_type{"ur10e"};   // FK / IK target model. UR10e is the
+                                        // physical follower in this package, so
+                                        // using its DH means the published q
+                                        // is directly UR10e joint space (no
+                                        // virtual UR3e intermediate).
     std::string config_path;
     double      control_rate_hz{500.0};
     bool        use_rt = false;

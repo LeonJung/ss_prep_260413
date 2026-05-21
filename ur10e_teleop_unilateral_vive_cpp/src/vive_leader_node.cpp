@@ -84,8 +84,12 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
     arms_.push_back(std::move(arm));
   };
 
-  add_arm(opts.left,  "left",  cfg_.leader_home_left);
-  add_arm(opts.right, "right", cfg_.leader_home_right);
+  // home_qpos is in the FK robot's joint space — since robot_type
+  // defaults to ur10e (the actual follower), follower_home_* is the
+  // right reference, not leader_home_* (which was UR3e-space carried
+  // over from the parent unilateral package).
+  add_arm(opts.left,  "left",  cfg_.follower_home_left);
+  add_arm(opts.right, "right", cfg_.follower_home_right);
 
   if (arms_.empty()) {
     RCLCPP_ERROR(get_logger(),

@@ -28,6 +28,8 @@
 
 #include <Eigen/Dense>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+
 #include "ur10e_teleop_unilateral_vive_cpp/calibration.hpp"
 #include "ur10e_teleop_unilateral_vive_cpp/config.hpp"
 #include "ur10e_teleop_unilateral_vive_cpp/ur_jacobian.hpp"
@@ -40,31 +42,44 @@ namespace {
 
 void print_usage(const char* prog) {
   std::fprintf(stderr,
-    "Usage: %s --serial LHR-XXXX --out path/to/calibration.yaml\n"
-    "         [--home-mode] [--config PATH] [--robot ur3e|ur10e|ur5e]\n"
-    "         [--side left|right]  [--displacement 0.3]\n"
-    "         [--points 'x1,y1,z1 x2,y2,z2 x3,y3,z3 ...']\n"
-    "         [--avg-ms 500]\n"
+    "Usage: %s left|right [--displacement 0.3]\n"
+    "                     [--serial LHR-XXXX] [--out PATH]\n"
+    "                     [--config PATH]    [--robot ur10e|ur3e|ur5e]\n"
+    "                     [--points 'x1,y1,z1 x2,y2,z2 ...']\n"
+    "                     [--avg-ms 500]\n"
     "\n"
-    "Two modes:\n"
-    "  (a) --home-mode  — operator-friendly. Targets are auto-generated\n"
-    "      from the UR home pose (origin = home EE) plus orthogonal\n"
-    "      displacements of `--displacement` m. Operator places the\n"
-    "      tracker at their neutral pose, then displaces in +X/+Y/+Z\n"
-    "      of their own intuitive frame. Requires --config / --robot /\n"
-    "      --side so the home_qpos and FK target match the arm being\n"
-    "      calibrated.\n"
+    "Single positional arg (left|right) selects the arm. Sensible\n"
+    "defaults are filled in from the package's share/config dir and\n"
+    "from the baked-in lab tracker serials:\n"
+    "   left  → LHR-B4BFDF90\n"
+    "   right → LHR-C21814A6\n"
+    "Out / config paths default to:\n"
+    "   <pkg-share>/config/calibration_<side>.yaml\n"
+    "   <pkg-share>/config/real_ur.yaml\n"
+    "Robot defaults to ur10e (the actual follower).\n"
     "\n"
-    "  (b) --points 'x1,y1,z1 ...'  — explicit. Operator supplies the\n"
-    "      UR-frame XYZ of each calibration point (e.g. read off the\n"
-    "      teach pendant's TCP-position display).\n"
+    "Default capture sequence (operator-frame, displacement 0.3 m):\n"
+    "  1. NEUTRAL   (your relaxed arm-forward pose ↔ UR home EE)\n"
+    "  2. FORWARD   (+X 0.3 m from neutral)\n"
+    "  3. LEFT      (+Y 0.3 m from neutral)\n"
+    "  4. UP        (+Z 0.3 m from neutral)\n"
     "\n"
-    "Default --home-mode displacements (UR base frame, meters):\n"
-    "   home_EE + ( 0.3,  0.0,  0.0 )   ('forward' from operator view)\n"
-    "   home_EE + ( 0.0,  0.3,  0.0 )   ('left')\n"
-    "   home_EE + ( 0.0,  0.0,  0.3 )   ('up')\n"
-    "(--displacement scales these.)\n",
+    "Override --points to use teach-pendant TCP triplets instead\n"
+    "(useful when the UR base frame is rotated relative to operator).\n",
     prog);
+}
+
+// Lab-bound tracker serials. Baked here so a positional `side` arg
+// alone is enough to pick the right tracker.
+const char* serial_for_side(const std::string& side) {
+  if (side == "left")  return "LHR-B4BFDF90";
+  if (side == "right") return "LHR-C21814A6";
+  return nullptr;
+}
+
+std::string pkg_share() {
+  return ament_index_cpp::get_package_share_directory(
+      "ur10e_teleop_unilateral_vive_cpp");
 }
 
 bool parse_point(const std::string& s, Eigen::Vector3d& out) {
@@ -127,13 +142,18 @@ int main(int argc, char** argv) {
   std::string out_path;
   std::string points_arg;
   std::string config_path;
-  std::string robot_type = "ur3e";
-  std::string side;             // "left" | "right" — selects which home_qpos
-  bool home_mode = false;
+  std::string robot_type = "ur10e";
+  std::string side;                 // "left" | "right"
   double displacement = 0.3;
   double avg_ms = 500.0;
 
-  for (int i = 1; i < argc; ++i) {
+  // Positional first arg = side (if not a --flag).
+  int i = 1;
+  if (i < argc && argv[i][0] != '-') {
+    side = argv[i++];
+  }
+
+  for (; i < argc; ++i) {
     std::string a = argv[i];
     auto need = [&](const char* n) -> const char* {
       if (i + 1 >= argc) {
@@ -146,7 +166,6 @@ int main(int argc, char** argv) {
     else if (a == "--out")           out_path = need("--out");
     else if (a == "--points")        points_arg = need("--points");
     else if (a == "--avg-ms")        avg_ms = std::stod(need("--avg-ms"));
-    else if (a == "--home-mode")     home_mode = true;
     else if (a == "--config")        config_path = need("--config");
     else if (a == "--robot")         robot_type = need("--robot");
     else if (a == "--side")          side = need("--side");
@@ -158,32 +177,49 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-  if (serial.empty() || out_path.empty()) {
+
+  if (side != "left" && side != "right") {
+    std::fprintf(stderr, "side must be 'left' or 'right' (positional or --side)\n");
     print_usage(argv[0]);
     return 2;
   }
+
+  // Auto-fill defaults from package share dir + baked-in serial map.
+  if (serial.empty())      serial = serial_for_side(side);
+  std::string share;
+  try { share = pkg_share(); }
+  catch (const std::exception& e) {
+    std::fprintf(stderr,
+        "failed to locate package share dir: %s\n"
+        "(did you source install/setup.bash?)\n", e.what());
+    return 2;
+  }
+  if (out_path.empty())    out_path    = share + "/config/calibration_" + side + ".yaml";
+  if (config_path.empty()) config_path = share + "/config/real_ur.yaml";
+
+  std::printf(">>> side=%s  serial=%s\n", side.c_str(), serial.c_str());
+  std::printf(">>> out=%s\n", out_path.c_str());
+  std::printf(">>> config=%s  robot=%s  displacement=%.2fm\n",
+              config_path.c_str(), robot_type.c_str(), displacement);
+
+  // home_mode is the default. If --points is given, explicit mode wins.
+  const bool home_mode = points_arg.empty();
 
   std::vector<Eigen::Vector3d> ur_points;
   std::vector<std::string> ur_labels;        // for operator-friendly prompts
 
   if (home_mode) {
     using namespace ur10e_teleop_unilateral_vive_cpp;
-    if (config_path.empty()) {
-      std::fprintf(stderr,
-          "--home-mode needs --config PATH (to read home_qpos)\n");
-      return 2;
-    }
-    if (side != "left" && side != "right") {
-      std::fprintf(stderr, "--side must be 'left' or 'right'\n");
-      return 2;
-    }
     ControlConfig cfg;
     if (!load_config(config_path, cfg)) {
       std::fprintf(stderr, "failed to load config: %s\n", config_path.c_str());
       return 2;
     }
+    // Use follower_home_* because robot_type defaults to ur10e and
+    // those are the UR10e-space home values; UR3e leader_home is a
+    // leftover from the parent unilateral package and not used here.
     const std::array<double, 6>& home_q = (side == "left")
-        ? cfg.leader_home_left : cfg.leader_home_right;
+        ? cfg.follower_home_left : cfg.follower_home_right;
 
     Eigen::Matrix4d T_home;
     forward_kinematics(home_q, robot_type, T_home);

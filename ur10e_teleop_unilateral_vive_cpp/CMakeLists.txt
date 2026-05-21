@@ -19,6 +19,7 @@ find_package(std_msgs REQUIRED)
 find_package(ur_client_library REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 # OpenVR — required by the Vive leader. libopenvr-dev provides
 # /usr/include/openvr/openvr.h and /usr/lib/x86_64-linux-gnu/libopenvr_api.so
@@ -92,6 +93,7 @@ add_executable(vive_calibrate
   src/config.cpp
   src/ur_jacobian.cpp
 )
+ament_target_dependencies(vive_calibrate ament_index_cpp)
 target_link_libraries(vive_calibrate
   yaml-cpp
   ${OPENVR_LIBRARY}
