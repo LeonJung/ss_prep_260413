@@ -139,6 +139,43 @@ bool ViveLeaderNode::run() {
                 arm.opts.topic_prefix.c_str());
   }
 
+  // Startup tare: capture each tracker's CURRENT pose right now and
+  // shift its calibration translation so this pose maps to UR home EE.
+  // The calibration's rotation (axis alignment from vive_calibrate)
+  // is preserved — only the origin is re-anchored to "wherever Vive
+  // is when the node starts", which is what the operator expects.
+  //
+  // Falls back gracefully if a tracker is briefly invalid: leaves
+  // tare_pending = true so the first valid ACTIVE-mode poll completes
+  // the tare instead.
+  for (auto& arm : arms_) {
+    Eigen::Matrix4d T_now;
+    bool got = false;
+    for (int tries = 0; tries < 50; ++tries) {   // ≈ 1 s @ 20 ms
+      if (arm.tracker->poll(T_now)) { got = true; break; }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    if (!got) {
+      RCLCPP_WARN(get_logger(),
+          "%s: startup tracker poll timed out — will tare on first ACTIVE poll",
+          arm.opts.topic_prefix.c_str());
+      arm.tare_pending = true;
+      continue;
+    }
+    Eigen::Matrix4d T_ur_home;
+    forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
+    const Eigen::Matrix4d T_now_ur = arm.calib.apply(T_now);
+    Eigen::Matrix4d C = arm.calib.transform();
+    C.block<3, 1>(0, 3) +=
+        (T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
+    arm.calib = Calibration(C);
+    arm.tare_pending = false;
+    RCLCPP_INFO(get_logger(),
+        "%s: startup tare — current tracker pose ↦ UR home EE "
+        "(rotation kept; only translation shifted)",
+        arm.opts.topic_prefix.c_str());
+  }
+
   if (cfg_.auto_home_on_start) {
     publish_mode(MODE_HOMING, now_sec(this), cfg_.homing_duration);
   }
@@ -204,14 +241,6 @@ void ViveLeaderNode::control_loop() {
       RCLCPP_INFO(get_logger(), "state %d → %d", prev_state, cur_state);
       if (cur_state == MODE_HOMING) {
         for (auto& a : arms_) a.q_home_start = a.q;
-      }
-      // Re-anchor origin on every entry to ACTIVE / FREEDRIVE. Keeps
-      // the calibration's axis alignment (rotation) but resets the
-      // translation so the operator's current pose ↔ UR home EE — no
-      // sudden lurch even if the tracker isn't at the calibration's
-      // captured neutral position.
-      if (cur_state == MODE_ACTIVE || cur_state == MODE_FREEDRIVE) {
-        for (auto& a : arms_) a.tare_pending = true;
       }
       prev_state = cur_state;
     }
