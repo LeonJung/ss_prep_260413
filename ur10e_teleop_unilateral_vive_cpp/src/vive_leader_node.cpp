@@ -205,6 +205,14 @@ void ViveLeaderNode::control_loop() {
       if (cur_state == MODE_HOMING) {
         for (auto& a : arms_) a.q_home_start = a.q;
       }
+      // Re-anchor origin on every entry to ACTIVE / FREEDRIVE. Keeps
+      // the calibration's axis alignment (rotation) but resets the
+      // translation so the operator's current pose ↔ UR home EE — no
+      // sudden lurch even if the tracker isn't at the calibration's
+      // captured neutral position.
+      if (cur_state == MODE_ACTIVE || cur_state == MODE_FREEDRIVE) {
+        for (auto& a : arms_) a.tare_pending = true;
+      }
       prev_state = cur_state;
     }
 
@@ -239,11 +247,23 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
         if (arm.tare_pending) {
           Eigen::Matrix4d T_ur_home;
           forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
-          arm.calib =
-              Calibration(T_ur_home * T_tracker.inverse());
+
+          // What would the current calibration map this tracker pose to?
+          const Eigen::Matrix4d T_now_ur = arm.calib.apply(T_tracker);
+          // Shift the calibration translation by the position delta so
+          // T_now (tracker) maps to T_ur_home position. Rotation part
+          // of the calibration is left untouched, preserving the
+          // axis alignment captured by vive_calibrate.
+          Eigen::Matrix4d C = arm.calib.transform();
+          const Eigen::Vector3d delta =
+              T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3);
+          C.block<3, 1>(0, 3) += delta;
+          arm.calib = Calibration(C);
+
           arm.tare_pending = false;
           RCLCPP_INFO(get_logger(),
-              "%s: auto-tare captured. current tracker pose ↦ UR home EE",
+              "%s: tare → current tracker pose ↦ UR home EE "
+              "(translation re-anchored; rotation kept)",
               arm.opts.topic_prefix.c_str());
         }
         const Eigen::Matrix4d T_ee = arm.calib.apply(T_tracker);
