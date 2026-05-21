@@ -225,22 +225,32 @@ int main(int argc, char** argv) {
     forward_kinematics(home_q, robot_type, T_home);
     const Eigen::Vector3d home_pos = T_home.block<3, 1>(0, 3);
 
-    // Auto targets: home (origin) + orthogonal displacements.
+    // The "Y" displacement is mirrored for the right hand so that
+    // moving the right tracker toward the operator's own right (which
+    // is world −Y) maps to UR-Right's −Y direction. This makes the
+    // EE physically move to the operator's right, matching intuition.
+    // Left hand stays with +Y = operator's left (no mirror).
+    const double y_sign = (side == "right") ? -1.0 : +1.0;
+    const std::string y_label =
+        (side == "right") ? "RIGHT    (move +Y of right hand — to YOUR right — by "
+                          : "LEFT     (move +Y of left hand — to YOUR left — by ";
+
     ur_points = {
       home_pos,
       home_pos + Eigen::Vector3d{displacement, 0.0, 0.0},
-      home_pos + Eigen::Vector3d{0.0, displacement, 0.0},
+      home_pos + Eigen::Vector3d{0.0, y_sign * displacement, 0.0},
       home_pos + Eigen::Vector3d{0.0, 0.0, displacement},
     };
     ur_labels = {
       "NEUTRAL  (your relaxed forward pose — corresponds to UR home EE)",
       "FORWARD  (move +X by " + std::to_string(displacement) + " m from neutral)",
-      "LEFT     (move +Y by " + std::to_string(displacement) + " m from neutral)",
+      y_label + std::to_string(displacement) + " m from neutral)",
       "UP       (move +Z by " + std::to_string(displacement) + " m from neutral)",
     };
-    std::printf(">>> home-mode: %s arm, robot=%s, home_EE=(%.3f, %.3f, %.3f), disp=%.2fm\n",
+    std::printf(">>> home-mode: %s arm, robot=%s, home_EE=(%.3f, %.3f, %.3f), disp=%.2fm  y_sign=%+.0f\n",
                 side.c_str(), robot_type.c_str(),
-                home_pos.x(), home_pos.y(), home_pos.z(), displacement);
+                home_pos.x(), home_pos.y(), home_pos.z(),
+                displacement, y_sign);
   } else if (!points_arg.empty()) {
     ur_points = parse_points_arg(points_arg);
   } else {
