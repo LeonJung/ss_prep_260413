@@ -46,7 +46,7 @@ void print_usage(const char* prog) {
     "                     [--serial LHR-XXXX] [--out PATH]\n"
     "                     [--config PATH]    [--robot ur10e|ur3e|ur5e]\n"
     "                     [--points 'x1,y1,z1 x2,y2,z2 ...']\n"
-    "                     [--avg-ms 500]\n"
+    "                     [--post-rot-z DEG] [--avg-ms 500]\n"
     "\n"
     "Single positional arg (left|right) selects the arm. Sensible\n"
     "defaults are filled in from the package's share/config dir and\n"
@@ -146,6 +146,11 @@ int main(int argc, char** argv) {
   std::string side;                 // "left" | "right"
   double displacement = 0.3;
   double avg_ms = 500.0;
+  double post_rot_z_deg = 0.0;      // post-rotation about UR Z, applied to
+                                    // the solved calibration (pre-multiply).
+                                    // Lab finding (2026-05-22): this setup
+                                    // needs -90° to align tracker motions
+                                    // with operator-frame axes.
 
   // Positional first arg = side (if not a --flag).
   int i = 1;
@@ -170,6 +175,7 @@ int main(int argc, char** argv) {
     else if (a == "--robot")         robot_type = need("--robot");
     else if (a == "--side")          side = need("--side");
     else if (a == "--displacement")  displacement = std::stod(need("--displacement"));
+    else if (a == "--post-rot-z")    post_rot_z_deg = std::stod(need("--post-rot-z"));
     else if (a == "--help" || a == "-h") { print_usage(argv[0]); return 0; }
     else {
       std::fprintf(stderr, "unknown arg: %s\n", a.c_str());
@@ -321,6 +327,21 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
         "Umeyama solve failed — points may be collinear or duplicated\n");
     return 5;
+  }
+
+  // Optional post-rotation about UR Z. Applied as M · T (pre-multiply on
+  // the output side) so the user's intuitive motion in the operator
+  // frame ends up aligned with UR's axes when the raw cali has a known
+  // systematic offset.
+  if (std::abs(post_rot_z_deg) > 1e-6) {
+    const double rad = post_rot_z_deg * M_PI / 180.0;
+    const double c = std::cos(rad), s = std::sin(rad);
+    Eigen::Matrix4d M = Eigen::Matrix4d::Identity();
+    M(0, 0) =  c;  M(0, 1) = -s;
+    M(1, 0) =  s;  M(1, 1) =  c;
+    T_ur_from_tracker = M * T_ur_from_tracker;
+    std::printf(">>> applied post-rotation: %.1f° about UR Z\n",
+                post_rot_z_deg);
   }
 
   // Save
