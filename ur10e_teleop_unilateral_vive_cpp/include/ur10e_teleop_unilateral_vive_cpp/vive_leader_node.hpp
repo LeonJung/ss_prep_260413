@@ -109,6 +109,12 @@ class ViveLeaderNode : public rclcpp::Node {
     // (shared) ControlConfig::leader_home and is overridden in ctor
     // when the side-specific leader_home_{left,right} is present.
     Vec6 home_qpos{};
+    // Full tracker pose at the moment of (successful) startup tare —
+    // used as the reference for delta-based pose tracking so that, at
+    // startup, T_ee = T_ur_home (no jump) and subsequent tracker
+    // motion is expressed as deltas in the cali-aligned UR frame.
+    Eigen::Matrix4d T_tracker_startup{Eigen::Matrix4d::Identity()};
+    bool has_startup_pose{false};
   };
 
   void control_loop();

@@ -169,6 +169,14 @@ bool ViveLeaderNode::run() {
     C.block<3, 1>(0, 3) +=
         (T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
     arm.calib = Calibration(C);
+
+    // Cache the tracker's startup pose for delta-based pose tracking
+    // (position AND orientation). At startup, the delta is identity,
+    // so T_ee = T_ur_home — no jump regardless of how the tracker is
+    // oriented when the node comes up.
+    arm.T_tracker_startup = T_now;
+    arm.has_startup_pose = true;
+
     arm.tare_pending = false;
     RCLCPP_INFO(get_logger(),
         "%s: startup tare — current tracker pose ↦ UR home EE "
@@ -273,34 +281,50 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
         // Fallback tare: if startup tare in run() was skipped (briefly
         // invalid poll), do it on first valid ACTIVE poll instead.
         if (arm.tare_pending) {
-          Eigen::Matrix4d T_ur_home;
-          forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
+          Eigen::Matrix4d T_ur_home_local;
+          forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home_local);
           const Eigen::Matrix4d T_now_ur = arm.calib.apply(T_tracker);
           Eigen::Matrix4d C = arm.calib.transform();
           C.block<3, 1>(0, 3) +=
-              (T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
+              (T_ur_home_local.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
           arm.calib = Calibration(C);
+          arm.T_tracker_startup = T_tracker;
+          arm.has_startup_pose = true;
           arm.tare_pending = false;
           RCLCPP_INFO(get_logger(),
               "%s: fallback tare (startup poll was invalid)",
               arm.opts.topic_prefix.c_str());
         }
 
-        // Build IK target. Position comes from calib.apply(T_tracker)
-        // — the rotation part of the calibration carries the axis
-        // alignment (X/Y/Z direction mapping) captured by vive_calibrate.
-        // Orientation is locked to home_EE: we do NOT track the
-        // tracker's rotation, because mixing the tracker's hand-hold
-        // orientation with the calibration rotation produces an EE
-        // orientation that's effectively random, which forces IK into
-        // wildly different q for the same position (the "jumped
-        // forward at startup" failure mode). Position-only tracking
-        // is the simplest stable choice for now — wrist tracking can
-        // be re-added later as a deliberate option.
-        const Eigen::Matrix4d T_calibrated = arm.calib.apply(T_tracker);
-        Eigen::Matrix4d T_ee;
-        forward_kinematics(arm.home_qpos, opts_.robot_type, T_ee);
-        T_ee.block<3, 1>(0, 3) = T_calibrated.block<3, 1>(0, 3);
+        // Build IK target via delta-based pose tracking. At startup the
+        // tracker pose is captured; subsequent samples are expressed as
+        // deltas (translation + rotation) relative to that startup pose.
+        // The cali's rotation maps the delta from SteamVR frame to UR
+        // base frame (with rotation conjugation for the orientation
+        // part), then we apply the delta on top of T_ur_home. This
+        // gives BOTH:
+        //   - no jump at startup (identity delta → T_ee = T_ur_home)
+        //   - faithful axis-aligned position + orientation tracking
+        //     once the operator starts moving.
+        Eigen::Matrix4d T_ur_home;
+        forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
+        Eigen::Matrix4d T_ee = T_ur_home;
+        if (arm.has_startup_pose) {
+          const Eigen::Matrix3d R_cali = arm.calib.transform().block<3,3>(0,0);
+          // tracker delta in SteamVR frame
+          const Eigen::Matrix3d dR_tracker =
+              T_tracker.block<3,3>(0,0)
+              * arm.T_tracker_startup.block<3,3>(0,0).transpose();
+          const Eigen::Vector3d dp_tracker =
+              T_tracker.block<3,1>(0,3)
+              - arm.T_tracker_startup.block<3,1>(0,3);
+          // express delta in UR base frame
+          const Eigen::Matrix3d dR_ur     = R_cali * dR_tracker * R_cali.transpose();
+          const Eigen::Vector3d dp_ur     = R_cali * dp_tracker;
+          // compose with home pose
+          T_ee.block<3,3>(0,0) = dR_ur * T_ur_home.block<3,3>(0,0);
+          T_ee.block<3,1>(0,3) = T_ur_home.block<3,1>(0,3) + dp_ur;
+        }
 
         std::array<double, 6> q_sol;
         if (ur_ik_solve(T_ee, arm.q, opts_.robot_type, q_sol)) {
