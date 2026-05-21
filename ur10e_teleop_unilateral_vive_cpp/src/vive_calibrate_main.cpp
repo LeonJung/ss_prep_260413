@@ -29,6 +29,8 @@
 #include <Eigen/Dense>
 
 #include "ur10e_teleop_unilateral_vive_cpp/calibration.hpp"
+#include "ur10e_teleop_unilateral_vive_cpp/config.hpp"
+#include "ur10e_teleop_unilateral_vive_cpp/ur_jacobian.hpp"
 #include "ur10e_teleop_unilateral_vive_cpp/vive_tracker.hpp"
 
 using ur10e_teleop_unilateral_vive_cpp::Calibration;
@@ -39,13 +41,29 @@ namespace {
 void print_usage(const char* prog) {
   std::fprintf(stderr,
     "Usage: %s --serial LHR-XXXX --out path/to/calibration.yaml\n"
+    "         [--home-mode] [--config PATH] [--robot ur3e|ur10e|ur5e]\n"
+    "         [--side left|right]  [--displacement 0.3]\n"
     "         [--points 'x1,y1,z1 x2,y2,z2 x3,y3,z3 ...']\n"
     "         [--avg-ms 500]\n"
-    "Default points (UR base frame, meters):\n"
-    "   0.3,  0.0,  0.4   (forward)\n"
-    "   0.0,  0.3,  0.4   (left)\n"
-    "   0.0,  0.0,  0.6   (up)\n"
-    "Place the tracker at each point in order and press Enter to capture.\n",
+    "\n"
+    "Two modes:\n"
+    "  (a) --home-mode  — operator-friendly. Targets are auto-generated\n"
+    "      from the UR home pose (origin = home EE) plus orthogonal\n"
+    "      displacements of `--displacement` m. Operator places the\n"
+    "      tracker at their neutral pose, then displaces in +X/+Y/+Z\n"
+    "      of their own intuitive frame. Requires --config / --robot /\n"
+    "      --side so the home_qpos and FK target match the arm being\n"
+    "      calibrated.\n"
+    "\n"
+    "  (b) --points 'x1,y1,z1 ...'  — explicit. Operator supplies the\n"
+    "      UR-frame XYZ of each calibration point (e.g. read off the\n"
+    "      teach pendant's TCP-position display).\n"
+    "\n"
+    "Default --home-mode displacements (UR base frame, meters):\n"
+    "   home_EE + ( 0.3,  0.0,  0.0 )   ('forward' from operator view)\n"
+    "   home_EE + ( 0.0,  0.3,  0.0 )   ('left')\n"
+    "   home_EE + ( 0.0,  0.0,  0.3 )   ('up')\n"
+    "(--displacement scales these.)\n",
     prog);
 }
 
@@ -108,6 +126,11 @@ int main(int argc, char** argv) {
   std::string serial;
   std::string out_path;
   std::string points_arg;
+  std::string config_path;
+  std::string robot_type = "ur3e";
+  std::string side;             // "left" | "right" — selects which home_qpos
+  bool home_mode = false;
+  double displacement = 0.3;
   double avg_ms = 500.0;
 
   for (int i = 1; i < argc; ++i) {
@@ -119,10 +142,15 @@ int main(int argc, char** argv) {
       }
       return argv[++i];
     };
-    if      (a == "--serial") serial = need("--serial");
-    else if (a == "--out")    out_path = need("--out");
-    else if (a == "--points") points_arg = need("--points");
-    else if (a == "--avg-ms") avg_ms = std::stod(need("--avg-ms"));
+    if      (a == "--serial")        serial = need("--serial");
+    else if (a == "--out")           out_path = need("--out");
+    else if (a == "--points")        points_arg = need("--points");
+    else if (a == "--avg-ms")        avg_ms = std::stod(need("--avg-ms"));
+    else if (a == "--home-mode")     home_mode = true;
+    else if (a == "--config")        config_path = need("--config");
+    else if (a == "--robot")         robot_type = need("--robot");
+    else if (a == "--side")          side = need("--side");
+    else if (a == "--displacement")  displacement = std::stod(need("--displacement"));
     else if (a == "--help" || a == "-h") { print_usage(argv[0]); return 0; }
     else {
       std::fprintf(stderr, "unknown arg: %s\n", a.c_str());
@@ -136,7 +164,48 @@ int main(int argc, char** argv) {
   }
 
   std::vector<Eigen::Vector3d> ur_points;
-  if (!points_arg.empty()) {
+  std::vector<std::string> ur_labels;        // for operator-friendly prompts
+
+  if (home_mode) {
+    using namespace ur10e_teleop_unilateral_vive_cpp;
+    if (config_path.empty()) {
+      std::fprintf(stderr,
+          "--home-mode needs --config PATH (to read home_qpos)\n");
+      return 2;
+    }
+    if (side != "left" && side != "right") {
+      std::fprintf(stderr, "--side must be 'left' or 'right'\n");
+      return 2;
+    }
+    ControlConfig cfg;
+    if (!load_config(config_path, cfg)) {
+      std::fprintf(stderr, "failed to load config: %s\n", config_path.c_str());
+      return 2;
+    }
+    const std::array<double, 6>& home_q = (side == "left")
+        ? cfg.leader_home_left : cfg.leader_home_right;
+
+    Eigen::Matrix4d T_home;
+    forward_kinematics(home_q, robot_type, T_home);
+    const Eigen::Vector3d home_pos = T_home.block<3, 1>(0, 3);
+
+    // Auto targets: home (origin) + orthogonal displacements.
+    ur_points = {
+      home_pos,
+      home_pos + Eigen::Vector3d{displacement, 0.0, 0.0},
+      home_pos + Eigen::Vector3d{0.0, displacement, 0.0},
+      home_pos + Eigen::Vector3d{0.0, 0.0, displacement},
+    };
+    ur_labels = {
+      "NEUTRAL  (your relaxed forward pose — corresponds to UR home EE)",
+      "FORWARD  (move +X by " + std::to_string(displacement) + " m from neutral)",
+      "LEFT     (move +Y by " + std::to_string(displacement) + " m from neutral)",
+      "UP       (move +Z by " + std::to_string(displacement) + " m from neutral)",
+    };
+    std::printf(">>> home-mode: %s arm, robot=%s, home_EE=(%.3f, %.3f, %.3f), disp=%.2fm\n",
+                side.c_str(), robot_type.c_str(),
+                home_pos.x(), home_pos.y(), home_pos.z(), displacement);
+  } else if (!points_arg.empty()) {
     ur_points = parse_points_arg(points_arg);
   } else {
     ur_points = {
@@ -150,6 +219,12 @@ int main(int argc, char** argv) {
         "need at least 3 points (got %zu) — non-collinear\n",
         ur_points.size());
     return 2;
+  }
+  // Pad labels if --points / default mode didn't set any.
+  while (ur_labels.size() < ur_points.size()) {
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "point %zu", ur_labels.size() + 1);
+    ur_labels.emplace_back(buf);
   }
 
   // Tracker init
@@ -169,9 +244,11 @@ int main(int argc, char** argv) {
   tracker_points.reserve(ur_points.size());
   for (std::size_t k = 0; k < ur_points.size(); ++k) {
     const Eigen::Vector3d& p = ur_points[k];
-    std::printf("\n--- point %zu / %zu ---\n", k + 1, ur_points.size());
-    std::printf("  place tracker at UR-frame (%.3f, %.3f, %.3f) and press Enter\n",
+    std::printf("\n--- point %zu / %zu : %s ---\n",
+                k + 1, ur_points.size(), ur_labels[k].c_str());
+    std::printf("  target (UR base frame): (%.3f, %.3f, %.3f)\n",
                 p.x(), p.y(), p.z());
+    std::printf("  hold tracker steady at this position, then press Enter...\n");
     std::cout.flush();
     std::string line;
     if (!std::getline(std::cin, line)) {

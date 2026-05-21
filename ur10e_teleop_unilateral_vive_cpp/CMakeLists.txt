@@ -89,6 +89,8 @@ add_executable(vive_calibrate
   src/vive_calibrate_main.cpp
   src/vive_tracker.cpp
   src/calibration.cpp
+  src/config.cpp
+  src/ur_jacobian.cpp
 )
 target_link_libraries(vive_calibrate
   yaml-cpp
