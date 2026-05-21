@@ -150,8 +150,13 @@ bool ViveTracker::poll(Eigen::Matrix4d& out_T) {
   // Seated universes need a chaperone setup that null-HMD configs
   // typically don't have, so eTrackingResult never reaches Running_OK
   // there. Raw works on bare base-stations-plus-trackers setups.
+  // Prediction time = 1/90s ≈ 0.011s — extrapolates to the next
+  // expected frame instead of returning the cached "last" pose, which
+  // visually stalls when consecutive polls land in the same lighthouse
+  // sweep window.
+  constexpr float kPredictSec = 1.0f / 90.0f;
   system_->GetDeviceToAbsoluteTrackingPose(
-      vr::TrackingUniverseRawAndUncalibrated, 0.0f, poses,
+      vr::TrackingUniverseRawAndUncalibrated, kPredictSec, poses,
       vr::k_unMaxTrackedDeviceCount);
 
   const auto& p = poses[device_idx_];
