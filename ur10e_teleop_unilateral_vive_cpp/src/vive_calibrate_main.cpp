@@ -238,8 +238,8 @@ int main(int argc, char** argv) {
     // Left hand stays with +Y = operator's left (no mirror).
     const double y_sign = (side == "right") ? -1.0 : +1.0;
     const std::string y_label =
-        (side == "right") ? "RIGHT    (move +Y of right hand — to YOUR right — by "
-                          : "LEFT     (move +Y of left hand — to YOUR left — by ";
+        (side == "right") ? "RIGHT    (move -Y direction — to YOUR right — by "
+                          : "LEFT     (move +Y direction — to YOUR left — by ";
 
     ur_points = {
       home_pos,
