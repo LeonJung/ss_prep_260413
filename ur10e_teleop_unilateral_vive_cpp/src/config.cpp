@@ -33,6 +33,17 @@ bool try_vec6_flag(const YAML::Node& parent, const std::string& key, Vec6& out) 
   return false;
 }
 
+void try_vec3(const YAML::Node& parent, const std::string& key, Vec3a& out) {
+  if (!parent[key]) return;
+  const auto& n = parent[key];
+  if (!n.IsSequence() || n.size() != 3) {
+    std::fprintf(stderr, "[config] field '%s' is not a 3-value sequence; ignored\n",
+                 key.c_str());
+    return;
+  }
+  for (int i = 0; i < 3; ++i) out[i] = n[i].as<double>();
+}
+
 template <typename T>
 void try_scalar(const YAML::Node& parent, const std::string& key, T& out) {
   if (parent[key]) {
@@ -101,6 +112,13 @@ bool load_config(const std::string& path, ControlConfig& out) {
   if (!out.has_leader_home_right)   out.leader_home_right   = out.leader_home;
   if (!out.has_follower_home_left)  out.follower_home_left  = out.follower_home;
   if (!out.has_follower_home_right) out.follower_home_right = out.follower_home;
+
+  // Tool mode + offsets (Vive-leader only — followers ignore).
+  try_scalar(root, "tool_mode", out.tool_mode);
+  if (const auto& tn = root["tool_offsets"]) {
+    try_vec3(tn, "arm",  out.tool_offset_arm);
+    try_vec3(tn, "hand", out.tool_offset_hand);
+  }
 
   if (root["joint_mirror"] && root["joint_mirror"]["sign"]) {
     try_vec6(root["joint_mirror"], "sign", out.mirror_sign);

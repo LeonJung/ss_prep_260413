@@ -5,6 +5,19 @@
 friction_comp: true          # UR firmware friction compensation (direct_torque friction_comp=True)
 gravity_comp_internal: true  # UR firmware gravity compensation (do NOT add tau_grav in code)
 
+# --- Vive teleop: user-facing EE position relative to UR flange ---
+# tool_mode picks which offset to apply. "arm" → EE at flange (rotation
+# about tracker center becomes a pure q5 spin). "hand" → EE at gripper
+# palm; rotating the tracker sweeps the flange around the palm, which
+# is what the operator actually feels for a hand-mounted gripper.
+# The hand offset is in the flange frame (Z+ out of flange).
+# Tweak tool_offset_hand Y component to match the real dg5f mounting if
+# the palm isn't perfectly centered along flange Z.
+tool_mode: arm               # launches override via --tool-mode flag
+tool_offsets:
+  arm:  [0.0, 0.0,  0.0]
+  hand: [0.0, 0.02, 0.15]
+
 # --- Torque safety limits [Nm] — per-robot ---
 # Leader (UR3e) is smaller, smaller motor torque caps.
 # Follower (UR10e) is much stronger, needs higher limits to track briskly.

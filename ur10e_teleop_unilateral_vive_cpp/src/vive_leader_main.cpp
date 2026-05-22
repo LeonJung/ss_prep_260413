@@ -18,10 +18,14 @@ void print_usage(const char* prog) {
     "         [--left-serial S] [--left-calib PATH] [--left-prefix /ur10e/left]\n"
     "         [--right-serial S] [--right-calib PATH] [--right-prefix /ur10e/right]\n"
     "         [--rate-hz 500]\n"
+    "         [--tool-mode arm|hand]\n"
     "         [--rt-mode true|false] [--rt-priority N] [--rt-cpu N]\n"
     "Notes:\n"
     "  - Provide --left-serial AND/OR --right-serial.\n"
     "    A side with no serial is skipped (single-arm fallback).\n"
+    "  - --tool-mode overrides ControlConfig::tool_mode. 'arm' puts the\n"
+    "    user-facing EE at the UR flange; 'hand' applies the configured\n"
+    "    tool_offset_hand to put it at the gripper palm.\n"
     "  - --rt-priority / --rt-cpu only apply when --rt-mode true.\n",
     prog);
 }
@@ -59,6 +63,7 @@ int main(int argc, char** argv) {
     else if (a == "--right-calib")    opts.right.calib_path = need("--right-calib");
     else if (a == "--right-prefix")   opts.right.topic_prefix = need("--right-prefix");
     else if (a == "--rate-hz")        opts.control_rate_hz = std::stod(need("--rate-hz"));
+    else if (a == "--tool-mode")      opts.tool_mode = need("--tool-mode");
     else if (a == "--rt-mode")        opts.use_rt = parse_bool(need("--rt-mode"));
     else if (a == "--rt")             opts.use_rt = true;
     else if (a == "--no-rt")          opts.use_rt = false;

@@ -39,6 +39,18 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
   }
   home_qpos_ = cfg_.leader_home;
 
+  // Resolve tool mode (CLI override > config).
+  active_tool_mode_ = !opts.tool_mode.empty() ? opts.tool_mode : cfg_.tool_mode;
+  Vec3a off3 = (active_tool_mode_ == "hand") ? cfg_.tool_offset_hand
+                                             : cfg_.tool_offset_arm;
+  T_tool_offset_.setIdentity();
+  T_tool_offset_(0, 3) = off3[0];
+  T_tool_offset_(1, 3) = off3[1];
+  T_tool_offset_(2, 3) = off3[2];
+  RCLCPP_INFO(get_logger(),
+              "tool_mode=%s  offset_in_flange=[%.3f %.3f %.3f] m",
+              active_tool_mode_.c_str(), off3[0], off3[1], off3[2]);
+
   // Build the per-arm runtime list from the configured ArmOptions.
   // An arm with empty tracker_serial is skipped (single-arm fallback).
   auto add_arm = [&](const ArmOptions& a, const char* side_label,
@@ -162,18 +174,22 @@ bool ViveLeaderNode::run() {
       arm.tare_pending = true;
       continue;
     }
-    Eigen::Matrix4d T_ur_home;
-    forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
+    Eigen::Matrix4d T_ur_home_flange;
+    forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home_flange);
+    // The user-facing "home EE" is the home flange pose shifted along
+    // the tool offset (palm of the gripper in hand mode, flange itself
+    // in arm mode).
+    const Eigen::Matrix4d T_ur_home_palm = T_ur_home_flange * T_tool_offset_;
     const Eigen::Matrix4d T_now_ur = arm.calib.apply(T_now);
     Eigen::Matrix4d C = arm.calib.transform();
     C.block<3, 1>(0, 3) +=
-        (T_ur_home.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
+        (T_ur_home_palm.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
     arm.calib = Calibration(C);
 
     // Cache the tracker's startup pose for delta-based pose tracking
     // (position AND orientation). At startup, the delta is identity,
-    // so T_ee = T_ur_home — no jump regardless of how the tracker is
-    // oriented when the node comes up.
+    // so T_ee = T_ur_home_palm — no jump regardless of how the tracker
+    // is oriented when the node comes up.
     arm.T_tracker_startup = T_now;
     arm.has_startup_pose = true;
 
@@ -286,18 +302,21 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
     case MODE_FREEDRIVE: {
       Eigen::Matrix4d T_tracker;
       if (arm.tracker && arm.tracker->poll(T_tracker)) {
+        // Compute home flange/palm poses (used for tare and target).
+        Eigen::Matrix4d T_ur_home_flange;
+        forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home_flange);
+        const Eigen::Matrix4d T_ur_home_palm = T_ur_home_flange * T_tool_offset_;
+
         // Tare on first valid ACTIVE/FREEDRIVE poll after entry. The
         // state-transition handler in control_loop sets tare_pending=true
         // each time we enter one of these modes, so this fires once per
         // entry (also used as a fallback if the startup tare in run()
         // was skipped due to a briefly invalid poll).
         if (arm.tare_pending) {
-          Eigen::Matrix4d T_ur_home_local;
-          forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home_local);
           const Eigen::Matrix4d T_now_ur = arm.calib.apply(T_tracker);
           Eigen::Matrix4d C = arm.calib.transform();
           C.block<3, 1>(0, 3) +=
-              (T_ur_home_local.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
+              (T_ur_home_palm.block<3, 1>(0, 3) - T_now_ur.block<3, 1>(0, 3));
           arm.calib = Calibration(C);
           arm.T_tracker_startup = T_tracker;
           arm.has_startup_pose = true;
@@ -307,35 +326,30 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
               arm.opts.topic_prefix.c_str());
         }
 
-        // Build IK target via delta-based pose tracking. At startup the
-        // tracker pose is captured; subsequent samples are expressed as
-        // deltas (translation + rotation) relative to that startup pose.
-        // The cali's rotation maps the delta from SteamVR frame to UR
-        // base frame (with rotation conjugation for the orientation
-        // part), then we apply the delta on top of T_ur_home. This
-        // gives BOTH:
-        //   - no jump at startup (identity delta → T_ee = T_ur_home)
-        //   - faithful axis-aligned position + orientation tracking
-        //     once the operator starts moving.
-        Eigen::Matrix4d T_ur_home;
-        forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home);
-        Eigen::Matrix4d T_ee = T_ur_home;
+        // Build target at the user-facing EE (palm if hand mode, flange
+        // if arm mode). Delta tracking from startup pose ensures no
+        // jump at ACTIVE entry while keeping axis-aligned motion.
+        Eigen::Matrix4d T_target_palm = T_ur_home_palm;
         if (arm.has_startup_pose) {
           const Eigen::Matrix3d R_cali = arm.calib.transform().block<3,3>(0,0);
-          // tracker delta in SteamVR frame
           const Eigen::Matrix3d dR_tracker =
               T_tracker.block<3,3>(0,0)
               * arm.T_tracker_startup.block<3,3>(0,0).transpose();
           const Eigen::Vector3d dp_tracker =
               T_tracker.block<3,1>(0,3)
               - arm.T_tracker_startup.block<3,1>(0,3);
-          // express delta in UR base frame
-          const Eigen::Matrix3d dR_ur     = R_cali * dR_tracker * R_cali.transpose();
-          const Eigen::Vector3d dp_ur     = R_cali * dp_tracker;
-          // compose with home pose
-          T_ee.block<3,3>(0,0) = dR_ur * T_ur_home.block<3,3>(0,0);
-          T_ee.block<3,1>(0,3) = T_ur_home.block<3,1>(0,3) + dp_ur;
+          const Eigen::Matrix3d dR_ur = R_cali * dR_tracker * R_cali.transpose();
+          const Eigen::Vector3d dp_ur = R_cali * dp_tracker;
+          T_target_palm.block<3,3>(0,0) = dR_ur * T_ur_home_palm.block<3,3>(0,0);
+          T_target_palm.block<3,1>(0,3) = T_ur_home_palm.block<3,1>(0,3) + dp_ur;
         }
+
+        // Convert user-facing EE target back to a flange target for IK.
+        // T_flange · T_offset = T_palm  ⇒  T_flange = T_palm · T_offset⁻¹
+        // The tool offset is a pure translation, so inversion is a sign
+        // flip on the translation column in the palm frame.
+        const Eigen::Matrix4d T_ee = T_target_palm
+                                    * T_tool_offset_.inverse();
 
         std::array<double, 6> q_sol;
         if (ur_ik_solve(T_ee, arm.q, opts_.robot_type, q_sol)) {

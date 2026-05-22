@@ -1,18 +1,16 @@
 """
-teleop_real.launch.py — Bimanual Vive leader + two UR10e followers, single PC.
+teleop_real_hand.launch.py — Bimanual Vive teleop with hand-attached EE.
 
-Spawns:
-  - vive_leader_node       (left + right trackers via OpenVR)
-  - follower_left          (subscribes /ur10e/left/leader/joint_state)
-  - follower_right         (subscribes /ur10e/right/leader/joint_state)
+Same as teleop_real.launch.py but tool_mode defaults to "hand" so the
+user-facing EE is at the dg5f gripper palm (instead of the UR flange).
+Rotating the Vive about its own center then sweeps the flange around
+the palm — multiple joints coordinate — instead of a pure q5 spin.
 
-Calibration YAMLs are auto-discovered at
-  <pkg-share>/config/calibration_left.yaml
-  <pkg-share>/config/calibration_right.yaml
-if present. Otherwise the leader auto-tares on the first ACTIVE poll.
-
-Single-arm fallback: leave one side's tracker serial or robot IP empty
-to skip that arm.
+Everything else (serials, IPs, ports, calibrations) inherits from the
+package defaults the same way teleop_real does. Override any of them
+on the command line:
+  ros2 launch ur10e_teleop_unilateral_vive_cpp teleop_real_hand.launch.py \\
+      leader_rt:=true follower_rt:=true
 """
 import os
 from launch import LaunchDescription
@@ -29,11 +27,6 @@ def _build(context, *args, **kwargs):
     config = f'{pkg_share}/config/real_ur.yaml'
     resources = f'{pkg_share}/resources'
 
-    # Auto-discover calibration files if no explicit override was given.
-    # Look at the user calibration dir FIRST (~/.ros/...) because that's
-    # where vive_calibrate writes by default — and unlike pkg_share/config
-    # it doesn't get clobbered by `colcon build`. Falls back to pkg_share
-    # for legacy setups where the YAMLs were saved into the install tree.
     user_calib_dir = os.path.expanduser(
         '~/.ros/ur10e_teleop_unilateral_vive_cpp')
 
@@ -47,7 +40,7 @@ def _build(context, *args, **kwargs):
                 return cand
         return ''
 
-    left_calib = discover_calib('left_calib', 'left')
+    left_calib  = discover_calib('left_calib',  'left')
     right_calib = discover_calib('right_calib', 'right')
 
     leader = Node(
@@ -62,7 +55,7 @@ def _build(context, *args, **kwargs):
             '--left-calib', left_calib,
             '--right-serial', LaunchConfiguration('right_serial'),
             '--right-calib', right_calib,
-            '--tool-mode', LaunchConfiguration('tool_mode'),
+            '--tool-mode', 'hand',
             '--rt-mode', LaunchConfiguration('leader_rt'),
         ],
     )
@@ -109,37 +102,16 @@ def _build(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        # leader IK robot model. ur10e matches the actual follower so the
-        # published JointState is directly UR10e joint space.
         DeclareLaunchArgument('robot', default_value='ur10e'),
-
-        # PC e's paired Vive trackers (left/right confirmed by hand-swing test).
-        # Base stations: LHB-45131F3B, LHB-BB0267D2.
-        DeclareLaunchArgument('left_serial',  default_value='LHR-B4BFDF90',
-            description='Left tracker serial (empty = disable left)'),
-        DeclareLaunchArgument('right_serial', default_value='LHR-C21814A6',
-            description='Right tracker serial (empty = disable right)'),
-
-        # Explicit calib overrides; empty triggers auto-discover.
+        DeclareLaunchArgument('left_serial',  default_value='LHR-B4BFDF90'),
+        DeclareLaunchArgument('right_serial', default_value='LHR-C21814A6'),
         DeclareLaunchArgument('left_calib',  default_value=''),
         DeclareLaunchArgument('right_calib', default_value=''),
-
-        # UR10e IPs on this PC (left/right confirmed 2026-05-20).
-        DeclareLaunchArgument('left_ip',  default_value='169.254.186.93',
-            description='Left UR10e IP (empty = disable left follower)'),
-        DeclareLaunchArgument('right_ip', default_value='169.254.186.92',
-            description='Right UR10e IP (empty = disable right follower)'),
-
+        DeclareLaunchArgument('left_ip',  default_value='169.254.186.93'),
+        DeclareLaunchArgument('right_ip', default_value='169.254.186.92'),
         DeclareLaunchArgument('left_port_base',  default_value='50011'),
         DeclareLaunchArgument('right_port_base', default_value='50021'),
-
         DeclareLaunchArgument('leader_rt',   default_value='false'),
         DeclareLaunchArgument('follower_rt', default_value='false'),
-
-        # User-facing EE location. "arm" = flange (default for this
-        # generic launch). Use teleop_real_hand.launch.py for hand mode.
-        DeclareLaunchArgument('tool_mode', default_value='arm',
-            description='arm = EE at flange; hand = EE at gripper palm'),
-
         OpaqueFunction(function=_build),
     ])

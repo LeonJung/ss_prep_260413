@@ -64,6 +64,9 @@ class ViveLeaderNode : public rclcpp::Node {
                                         // using its DH means the published q
                                         // is directly UR10e joint space (no
                                         // virtual UR3e intermediate).
+    std::string tool_mode;             // "arm" | "hand" | "" (use config).
+                                        // CLI override; if empty falls back to
+                                        // ControlConfig::tool_mode.
     std::string config_path;
     double      control_rate_hz{500.0};
     bool        use_rt = false;
@@ -148,6 +151,13 @@ class ViveLeaderNode : public rclcpp::Node {
   std::atomic<int> reset_counter_{0};
 
   Vec6 home_qpos_{};       // shared default home (same for both arms for now)
+
+  // Tool offset from flange to user-facing EE (4×4). Applied as:
+  //   T_palm   = T_flange · T_tool_offset_
+  //   T_flange_target = T_palm_target · T_tool_offset_⁻¹  (for IK input)
+  // Identity when running in "arm" mode (EE at flange).
+  Eigen::Matrix4d T_tool_offset_{Eigen::Matrix4d::Identity()};
+  std::string active_tool_mode_;
 
   std::atomic<bool> running_{false};
   std::thread control_thread_;

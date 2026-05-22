@@ -9,6 +9,8 @@
 namespace ur10e_teleop_unilateral_vive_cpp {
 
 using Vec6 = std::array<double, 6>;
+using Vec3a = std::array<double, 3>;     // distinct from ur_jacobian's
+                                          // Eigen-backed Vec3 (Vector3d)
 
 struct ControlConfig {
   // ---- firmware-handled compensation ----
@@ -78,6 +80,19 @@ struct ControlConfig {
   Vec6 friction_fc = {0, 0, 0, 0, 0, 0};
   Vec6 friction_fv = {0, 0, 0, 0, 0, 0};
   Vec6 friction_k  = {50, 50, 50, 50, 50, 50};
+
+  // ---- tool offset (Vive teleop) ----
+  // The "EE" point that the operator perceives is offset from the UR
+  // flange (the joint-6 frame that FK returns). With tool_mode = "arm"
+  // the offset is zero — rotation of the tracker about its own center
+  // ends up as a pure q5 spin (flange Z rotation). With tool_mode =
+  // "hand" the offset moves the EE to the dg5f gripper palm center;
+  // rotating the tracker then forces the arm to swing the flange
+  // around the palm point, which is the natural feel.
+  std::string tool_mode = "arm";  // "arm" | "hand"
+  Vec3a tool_offset_arm  = {0.0, 0.0, 0.0};     // flange = EE
+  Vec3a tool_offset_hand = {0.0, 0.02, 0.15};   // dg5f palm in flange frame
+                                                 // (Z forward; tweak Y per real mount)
 
   // ---- control loop ----
   double timestep = 0.002;  // 500 Hz
