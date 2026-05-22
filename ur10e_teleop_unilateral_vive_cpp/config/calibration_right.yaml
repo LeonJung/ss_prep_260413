@@ -1,10 +1,11 @@
-# calibration.yaml — tracker-frame → UR-base-frame rigid transform.
+# calibration_right.yaml — right-hand tracker → UR-Right base-frame transform.
 #
-# Identity placeholder. Replace with the output of the calibration
-# routine (Calibration::solve_from_points / script/calibrate.py).
-# Format: 4×4 row-major homogeneous transform.
+# Captured by vive_calibrate right --post-rot-z -90 (CW post-rotation to
+# match operator-frame axes; same systematic offset as left).
+# Right side also uses y_sign=-1 inside vive_calibrate so the operator
+# moves the tracker to THEIR OWN right during the Y step.
 T_ur_from_tracker:
-  - [1.0, 0.0, 0.0, 0.0]
-  - [0.0, 1.0, 0.0, 0.0]
-  - [0.0, 0.0, 1.0, 0.0]
-  - [0.0, 0.0, 0.0, 1.0]
+  - [-6.262716402364e-01,  5.514889356998e-02,  7.776518708096e-01,  1.251480021794e-01]
+  - [ 7.790385328406e-01,  6.253975053049e-03,  6.269448557454e-01, -4.117019288693e-01]
+  - [ 2.971189972375e-02,  9.984585556417e-01, -4.687980034901e-02,  1.736939783881e+00]
+  - [ 0.000000000000e+00,  0.000000000000e+00,  0.000000000000e+00,  1.000000000000e+00]
