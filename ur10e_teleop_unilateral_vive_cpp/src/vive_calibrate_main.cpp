@@ -28,6 +28,8 @@
 
 #include <Eigen/Dense>
 
+#include <sys/stat.h>
+
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "ur10e_teleop_unilateral_vive_cpp/calibration.hpp"
@@ -80,6 +82,21 @@ const char* serial_for_side(const std::string& side) {
 std::string pkg_share() {
   return ament_index_cpp::get_package_share_directory(
       "ur10e_teleop_unilateral_vive_cpp");
+}
+
+// Per-user calibration directory. We deliberately don't write to
+// pkg_share/config because colcon build copies src/config → install,
+// which overwrites cali results with the placeholder YAMLs on every
+// rebuild. ~/.ros is the canonical ROS user-data location and survives
+// builds cleanly.
+std::string user_calib_dir() {
+  const char* home = std::getenv("HOME");
+  const std::string base = home ? std::string(home) : std::string(".");
+  const std::string dir = base + "/.ros/ur10e_teleop_unilateral_vive_cpp";
+  // mkdir -p (best-effort; save() will report errors on write failure)
+  ::mkdir((base + "/.ros").c_str(), 0755);
+  ::mkdir(dir.c_str(), 0755);
+  return dir;
 }
 
 bool parse_point(const std::string& s, Eigen::Vector3d& out) {
@@ -200,7 +217,7 @@ int main(int argc, char** argv) {
         "(did you source install/setup.bash?)\n", e.what());
     return 2;
   }
-  if (out_path.empty())    out_path    = share + "/config/calibration_" + side + ".yaml";
+  if (out_path.empty())    out_path    = user_calib_dir() + "/calibration_" + side + ".yaml";
   if (config_path.empty()) config_path = share + "/config/real_ur.yaml";
 
   std::printf(">>> side=%s  serial=%s\n", side.c_str(), serial.c_str());

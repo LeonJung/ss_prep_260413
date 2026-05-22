@@ -52,11 +52,18 @@ def _build(context, *args, **kwargs):
     ur_ip  = IP_BY_SIDE[side]
     port_base = PORT_BASE_BY_SIDE[side]
 
-    # Calibration: explicit override > auto-discovered file > empty (auto-tare).
+    # Calibration: explicit override > ~/.ros > pkg_share > empty (auto-tare).
+    # ~/.ros first because vive_calibrate now writes there by default
+    # (pkg_share/config gets clobbered by `colcon build`).
     calib = LaunchConfiguration('calib').perform(context).strip()
     if not calib:
-        candidate = f'{pkg_share}/config/calibration_{side}.yaml'
-        calib = candidate if os.path.exists(candidate) else ''
+        user_dir = os.path.expanduser(
+            '~/.ros/ur10e_teleop_unilateral_vive_cpp')
+        for cand in (f'{user_dir}/calibration_{side}.yaml',
+                     f'{pkg_share}/config/calibration_{side}.yaml'):
+            if os.path.exists(cand):
+                calib = cand
+                break
 
     leader_args = [
         '--config', config_path,

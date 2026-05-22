@@ -21,12 +21,19 @@ def _build(context, *args, **kwargs):
     pkg_share = get_package_share_directory('ur10e_teleop_unilateral_vive_cpp')
     config = f'{pkg_share}/config/real_ur.yaml'
 
+    # Auto-discover: ~/.ros first (survives builds), then pkg_share (legacy).
+    user_calib_dir = os.path.expanduser(
+        '~/.ros/ur10e_teleop_unilateral_vive_cpp')
+
     def discover_calib(arg_name, side):
         explicit = LaunchConfiguration(arg_name).perform(context).strip()
         if explicit:
             return explicit
-        cand = f'{pkg_share}/config/calibration_{side}.yaml'
-        return cand if os.path.exists(cand) else ''
+        for cand in (f'{user_calib_dir}/calibration_{side}.yaml',
+                     f'{pkg_share}/config/calibration_{side}.yaml'):
+            if os.path.exists(cand):
+                return cand
+        return ''
 
     left_calib = discover_calib('left_calib', 'left')
     right_calib = discover_calib('right_calib', 'right')

@@ -30,12 +30,22 @@ def _build(context, *args, **kwargs):
     resources = f'{pkg_share}/resources'
 
     # Auto-discover calibration files if no explicit override was given.
+    # Look at the user calibration dir FIRST (~/.ros/...) because that's
+    # where vive_calibrate writes by default — and unlike pkg_share/config
+    # it doesn't get clobbered by `colcon build`. Falls back to pkg_share
+    # for legacy setups where the YAMLs were saved into the install tree.
+    user_calib_dir = os.path.expanduser(
+        '~/.ros/ur10e_teleop_unilateral_vive_cpp')
+
     def discover_calib(arg_name, side):
         explicit = LaunchConfiguration(arg_name).perform(context).strip()
         if explicit:
             return explicit
-        cand = f'{pkg_share}/config/calibration_{side}.yaml'
-        return cand if os.path.exists(cand) else ''
+        for cand in (f'{user_calib_dir}/calibration_{side}.yaml',
+                     f'{pkg_share}/config/calibration_{side}.yaml'):
+            if os.path.exists(cand):
+                return cand
+        return ''
 
     left_calib = discover_calib('left_calib', 'left')
     right_calib = discover_calib('right_calib', 'right')
