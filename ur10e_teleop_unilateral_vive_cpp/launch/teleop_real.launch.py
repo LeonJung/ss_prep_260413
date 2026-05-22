@@ -6,11 +6,17 @@ Spawns:
   - follower_left          (subscribes /ur10e/left/leader/joint_state)
   - follower_right         (subscribes /ur10e/right/leader/joint_state)
 
+Calibration YAMLs are auto-discovered at
+  <pkg-share>/config/calibration_left.yaml
+  <pkg-share>/config/calibration_right.yaml
+if present. Otherwise the leader auto-tares on the first ACTIVE poll.
+
 Single-arm fallback: leave one side's tracker serial or robot IP empty
 to skip that arm.
 """
+import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -18,50 +24,21 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 
-def generate_launch_description():
+def _build(context, *args, **kwargs):
     pkg_share = get_package_share_directory('ur10e_teleop_unilateral_vive_cpp')
     config = f'{pkg_share}/config/real_ur.yaml'
     resources = f'{pkg_share}/resources'
 
-    robot_arg = DeclareLaunchArgument('robot', default_value='ur3e')
+    # Auto-discover calibration files if no explicit override was given.
+    def discover_calib(arg_name, side):
+        explicit = LaunchConfiguration(arg_name).perform(context).strip()
+        if explicit:
+            return explicit
+        cand = f'{pkg_share}/config/calibration_{side}.yaml'
+        return cand if os.path.exists(cand) else ''
 
-    # PC e's paired Vive trackers (left/right confirmed by hand-swing test).
-    # Base stations: LHB-45131F3B, LHB-BB0267D2.
-    left_serial_arg = DeclareLaunchArgument(
-        'left_serial', default_value='LHR-B4BFDF90',
-        description='Left tracker serial (empty = disable left)')
-    left_calib_arg = DeclareLaunchArgument(
-        'left_calib', default_value='',
-        description='Left tracker→UR-base YAML (empty = auto-tare)')
-
-    right_serial_arg = DeclareLaunchArgument(
-        'right_serial', default_value='LHR-C21814A6',
-        description='Right tracker serial (empty = disable right)')
-    right_calib_arg = DeclareLaunchArgument(
-        'right_calib', default_value='',
-        description='Right tracker→UR-base YAML (empty = auto-tare)')
-
-    # UR10e IPs on this PC (left/right confirmed 2026-05-20).
-    # Leave a side empty to skip its follower.
-    left_ip_arg = DeclareLaunchArgument(
-        'left_ip', default_value='169.254.186.93',
-        description='Left UR10e IP (empty = disable left follower)')
-    right_ip_arg = DeclareLaunchArgument(
-        'right_ip', default_value='169.254.186.92',
-        description='Right UR10e IP (empty = disable right follower)')
-
-    # Distinct PC-side reverse-port bases so the two UrDrivers don't
-    # collide.
-    left_port_arg  = DeclareLaunchArgument('left_port_base',  default_value='50011')
-    right_port_arg = DeclareLaunchArgument('right_port_base', default_value='50021')
-
-    leader_rt_arg = DeclareLaunchArgument('leader_rt', default_value='false')
-    follower_rt_arg = DeclareLaunchArgument('follower_rt', default_value='false')
-
-    left_enabled = PythonExpression(
-        ["'", LaunchConfiguration('left_ip'),  "' != ''"])
-    right_enabled = PythonExpression(
-        ["'", LaunchConfiguration('right_ip'), "' != ''"])
+    left_calib = discover_calib('left_calib', 'left')
+    right_calib = discover_calib('right_calib', 'right')
 
     leader = Node(
         package='ur10e_teleop_unilateral_vive_cpp',
@@ -72,12 +49,17 @@ def generate_launch_description():
             '--robot', LaunchConfiguration('robot'),
             '--config', config,
             '--left-serial', LaunchConfiguration('left_serial'),
-            '--left-calib', LaunchConfiguration('left_calib'),
+            '--left-calib', left_calib,
             '--right-serial', LaunchConfiguration('right_serial'),
-            '--right-calib', LaunchConfiguration('right_calib'),
+            '--right-calib', right_calib,
             '--rt-mode', LaunchConfiguration('leader_rt'),
         ],
     )
+
+    left_enabled = PythonExpression(
+        ["'", LaunchConfiguration('left_ip'),  "' != ''"])
+    right_enabled = PythonExpression(
+        ["'", LaunchConfiguration('right_ip'), "' != ''"])
 
     follower_left = Node(
         package='ur10e_teleop_unilateral_vive_cpp',
@@ -111,12 +93,37 @@ def generate_launch_description():
         ],
     )
 
+    return [leader, follower_left, follower_right]
+
+
+def generate_launch_description():
     return LaunchDescription([
-        robot_arg,
-        left_serial_arg, left_calib_arg,
-        right_serial_arg, right_calib_arg,
-        left_ip_arg, right_ip_arg,
-        left_port_arg, right_port_arg,
-        leader_rt_arg, follower_rt_arg,
-        leader, follower_left, follower_right,
+        # leader IK robot model. ur10e matches the actual follower so the
+        # published JointState is directly UR10e joint space.
+        DeclareLaunchArgument('robot', default_value='ur10e'),
+
+        # PC e's paired Vive trackers (left/right confirmed by hand-swing test).
+        # Base stations: LHB-45131F3B, LHB-BB0267D2.
+        DeclareLaunchArgument('left_serial',  default_value='LHR-B4BFDF90',
+            description='Left tracker serial (empty = disable left)'),
+        DeclareLaunchArgument('right_serial', default_value='LHR-C21814A6',
+            description='Right tracker serial (empty = disable right)'),
+
+        # Explicit calib overrides; empty triggers auto-discover.
+        DeclareLaunchArgument('left_calib',  default_value=''),
+        DeclareLaunchArgument('right_calib', default_value=''),
+
+        # UR10e IPs on this PC (left/right confirmed 2026-05-20).
+        DeclareLaunchArgument('left_ip',  default_value='169.254.186.93',
+            description='Left UR10e IP (empty = disable left follower)'),
+        DeclareLaunchArgument('right_ip', default_value='169.254.186.92',
+            description='Right UR10e IP (empty = disable right follower)'),
+
+        DeclareLaunchArgument('left_port_base',  default_value='50011'),
+        DeclareLaunchArgument('right_port_base', default_value='50021'),
+
+        DeclareLaunchArgument('leader_rt',   default_value='false'),
+        DeclareLaunchArgument('follower_rt', default_value='false'),
+
+        OpaqueFunction(function=_build),
     ])

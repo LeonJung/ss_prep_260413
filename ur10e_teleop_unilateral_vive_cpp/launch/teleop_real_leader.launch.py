@@ -3,44 +3,33 @@ teleop_real_leader.launch.py — Bimanual Vive-tracker leader (distributed).
 
 Single process drives both trackers (left + right) and publishes to two
 topic namespaces. Leave one side's serial empty for single-arm mode.
+
+Calibration YAMLs are auto-discovered from
+  <pkg-share>/config/calibration_<side>.yaml
+unless overridden via the left_calib / right_calib launch args.
 """
+import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from ament_index_python.packages import get_package_share_directory
 
 
-def generate_launch_description():
+def _build(context, *args, **kwargs):
     pkg_share = get_package_share_directory('ur10e_teleop_unilateral_vive_cpp')
     config = f'{pkg_share}/config/real_ur.yaml'
 
-    robot_arg = DeclareLaunchArgument(
-        'robot', default_value='ur3e',
-        description='UR model used as the IK target.')
+    def discover_calib(arg_name, side):
+        explicit = LaunchConfiguration(arg_name).perform(context).strip()
+        if explicit:
+            return explicit
+        cand = f'{pkg_share}/config/calibration_{side}.yaml'
+        return cand if os.path.exists(cand) else ''
 
-    # PC e's paired Vive trackers, left/right confirmed by operator's
-    # hand-swing test (2026-05-20). Base stations on the same setup:
-    # LHB-45131F3B, LHB-BB0267D2.
-    left_serial_arg = DeclareLaunchArgument(
-        'left_serial', default_value='LHR-B4BFDF90',
-        description='Left-hand Vive tracker serial (empty = side disabled)')
-    # Default empty → node falls back to auto-tare on first ACTIVE poll.
-    # Set to a real calibration YAML once one is captured.
-    left_calib_arg = DeclareLaunchArgument(
-        'left_calib', default_value='',
-        description='Left tracker→UR-base YAML transform (empty = auto-tare)')
-
-    right_serial_arg = DeclareLaunchArgument(
-        'right_serial', default_value='LHR-C21814A6',
-        description='Right-hand Vive tracker serial (empty = side disabled)')
-    right_calib_arg = DeclareLaunchArgument(
-        'right_calib', default_value='',
-        description='Right tracker→UR-base YAML transform (empty = auto-tare)')
-
-    rate_arg = DeclareLaunchArgument('rate_hz', default_value='500.0')
-    rt_arg = DeclareLaunchArgument('rt', default_value='false')
+    left_calib = discover_calib('left_calib', 'left')
+    right_calib = discover_calib('right_calib', 'right')
 
     leader = Node(
         package='ur10e_teleop_unilateral_vive_cpp',
@@ -51,18 +40,31 @@ def generate_launch_description():
             '--robot', LaunchConfiguration('robot'),
             '--config', config,
             '--left-serial', LaunchConfiguration('left_serial'),
-            '--left-calib', LaunchConfiguration('left_calib'),
+            '--left-calib', left_calib,
             '--right-serial', LaunchConfiguration('right_serial'),
-            '--right-calib', LaunchConfiguration('right_calib'),
+            '--right-calib', right_calib,
             '--rate-hz', LaunchConfiguration('rate_hz'),
             '--rt-mode', LaunchConfiguration('rt'),
         ],
     )
 
+    return [leader]
+
+
+def generate_launch_description():
     return LaunchDescription([
-        robot_arg,
-        left_serial_arg, left_calib_arg,
-        right_serial_arg, right_calib_arg,
-        rate_arg, rt_arg,
-        leader,
+        DeclareLaunchArgument('robot', default_value='ur10e',
+            description='UR model used as the IK target (ur10e matches actual follower).'),
+        # PC e's paired Vive trackers, left/right confirmed by hand-swing test.
+        # Base stations: LHB-45131F3B, LHB-BB0267D2.
+        DeclareLaunchArgument('left_serial',  default_value='LHR-B4BFDF90',
+            description='Left tracker serial (empty = disable)'),
+        DeclareLaunchArgument('right_serial', default_value='LHR-C21814A6',
+            description='Right tracker serial (empty = disable)'),
+        # Explicit override; empty triggers auto-discover.
+        DeclareLaunchArgument('left_calib',  default_value=''),
+        DeclareLaunchArgument('right_calib', default_value=''),
+        DeclareLaunchArgument('rate_hz', default_value='500.0'),
+        DeclareLaunchArgument('rt', default_value='false'),
+        OpaqueFunction(function=_build),
     ])
