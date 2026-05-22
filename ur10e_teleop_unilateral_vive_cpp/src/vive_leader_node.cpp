@@ -250,6 +250,14 @@ void ViveLeaderNode::control_loop() {
       if (cur_state == MODE_HOMING) {
         for (auto& a : arms_) a.q_home_start = a.q;
       }
+      // Re-tare on every entry into ACTIVE / FREEDRIVE so the operator's
+      // current tracker pose becomes the new "zero" — both position and
+      // orientation (via T_tracker_startup for delta tracking). Keeps
+      // the calibration's axis alignment (rotation part of calib)
+      // untouched; only the origin moves.
+      if (cur_state == MODE_ACTIVE || cur_state == MODE_FREEDRIVE) {
+        for (auto& a : arms_) a.tare_pending = true;
+      }
       prev_state = cur_state;
     }
 
@@ -278,8 +286,11 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
     case MODE_FREEDRIVE: {
       Eigen::Matrix4d T_tracker;
       if (arm.tracker && arm.tracker->poll(T_tracker)) {
-        // Fallback tare: if startup tare in run() was skipped (briefly
-        // invalid poll), do it on first valid ACTIVE poll instead.
+        // Tare on first valid ACTIVE/FREEDRIVE poll after entry. The
+        // state-transition handler in control_loop sets tare_pending=true
+        // each time we enter one of these modes, so this fires once per
+        // entry (also used as a fallback if the startup tare in run()
+        // was skipped due to a briefly invalid poll).
         if (arm.tare_pending) {
           Eigen::Matrix4d T_ur_home_local;
           forward_kinematics(arm.home_qpos, opts_.robot_type, T_ur_home_local);
@@ -292,7 +303,7 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
           arm.has_startup_pose = true;
           arm.tare_pending = false;
           RCLCPP_INFO(get_logger(),
-              "%s: fallback tare (startup poll was invalid)",
+              "%s: tare on ACTIVE entry — current tracker pose ↦ UR home EE",
               arm.opts.topic_prefix.c_str());
         }
 
