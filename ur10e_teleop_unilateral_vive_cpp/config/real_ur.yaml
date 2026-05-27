@@ -100,7 +100,14 @@ follower:
   # Iter-F: wrist KP_TRACK doubled so quick wrist motion doesn't create
   # tracking-error spikes that bleed through the leader's KP_BI deadband.
   KP_TRACK:  [300.0, 300.0, 150.0, 100.0, 100.0, 80.0]
-  KD_TRACK:  [30.0,  30.0,  20.0,   10.0,  10.0, 10.0]
+  # KD_TRACK raised ~2-2.5x (was [30,30,20,10,10,10]) to damp tracking
+  # overshoot: a quick Vive move-then-stop made the UR sail past the target
+  # and return (underdamped). Worse when the arm is extended because the
+  # joint's effective inertia M rises and the damping ratio
+  # zeta = KD / (2*sqrt(KP*M)) drops. Bumped most on the arm joints (0-2)
+  # and wrist_1 (3), which carry the vertical (Z) load. Tune: raise if it
+  # still overshoots; lower if it feels sluggish or buzzes.
+  KD_TRACK:  [60.0,  60.0,  45.0,   18.0,  16.0, 14.0]
   KP_HOLD:   [100.0, 100.0,  50.0, 25.0, 25.0, 25.0]
   KD_HOLD:   [20.0,  20.0,   12.0, 10.0, 10.0, 10.0]
   OVERFORCE_CONSTRAINT: [60.0, 60.0, 60.0, 30.0, 30.0, 30.0]
