@@ -113,3 +113,14 @@ friction:
 
 # --- Control loop ---
 timestep: 0.002  # 500 Hz
+
+# --- Leader IK output: per-joint velocity clamp [rad/s] ---
+# The Vive leader's DLS IK can demand huge joint velocities near a
+# singularity (esp. wrist_1/wrist_3 at the wrist singularity, wrist_2≈0),
+# which trips UR safety: C287A7 (joint exceeded speed limit) then C306A1
+# (joint not stopping fast enough). The leader scales each commanded step
+# uniformly so the fastest joint stays within this limit — the arm slows
+# near the singularity instead of faulting; Cartesian path is preserved.
+# Keep these BELOW the pendant's configured Safety > Joint Speed limit.
+# Lower if faults persist; raise for snappier wrists.
+joint_vel_limit: [2.0, 2.0, 2.0, 2.5, 2.5, 2.5]

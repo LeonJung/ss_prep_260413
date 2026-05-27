@@ -96,6 +96,16 @@ struct ControlConfig {
 
   // ---- control loop ----
   double timestep = 0.002;  // 500 Hz
+
+  // ---- leader IK output: per-joint velocity clamp (rad/s) ----
+  // The Vive leader's DLS IK can demand an enormous joint velocity near
+  // a singularity (esp. wrist_3 at the wrist singularity), which trips
+  // the UR safety controller's "joint not stopping fast enough" fault
+  // (C306A1). The leader scales each commanded step uniformly so the
+  // fastest joint stays within this limit — the arm slows near the
+  // singularity instead of faulting; the Cartesian path is preserved.
+  // Lower these if C306A1 still appears; raise for snappier wrists.
+  Vec6 joint_vel_limit = {2.0, 2.0, 2.0, 2.5, 2.5, 2.5};
 };
 
 // Load config from a YAML file. Returns true on success, fills `out`.

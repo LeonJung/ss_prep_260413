@@ -1,5 +1,6 @@
 #include "ur10e_teleop_unilateral_vive_cpp/vive_leader_node.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -404,6 +405,28 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
   for (int i = 0; i < 6; ++i) {
     q_new[i] = aq * q_target[i] + (1.0 - aq) * arm.q[i];
   }
+
+  // Joint-velocity clamp on the commanded step (post-LPF). A near-
+  // singularity IK solution can demand an enormous joint velocity —
+  // at the wrist singularity (wrist_2≈0) wrist_1 and wrist_3 axes align
+  // and both blow up, tripping UR safety C287A7 (speed limit) and then
+  // C306A1 (can't stop fast enough). Scale the whole step uniformly by
+  // the most-violating joint so the Cartesian path is preserved while
+  // every joint stays within joint_vel_limit; the arm just slows near
+  // the singularity instead of faulting.
+  double vscale = 1.0;
+  for (int i = 0; i < 6; ++i) {
+    const double step = q_new[i] - arm.q[i];
+    const double max_step = cfg_.joint_vel_limit[i] * dt;
+    if (max_step > 0.0 && std::abs(step) > max_step) {
+      vscale = std::min(vscale, max_step / std::abs(step));
+    }
+  }
+  if (vscale < 1.0) {
+    for (int i = 0; i < 6; ++i)
+      q_new[i] = arm.q[i] + vscale * (q_new[i] - arm.q[i]);
+  }
+
   for (int i = 0; i < 6; ++i) {
     const double dq_raw = (q_new[i] - arm.q[i]) / dt;
     arm.dq[i] = adq * dq_raw + (1.0 - adq) * arm.dq[i];
