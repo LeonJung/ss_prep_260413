@@ -124,12 +124,3 @@ timestep: 0.002  # 500 Hz
 # Keep these BELOW the pendant's configured Safety > Joint Speed limit.
 # Lower if faults persist; raise for snappier wrists.
 joint_vel_limit: [2.0, 2.0, 2.0, 2.5, 2.5, 2.5]
-
-# --- Leader reach clamp (dexterous-workspace limit) [m] ---
-# Commanded EE target is clamped onto a sphere of this radius around the
-# shoulder (joint-2 origin) before IK, keeping the arm out of the elbow-
-# straight boundary singularity (manipulability collapse → sluggish reach-
-# direction tracking + joint-speed faults). UR10e geometric max reach
-# ≈ |a2|+|a3| = 1.184 m. Lower if Z still gets sluggish near the limit;
-# raise to allow more extension; 0 disables.
-max_reach: 1.0

@@ -77,7 +77,6 @@ bool load_config(const std::string& path, ControlConfig& out) {
   try_scalar(root, "timestep",                out.timestep);
 
   try_vec6(root, "joint_vel_limit",           out.joint_vel_limit);
-  try_scalar(root, "max_reach",               out.max_reach);
 
   // workspace_limits: {enabled, xyz_min[3], xyz_max[3], k_wall, soft_penetration}
   if (auto wl = root["workspace_limits"]) {
