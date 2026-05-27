@@ -121,6 +121,7 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_vec3(tn, "arm",  out.tool_offset_arm);
     try_vec3(tn, "hand", out.tool_offset_hand);
   }
+  try_vec3(root, "vive_pivot_offset", out.vive_pivot_offset);
 
   if (root["joint_mirror"] && root["joint_mirror"]["sign"]) {
     try_vec6(root["joint_mirror"], "sign", out.mirror_sign);

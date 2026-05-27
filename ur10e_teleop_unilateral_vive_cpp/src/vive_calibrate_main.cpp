@@ -49,6 +49,12 @@ void print_usage(const char* prog) {
     "                     [--config PATH]    [--robot ur10e|ur3e|ur5e]\n"
     "                     [--points 'x1,y1,z1 x2,y2,z2 ...']\n"
     "                     [--post-rot-z DEG] [--avg-ms 500]\n"
+    "                     [--pivot] [--pivot-sec 8]\n"
+    "\n"
+    "--pivot : pivot-calibration mode. Rotate your hand about the grasp\n"
+    "          center for a few seconds; solves the tracker->pivot offset\n"
+    "          and prints it to paste into real_ur.yaml's vive_pivot_offset.\n"
+    "          (Only needs the tracker; ignores --points/--out.)\n"
     "\n"
     "Single positional arg (left|right) selects the arm. Sensible\n"
     "defaults are filled in from the package's share/config dir and\n"
@@ -152,6 +158,88 @@ bool average_pose(ViveTracker& tracker, double duration_ms,
   return true;
 }
 
+// Pivot calibration. The operator rotates their hand about a fixed pivot
+// (the grasp center / held finger) for a few seconds. For every sample the
+// world pivot is  c = R_i·o + p_i, with o the (unknown, constant) offset
+// from the tracker origin to the pivot expressed in the TRACKER frame and
+// c the (unknown, constant) world pivot. Stacking R_i·o − c = −p_i over all
+// samples gives a linear least-squares problem in x = [o; c]; o is exactly
+// the vive_pivot_offset we want. Same math as surgical tool-tip / sphere
+// pivot calibration.
+int run_pivot_calibration(const std::string& serial, double duration_sec) {
+  ViveTracker tracker;
+  ViveTracker::Config tc;
+  tc.target_serial = serial;
+  tc.init_timeout_sec = 10.0;
+  if (!tracker.init(tc)) {
+    std::fprintf(stderr, "ViveTracker.init failed for serial=%s\n",
+                 serial.c_str());
+    return 3;
+  }
+  std::printf(">>> tracker ready: %s\n", tracker.serial().c_str());
+  std::printf(
+    "\n=== PIVOT CALIBRATION ===\n"
+    "Hold your hand so the grasp center (the point/axis you rotate about)\n"
+    "stays FIXED in space, then rotate your hand about it in as many\n"
+    "directions as you can for %.0f s. Only the orientation should change —\n"
+    "keep the pivot point itself still.\n"
+    "Press Enter to start...\n", duration_sec);
+  std::string line;
+  std::getline(std::cin, line);
+
+  std::printf(">>> capturing for %.0f s — rotate now...\n", duration_sec);
+  std::vector<Eigen::Matrix3d> Rs;
+  std::vector<Eigen::Vector3d> ps;
+  using clk = std::chrono::steady_clock;
+  const auto t_end = clk::now()
+      + std::chrono::milliseconds(static_cast<int>(duration_sec * 1000));
+  while (clk::now() < t_end) {
+    Eigen::Matrix4d T;
+    if (tracker.poll(T)) {
+      Rs.push_back(T.block<3, 3>(0, 0));
+      ps.push_back(T.block<3, 1>(0, 3));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  const std::size_t N = Rs.size();
+  if (N < 50) {
+    std::fprintf(stderr,
+        "too few samples (%zu) — was the tracker visible the whole time?\n", N);
+    tracker.shutdown();
+    return 5;
+  }
+  std::printf(">>> captured %zu samples\n", N);
+
+  // Least squares  A x = b,  x = [o(3); c(3)].
+  Eigen::MatrixXd A(3 * N, 6);
+  Eigen::VectorXd b(3 * N);
+  for (std::size_t i = 0; i < N; ++i) {
+    A.block<3, 3>(3 * i, 0) = Rs[i];
+    A.block<3, 3>(3 * i, 3) = -Eigen::Matrix3d::Identity();
+    b.segment<3>(3 * i)     = -ps[i];
+  }
+  const Eigen::VectorXd x = A.colPivHouseholderQr().solve(b);
+  const Eigen::Vector3d o = x.head<3>();
+  const Eigen::Vector3d c = x.tail<3>();
+
+  double err_sq = 0.0;
+  for (std::size_t i = 0; i < N; ++i)
+    err_sq += (Rs[i] * o + ps[i] - c).squaredNorm();
+  const double rms = std::sqrt(err_sq / static_cast<double>(N));
+
+  std::printf(
+    "\n>>> pivot offset (tracker frame): [%.4f, %.4f, %.4f] m\n"
+    ">>> world pivot during capture:   (%.3f, %.3f, %.3f)\n"
+    ">>> RMS fit residual = %.4f m  (good < 0.01; large = pivot drifted)\n"
+    "\n>>> paste into real_ur.yaml:\n"
+    "    vive_pivot_offset: [%.4f, %.4f, %.4f]\n",
+    o.x(), o.y(), o.z(), c.x(), c.y(), c.z(), rms,
+    o.x(), o.y(), o.z());
+
+  tracker.shutdown();
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -163,6 +251,8 @@ int main(int argc, char** argv) {
   std::string side;                 // "left" | "right"
   double displacement = 0.3;
   double avg_ms = 500.0;
+  bool   pivot_mode = false;        // --pivot: solve vive_pivot_offset instead
+  double pivot_sec = 8.0;           // capture window for pivot calibration
   double post_rot_z_deg = 0.0;      // post-rotation about UR Z, applied to
                                     // the solved calibration (pre-multiply).
                                     // Lab finding (2026-05-22): this setup
@@ -193,6 +283,8 @@ int main(int argc, char** argv) {
     else if (a == "--side")          side = need("--side");
     else if (a == "--displacement")  displacement = std::stod(need("--displacement"));
     else if (a == "--post-rot-z")    post_rot_z_deg = std::stod(need("--post-rot-z"));
+    else if (a == "--pivot")         pivot_mode = true;
+    else if (a == "--pivot-sec")     pivot_sec = std::stod(need("--pivot-sec"));
     else if (a == "--help" || a == "-h") { print_usage(argv[0]); return 0; }
     else {
       std::fprintf(stderr, "unknown arg: %s\n", a.c_str());
@@ -224,6 +316,13 @@ int main(int argc, char** argv) {
   std::printf(">>> out=%s\n", out_path.c_str());
   std::printf(">>> config=%s  robot=%s  displacement=%.2fm\n",
               config_path.c_str(), robot_type.c_str(), displacement);
+
+  // Pivot calibration is a self-contained mode: it only needs the tracker
+  // (serial from `side`) and writes nothing — it prints the offset to paste
+  // into real_ur.yaml's vive_pivot_offset.
+  if (pivot_mode) {
+    return run_pivot_calibration(serial, pivot_sec);
+  }
 
   // home_mode is the default. If --points is given, explicit mode wins.
   const bool home_mode = points_arg.empty();

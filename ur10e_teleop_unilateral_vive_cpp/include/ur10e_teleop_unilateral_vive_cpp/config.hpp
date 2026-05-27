@@ -94,6 +94,18 @@ struct ControlConfig {
   Vec3a tool_offset_hand = {0.0, 0.02, 0.15};   // dg5f palm in flange frame
                                                  // (Z forward; tweak Y per real mount)
 
+  // ---- input-side pivot offset (Vive tracker → operator's rotation
+  //      center / grasp point), in the TRACKER frame, meters ----
+  // Symmetric counterpart of tool_offset: the tracker sits on the back of
+  // the hand, but the operator rotates about their grasp center (the held
+  // finger). Without this, the tracker's orbital translation about that
+  // pivot is fed straight to the UR, so the UR EE orbits the wrong center
+  // and slides off the rotation axis. With it, the leader tracks the pivot
+  // point instead of the tracker origin, so a rotation about the grasp
+  // center maps to an in-place rotation of the UR EE. [0,0,0] = legacy
+  // behavior (track the tracker origin).
+  Vec3a vive_pivot_offset = {0.0, 0.0, 0.0};
+
   // ---- control loop ----
   double timestep = 0.002;  // 500 Hz
 

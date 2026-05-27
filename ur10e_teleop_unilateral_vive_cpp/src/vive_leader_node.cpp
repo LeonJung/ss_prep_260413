@@ -336,9 +336,20 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
           const Eigen::Matrix3d dR_tracker =
               T_tracker.block<3,3>(0,0)
               * arm.T_tracker_startup.block<3,3>(0,0).transpose();
+          // Track the operator's pivot point (grasp center), not the
+          // tracker origin: pivot_world = T_tracker.p + T_tracker.R · o.
+          // Its translation delta therefore carries a rotation-induced
+          // term (dR · o), so rotating the hand about the pivot keeps the
+          // pivot ~stationary → the UR EE rotates in place instead of
+          // sliding off the axis. o = [0,0,0] reduces to the old behavior.
+          const Eigen::Vector3d o(cfg_.vive_pivot_offset[0],
+                                  cfg_.vive_pivot_offset[1],
+                                  cfg_.vive_pivot_offset[2]);
           const Eigen::Vector3d dp_tracker =
-              T_tracker.block<3,1>(0,3)
-              - arm.T_tracker_startup.block<3,1>(0,3);
+              (T_tracker.block<3,1>(0,3)
+               - arm.T_tracker_startup.block<3,1>(0,3))
+            + (T_tracker.block<3,3>(0,0)
+               - arm.T_tracker_startup.block<3,3>(0,0)) * o;
           const Eigen::Matrix3d dR_ur = R_cali * dR_tracker * R_cali.transpose();
           const Eigen::Vector3d dp_ur = R_cali * dp_tracker;
           T_target_palm.block<3,3>(0,0) = dR_ur * T_ur_home_palm.block<3,3>(0,0);

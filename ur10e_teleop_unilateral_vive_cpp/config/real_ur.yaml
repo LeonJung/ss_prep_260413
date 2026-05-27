@@ -18,6 +18,16 @@ tool_offsets:
   arm:  [0.0, 0.0,  0.0]
   hand: [0.0, 0.02, 0.15]
 
+# --- Input-side pivot offset: Vive tracker → operator's rotation center
+#     (grasp point / held finger), in the TRACKER frame [m] ---
+# Symmetric to tool_offsets. The tracker is on the back of the hand, but
+# the operator rotates about their grasp center; without this the UR EE
+# orbits the wrong center and slides off the rotation axis. With it, the
+# leader tracks the pivot point so a rotation maps to an in-place UR EE
+# rotation. [0,0,0] = legacy (track tracker origin). See notes on how to
+# obtain the value (pivot calibration vs measure).
+vive_pivot_offset: [0.0, 0.0, 0.0]
+
 # --- Torque safety limits [Nm] — per-robot ---
 # Leader (UR3e) is smaller, smaller motor torque caps.
 # Follower (UR10e) is much stronger, needs higher limits to track briskly.
