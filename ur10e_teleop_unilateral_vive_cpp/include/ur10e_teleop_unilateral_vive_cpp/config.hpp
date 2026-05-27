@@ -106,6 +106,15 @@ struct ControlConfig {
   // singularity instead of faulting; the Cartesian path is preserved.
   // Lower these if C306A1 still appears; raise for snappier wrists.
   Vec6 joint_vel_limit = {2.0, 2.0, 2.0, 2.5, 2.5, 2.5};
+
+  // ---- leader reach clamp (dexterous-workspace limit) ----
+  // The Vive leader clamps the commanded EE target onto a sphere of this
+  // radius around the shoulder (joint-2 origin) before IK. This keeps the
+  // arm out of the elbow-straight boundary singularity, where manipulability
+  // collapses → sluggish Cartesian tracking (esp. the reach direction) and
+  // joint-speed faults. UR10e geometric max reach ≈ |a2|+|a3| = 1.184 m;
+  // keep this comfortably inside. 0 disables the clamp.
+  double max_reach = 1.0;   // meters, shoulder → EE target
 };
 
 // Load config from a YAML file. Returns true on success, fills `out`.

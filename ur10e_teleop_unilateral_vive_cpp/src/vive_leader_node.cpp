@@ -345,6 +345,30 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
           T_target_palm.block<3,1>(0,3) = T_ur_home_palm.block<3,1>(0,3) + dp_ur;
         }
 
+        // Reach clamp: keep the commanded EE target inside the dexterous
+        // workspace so the arm never approaches the elbow-straight boundary
+        // singularity (manipulability collapse → sluggish reach-direction
+        // tracking + joint-speed faults). Measure from the shoulder
+        // (joint-2 origin, from FK of the current q) and clamp the target
+        // position onto a sphere of radius max_reach. Tangential motion is
+        // unaffected; only radial over-extension is capped.
+        if (cfg_.max_reach > 0.0) {
+          std::array<Eigen::Matrix4d, 6> Ts;
+          Eigen::Matrix4d T_fk;
+          forward_kinematics(arm.q, opts_.robot_type, T_fk, &Ts);
+          // Ts[0] = T_0_1 origin = the shoulder-lift (joint-2) axis point,
+          // i.e. the base of the a2–a3 planar arm. (Ts[1] would be the
+          // elbow.) Reach to the elbow-straight singularity is measured
+          // from here.
+          const Eigen::Vector3d p_sh = Ts[0].block<3, 1>(0, 3);
+          const Eigen::Vector3d r = T_target_palm.block<3, 1>(0, 3) - p_sh;
+          const double reach = r.norm();
+          if (reach > cfg_.max_reach) {
+            T_target_palm.block<3, 1>(0, 3) =
+                p_sh + r * (cfg_.max_reach / reach);
+          }
+        }
+
         // Convert user-facing EE target back to a flange target for IK.
         // T_flange · T_offset = T_palm  ⇒  T_flange = T_palm · T_offset⁻¹
         // The tool offset is a pure translation, so inversion is a sign
