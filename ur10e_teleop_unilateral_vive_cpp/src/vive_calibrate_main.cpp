@@ -51,10 +51,13 @@ void print_usage(const char* prog) {
     "                     [--post-rot-z DEG] [--avg-ms 500]\n"
     "                     [--pivot] [--pivot-sec 8]\n"
     "\n"
-    "--pivot : pivot-calibration mode. Rotate your hand about the grasp\n"
-    "          center for a few seconds; solves the tracker->pivot offset\n"
-    "          and prints it to paste into real_ur.yaml's vive_pivot_offset.\n"
-    "          (Only needs the tracker; ignores --points/--out.)\n"
+    "--pivot : pivot-calibration mode. 3 Enter-gated stages (yaw / pitch /\n"
+    "          roll), each --pivot-sec long (default 8 s). Pivot point must\n"
+    "          stay PINNED at the same world location across all 3 stages.\n"
+    "          Solves the tracker->pivot offset and prints it to paste into\n"
+    "          real_ur.yaml's vive_pivot_offset. Warns if rotation diversity\n"
+    "          is insufficient (cond(A) > 20). Only needs the tracker;\n"
+    "          ignores --points/--out.\n"
     "\n"
     "Single positional arg (left|right) selects the arm. Sensible\n"
     "defaults are filled in from the package's share/config dir and\n"
@@ -178,37 +181,63 @@ int run_pivot_calibration(const std::string& serial, double duration_sec) {
   }
   std::printf(">>> tracker ready: %s\n", tracker.serial().c_str());
   std::printf(
-    "\n=== PIVOT CALIBRATION ===\n"
-    "Hold your hand so the grasp center (the point/axis you rotate about)\n"
-    "stays FIXED in space, then rotate your hand about it in as many\n"
-    "directions as you can for %.0f s. Only the orientation should change —\n"
-    "keep the pivot point itself still.\n"
-    "Press Enter to start...\n", duration_sec);
+    "\n=== PIVOT CALIBRATION (3 stages — yaw / pitch / roll) ===\n"
+    "Hold the grasp center (the pivot point) FIXED at the SAME world\n"
+    "location across ALL three stages. If it drifts between stages the\n"
+    "math breaks (c must be one constant). Only orientation changes.\n"
+    "Each stage captures for %.0f s after you press Enter.\n",
+    duration_sec);
   std::string line;
-  std::getline(std::cin, line);
 
-  std::printf(">>> capturing for %.0f s — rotate now...\n", duration_sec);
+  struct Stage {
+    const char* name;
+    const char* hint;
+  };
+  const Stage stages[3] = {
+    {"YAW   (axis: vertical)",
+     "Twist the hand horizontally — like turning a doorknob around the held finger."},
+    {"PITCH (axis: side-to-side horizontal)",
+     "Nod the hand up and down — back-of-hand tips toward you, then away."},
+    {"ROLL  (axis: forward-back horizontal)",
+     "Tilt the hand left and right — sideways wrist tilt."},
+  };
+
   std::vector<Eigen::Matrix3d> Rs;
   std::vector<Eigen::Vector3d> ps;
-  using clk = std::chrono::steady_clock;
-  const auto t_end = clk::now()
-      + std::chrono::milliseconds(static_cast<int>(duration_sec * 1000));
-  while (clk::now() < t_end) {
-    Eigen::Matrix4d T;
-    if (tracker.poll(T)) {
-      Rs.push_back(T.block<3, 3>(0, 0));
-      ps.push_back(T.block<3, 1>(0, 3));
+  for (int s = 0; s < 3; ++s) {
+    std::printf("\n--- stage %d / 3 : %s ---\n", s + 1, stages[s].name);
+    std::printf("    %s\n", stages[s].hint);
+    std::printf("    Pivot point PINNED. Press Enter to capture %.0f s...\n",
+                duration_sec);
+    if (!std::getline(std::cin, line)) {
+      std::fprintf(stderr, "input closed — aborting\n");
+      tracker.shutdown();
+      return 4;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::printf("    capturing — rotate now...\n");
+    using clk = std::chrono::steady_clock;
+    const auto t_end = clk::now()
+        + std::chrono::milliseconds(static_cast<int>(duration_sec * 1000));
+    const std::size_t n_before = Rs.size();
+    while (clk::now() < t_end) {
+      Eigen::Matrix4d T;
+      if (tracker.poll(T)) {
+        Rs.push_back(T.block<3, 3>(0, 0));
+        ps.push_back(T.block<3, 1>(0, 3));
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::printf("    captured %zu samples this stage\n",
+                Rs.size() - n_before);
   }
   const std::size_t N = Rs.size();
-  if (N < 50) {
+  if (N < 150) {
     std::fprintf(stderr,
-        "too few samples (%zu) — was the tracker visible the whole time?\n", N);
+        "too few total samples (%zu) — was the tracker visible the whole time?\n", N);
     tracker.shutdown();
     return 5;
   }
-  std::printf(">>> captured %zu samples\n", N);
+  std::printf(">>> total captured: %zu samples across 3 stages\n", N);
 
   // Least squares  A x = b,  x = [o(3); c(3)].
   Eigen::MatrixXd A(3 * N, 6);
