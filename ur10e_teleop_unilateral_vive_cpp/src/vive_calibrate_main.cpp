@@ -227,14 +227,41 @@ int run_pivot_calibration(const std::string& serial, double duration_sec) {
     err_sq += (Rs[i] * o + ps[i] - c).squaredNorm();
   const double rms = std::sqrt(err_sq / static_cast<double>(N));
 
+  // Observability check. If the operator rotated mostly about a single
+  // axis, the offset component along that axis is unobservable — a 1D
+  // null space — and the QR solver returns an arbitrary value in that
+  // direction. Pure single-axis data also gives a deceptively low RMS
+  // (fits perfectly within the null space). Detect it via the
+  // conditioning of A: singular values are sqrt(eig(A^T A)) on a cheap
+  // 6x6 problem. Well-rotated data has cond ~ a few; single-axis blows up.
+  const Eigen::MatrixXd AtA = A.transpose() * A;
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(AtA);
+  const Eigen::VectorXd evals = eig.eigenvalues();  // ascending
+  const double sv_min = std::sqrt(std::max(evals(0), 0.0));
+  const double sv_max = std::sqrt(std::max(evals(5), 0.0));
+  const double cond   = sv_max / std::max(sv_min, 1e-12);
+
   std::printf(
     "\n>>> pivot offset (tracker frame): [%.4f, %.4f, %.4f] m\n"
     ">>> world pivot during capture:   (%.3f, %.3f, %.3f)\n"
     ">>> RMS fit residual = %.4f m  (good < 0.01; large = pivot drifted)\n"
-    "\n>>> paste into real_ur.yaml:\n"
-    "    vive_pivot_offset: [%.4f, %.4f, %.4f]\n",
-    o.x(), o.y(), o.z(), c.x(), c.y(), c.z(), rms,
-    o.x(), o.y(), o.z());
+    ">>> conditioning: cond(A) = %.1f  (sv_min %.3f, sv_max %.3f)\n",
+    o.x(), o.y(), o.z(), c.x(), c.y(), c.z(), rms, cond, sv_min, sv_max);
+
+  if (cond > 20.0) {
+    std::printf(
+      "\n!!! WARNING: rotation diversity is INSUFFICIENT (cond %.1f >> 1).\n"
+      "    You rotated mostly about a single axis, so the offset component\n"
+      "    along that axis is UNOBSERVABLE — the value above is unreliable\n"
+      "    in that direction (low RMS just means single-axis data fits the\n"
+      "    1D null space trivially). RE-RUN and tumble the hand in all three\n"
+      "    axes (yaw + pitch + roll) while keeping the pivot pinned.\n", cond);
+  } else {
+    std::printf(
+      "\n>>> paste into real_ur.yaml:\n"
+      "    vive_pivot_offset: [%.4f, %.4f, %.4f]\n",
+      o.x(), o.y(), o.z());
+  }
 
   tracker.shutdown();
   return 0;
