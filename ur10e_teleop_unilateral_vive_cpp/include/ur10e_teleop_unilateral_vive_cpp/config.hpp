@@ -104,7 +104,16 @@ struct ControlConfig {
   // point instead of the tracker origin, so a rotation about the grasp
   // center maps to an in-place rotation of the UR EE. [0,0,0] = legacy
   // behavior (track the tracker origin).
-  Vec3a vive_pivot_offset = {0.0, 0.0, 0.0};
+  //
+  // Per-side overrides take precedence; `vive_pivot_offset` is the shared
+  // fallback for sides that don't define their own. Calibrate each side
+  // separately with `vive_calibrate <side> --pivot` since trackers on left
+  // vs right hands are rarely perfect mirrors of each other.
+  Vec3a vive_pivot_offset       = {0.0, 0.0, 0.0};
+  Vec3a vive_pivot_offset_left{};
+  Vec3a vive_pivot_offset_right{};
+  bool  has_vive_pivot_offset_left{false};
+  bool  has_vive_pivot_offset_right{false};
 
   // ---- control loop ----
   double timestep = 0.002;  // 500 Hz

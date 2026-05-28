@@ -44,6 +44,21 @@ void try_vec3(const YAML::Node& parent, const std::string& key, Vec3a& out) {
   for (int i = 0; i < 3; ++i) out[i] = n[i].as<double>();
 }
 
+// try_vec3 + reports whether the key existed and parsed cleanly.
+// Mirrors try_vec6_flag for the per-side override pattern.
+bool try_vec3_flag(const YAML::Node& parent, const std::string& key,
+                   Vec3a& out) {
+  if (!parent[key]) return false;
+  const auto& n = parent[key];
+  if (!n.IsSequence() || n.size() != 3) {
+    std::fprintf(stderr, "[config] field '%s' is not a 3-value sequence; ignored\n",
+                 key.c_str());
+    return false;
+  }
+  for (int i = 0; i < 3; ++i) out[i] = n[i].as<double>();
+  return true;
+}
+
 template <typename T>
 void try_scalar(const YAML::Node& parent, const std::string& key, T& out) {
   if (parent[key]) {
@@ -122,6 +137,14 @@ bool load_config(const std::string& path, ControlConfig& out) {
     try_vec3(tn, "hand", out.tool_offset_hand);
   }
   try_vec3(root, "vive_pivot_offset", out.vive_pivot_offset);
+  out.has_vive_pivot_offset_left =
+      try_vec3_flag(root, "vive_pivot_offset_left",  out.vive_pivot_offset_left);
+  out.has_vive_pivot_offset_right =
+      try_vec3_flag(root, "vive_pivot_offset_right", out.vive_pivot_offset_right);
+  if (!out.has_vive_pivot_offset_left)
+      out.vive_pivot_offset_left  = out.vive_pivot_offset;
+  if (!out.has_vive_pivot_offset_right)
+      out.vive_pivot_offset_right = out.vive_pivot_offset;
 
   if (root["joint_mirror"] && root["joint_mirror"]["sign"]) {
     try_vec6(root["joint_mirror"], "sign", out.mirror_sign);

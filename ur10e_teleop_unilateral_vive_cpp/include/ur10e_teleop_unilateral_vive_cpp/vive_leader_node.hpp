@@ -118,6 +118,11 @@ class ViveLeaderNode : public rclcpp::Node {
     // motion is expressed as deltas in the cali-aligned UR frame.
     Eigen::Matrix4d T_tracker_startup{Eigen::Matrix4d::Identity()};
     bool has_startup_pose{false};
+    // Per-side input pivot offset (tracker → operator's grasp center, in
+    // TRACKER frame). Resolved at add_arm() from cfg_.vive_pivot_offset_{left,right}
+    // (which themselves fall back to cfg_.vive_pivot_offset). Cached here
+    // so the 500Hz tick_arm doesn't branch on side every call.
+    Vec3a pivot_offset{};
   };
 
   void control_loop();

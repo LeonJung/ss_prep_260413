@@ -73,6 +73,16 @@ ViveLeaderNode::ViveLeaderNode(const Options& opts)
     arm.q = arm.home_qpos;
     arm.q_prev = arm.home_qpos;
     arm.q_home_start = arm.home_qpos;
+    // Pivot offset per side (config falls back to shared vive_pivot_offset
+    // when the per-side override is missing).
+    const std::string side_str(side_label);
+    arm.pivot_offset = (side_str == "left")
+                       ? cfg_.vive_pivot_offset_left
+                       : cfg_.vive_pivot_offset_right;
+    RCLCPP_INFO(get_logger(),
+        "%s pivot_offset (tracker frame) = [%.4f, %.4f, %.4f] m",
+        side_label,
+        arm.pivot_offset[0], arm.pivot_offset[1], arm.pivot_offset[2]);
 
     if (!a.calib_path.empty()) {
       if (arm.calib.load(a.calib_path)) {
@@ -342,9 +352,10 @@ void ViveLeaderNode::tick_arm(Arm& arm, int cur_state, double t_now,
           // term (dR · o), so rotating the hand about the pivot keeps the
           // pivot ~stationary → the UR EE rotates in place instead of
           // sliding off the axis. o = [0,0,0] reduces to the old behavior.
-          const Eigen::Vector3d o(cfg_.vive_pivot_offset[0],
-                                  cfg_.vive_pivot_offset[1],
-                                  cfg_.vive_pivot_offset[2]);
+          // Per-side cache: left/right hands don't generally mirror.
+          const Eigen::Vector3d o(arm.pivot_offset[0],
+                                  arm.pivot_offset[1],
+                                  arm.pivot_offset[2]);
           const Eigen::Vector3d dp_tracker =
               (T_tracker.block<3,1>(0,3)
                - arm.T_tracker_startup.block<3,1>(0,3))
