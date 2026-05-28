@@ -26,7 +26,9 @@ tool_offsets:
 # leader tracks the pivot point so a rotation maps to an in-place UR EE
 # rotation. [0,0,0] = legacy (track tracker origin). See notes on how to
 # obtain the value (pivot calibration vs measure).
-vive_pivot_offset: [0.0, 0.0, 0.0]
+# Calibrated 2026-05-28 via `vive_calibrate left --pivot` (3-stage Z/Y/X
+# bottle-grip method). RMS fit residual 0.0043 m, |offset| ~0.106 m.
+vive_pivot_offset: [0.0368, -0.0425, 0.0902]
 
 # --- Torque safety limits [Nm] — per-robot ---
 # Leader (UR3e) is smaller, smaller motor torque caps.
