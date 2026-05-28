@@ -51,13 +51,15 @@ void print_usage(const char* prog) {
     "                     [--post-rot-z DEG] [--avg-ms 500]\n"
     "                     [--pivot] [--pivot-sec 8]\n"
     "\n"
-    "--pivot : pivot-calibration mode. 3 Enter-gated stages (yaw / pitch /\n"
-    "          roll), each --pivot-sec long (default 8 s). Pivot point must\n"
-    "          stay PINNED at the same world location across all 3 stages.\n"
-    "          Solves the tracker->pivot offset and prints it to paste into\n"
-    "          real_ur.yaml's vive_pivot_offset. Warns if rotation diversity\n"
-    "          is insufficient (cond(A) > 20). Only needs the tracker;\n"
-    "          ignores --points/--out.\n"
+    "--pivot : pivot-calibration mode. 3 Enter-gated stages, each\n"
+    "          --pivot-sec long (default 8 s), rotating about a different\n"
+    "          axis. Pivot WORLD point can move between stages (e.g. lay a\n"
+    "          bottle along Z, Y, then X and grip it each time); your GRIP\n"
+    "          SHAPE must stay the same so the tracker->grasp offset is\n"
+    "          constant. Solves the offset and prints it to paste into\n"
+    "          real_ur.yaml's vive_pivot_offset. Warns when the 3 axes do\n"
+    "          not span 3D (cond > 20). Only needs the tracker; ignores\n"
+    "          --points/--out.\n"
     "\n"
     "Single positional arg (left|right) selects the arm. Sensible\n"
     "defaults are filled in from the package's share/config dir and\n"
@@ -181,11 +183,14 @@ int run_pivot_calibration(const std::string& serial, double duration_sec) {
   }
   std::printf(">>> tracker ready: %s\n", tracker.serial().c_str());
   std::printf(
-    "\n=== PIVOT CALIBRATION (3 stages — yaw / pitch / roll) ===\n"
-    "Hold the grasp center (the pivot point) FIXED at the SAME world\n"
-    "location across ALL three stages. If it drifts between stages the\n"
-    "math breaks (c must be one constant). Only orientation changes.\n"
-    "Each stage captures for %.0f s after you press Enter.\n",
+    "\n=== PIVOT CALIBRATION (3 stages — one rotation axis each) ===\n"
+    "Each stage rotates the hand about a DIFFERENT axis through some\n"
+    "pivot. The pivot point CAN be at a different world location each\n"
+    "stage (e.g. lay a bottle along Z, Y, then X — three different\n"
+    "orientations / positions — and grip it each time). What MUST stay\n"
+    "the same across all 3 stages is your GRIP SHAPE — the way your fist\n"
+    "wraps the object — so the tracker -> grasp-center offset is the same.\n"
+    "Each stage captures for %.0f s after Enter.\n",
     duration_sec);
   std::string line;
 
@@ -204,6 +209,7 @@ int run_pivot_calibration(const std::string& serial, double duration_sec) {
 
   std::vector<Eigen::Matrix3d> Rs;
   std::vector<Eigen::Vector3d> ps;
+  std::array<std::size_t, 3> stage_end_idx{};  // cumulative sample count
   for (int s = 0; s < 3; ++s) {
     std::printf("\n--- stage %d / 3 : %s ---\n", s + 1, stages[s].name);
     std::printf("    %s\n", stages[s].hint);
@@ -229,6 +235,7 @@ int run_pivot_calibration(const std::string& serial, double duration_sec) {
     }
     std::printf("    captured %zu samples this stage\n",
                 Rs.size() - n_before);
+    stage_end_idx[s] = Rs.size();
   }
   const std::size_t N = Rs.size();
   if (N < 150) {
@@ -239,58 +246,88 @@ int run_pivot_calibration(const std::string& serial, double duration_sec) {
   }
   std::printf(">>> total captured: %zu samples across 3 stages\n", N);
 
-  // Least squares  A x = b,  x = [o(3); c(3)].
-  Eigen::MatrixXd A(3 * N, 6);
+  // Per-stage pivot model: one shared o (tracker frame), one c_s per
+  // stage (the pivot can be at different world points between stages).
+  //   x = [o(3); c_0(3); c_1(3); c_2(3)]   (12 unknowns).
+  // Per-sample row: [R_i, ..., -I in cols 3+3*s, ...] * x = -p_i.
+  auto stage_of = [&](std::size_t i) -> int {
+    return (i < stage_end_idx[0]) ? 0
+         : (i < stage_end_idx[1]) ? 1 : 2;
+  };
+
+  Eigen::MatrixXd A = Eigen::MatrixXd::Zero(3 * N, 12);
   Eigen::VectorXd b(3 * N);
   for (std::size_t i = 0; i < N; ++i) {
-    A.block<3, 3>(3 * i, 0) = Rs[i];
-    A.block<3, 3>(3 * i, 3) = -Eigen::Matrix3d::Identity();
-    b.segment<3>(3 * i)     = -ps[i];
+    const int s = stage_of(i);
+    A.block<3, 3>(3 * i, 0)         = Rs[i];
+    A.block<3, 3>(3 * i, 3 + 3 * s) = -Eigen::Matrix3d::Identity();
+    b.segment<3>(3 * i)             = -ps[i];
   }
   const Eigen::VectorXd x = A.colPivHouseholderQr().solve(b);
-  const Eigen::Vector3d o = x.head<3>();
-  const Eigen::Vector3d c = x.tail<3>();
+  const Eigen::Vector3d o  = x.head<3>();
+  const Eigen::Vector3d c0 = x.segment<3>(3);
+  const Eigen::Vector3d c1 = x.segment<3>(6);
+  const Eigen::Vector3d c2 = x.segment<3>(9);
 
   double err_sq = 0.0;
-  for (std::size_t i = 0; i < N; ++i)
-    err_sq += (Rs[i] * o + ps[i] - c).squaredNorm();
+  for (std::size_t i = 0; i < N; ++i) {
+    const int s = stage_of(i);
+    const Eigen::Vector3d& cs = (s == 0) ? c0 : (s == 1) ? c1 : c2;
+    err_sq += (Rs[i] * o + ps[i] - cs).squaredNorm();
+  }
   const double rms = std::sqrt(err_sq / static_cast<double>(N));
 
-  // Observability check. If the operator rotated mostly about a single
-  // axis, the offset component along that axis is unobservable — a 1D
-  // null space — and the QR solver returns an arbitrary value in that
-  // direction. Pure single-axis data also gives a deceptively low RMS
-  // (fits perfectly within the null space). Detect it via the
-  // conditioning of A: singular values are sqrt(eig(A^T A)) on a cheap
-  // 6x6 problem. Well-rotated data has cond ~ a few; single-axis blows up.
-  const Eigen::MatrixXd AtA = A.transpose() * A;
-  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(AtA);
-  const Eigen::VectorXd evals = eig.eigenvalues();  // ascending
+  // Observability of o (which is what we care about). Each stage's c_s
+  // carries its own 1D null space tied to that stage's rotation axis, so
+  // a naive cond(A) would always look bad. Use the Schur complement to
+  // project the c_s out and inspect o's own 3x3 Gram matrix:
+  //   S_o = sum_i R_i^T R_i - sum_s (1/N_s) Q_s^T Q_s    with Q_s = sum_{i in s} R_i.
+  //       = N·I - sum_s (1/N_s) Q_s^T Q_s.
+  // Eigenvalues of S_o give the variance-direction strength for o; a
+  // small smallest eigenvalue means some direction of o is unobservable.
+  Eigen::Matrix3d So = static_cast<double>(N) * Eigen::Matrix3d::Identity();
+  for (int s = 0; s < 3; ++s) {
+    const std::size_t start = (s == 0) ? 0 : stage_end_idx[s - 1];
+    const std::size_t end   = stage_end_idx[s];
+    const std::size_t Ns    = end - start;
+    if (Ns == 0) continue;
+    Eigen::Matrix3d Q = Eigen::Matrix3d::Zero();
+    for (std::size_t i = start; i < end; ++i) Q += Rs[i];
+    So -= (1.0 / static_cast<double>(Ns)) * Q.transpose() * Q;
+  }
+  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig(So);
+  const Eigen::Vector3d evals = eig.eigenvalues();  // ascending
   const double sv_min = std::sqrt(std::max(evals(0), 0.0));
-  const double sv_max = std::sqrt(std::max(evals(5), 0.0));
+  const double sv_max = std::sqrt(std::max(evals(2), 0.0));
   const double cond   = sv_max / std::max(sv_min, 1e-12);
 
   std::printf(
     "\n>>> pivot offset (tracker frame): [%.4f, %.4f, %.4f] m\n"
-    ">>> world pivot during capture:   (%.3f, %.3f, %.3f)\n"
-    ">>> RMS fit residual = %.4f m  (good < 0.01; large = pivot drifted)\n"
-    ">>> conditioning: cond(A) = %.1f  (sv_min %.3f, sv_max %.3f)\n",
-    o.x(), o.y(), o.z(), c.x(), c.y(), c.z(), rms, cond, sv_min, sv_max);
+    ">>> stage pivots (world):\n"
+    "      c0 = (%.3f, %.3f, %.3f)\n"
+    "      c1 = (%.3f, %.3f, %.3f)\n"
+    "      c2 = (%.3f, %.3f, %.3f)\n"
+    ">>> RMS fit residual = %.4f m  (good < 0.01; large = grip changed\n"
+    "    between stages, or pivot drifted within a stage)\n"
+    ">>> o observability: cond = %.1f  (S_o eigvals %.2f / %.2f / %.2f)\n",
+    o.x(), o.y(), o.z(),
+    c0.x(), c0.y(), c0.z(),
+    c1.x(), c1.y(), c1.z(),
+    c2.x(), c2.y(), c2.z(),
+    rms, cond, evals(0), evals(1), evals(2));
 
   if (cond > 20.0) {
     std::printf(
-      "\n!!! WARNING: rotation diversity is INSUFFICIENT (cond %.1f >> 1).\n"
-      "    You rotated mostly about a single axis, so the offset component\n"
-      "    along that axis is UNOBSERVABLE — the value above is unreliable\n"
-      "    in that direction (low RMS just means single-axis data fits the\n"
-      "    1D null space trivially). RE-RUN and tumble the hand in all three\n"
-      "    axes (yaw + pitch + roll) while keeping the pivot pinned.\n", cond);
-  } else {
-    std::printf(
-      "\n>>> paste into real_ur.yaml:\n"
-      "    vive_pivot_offset: [%.4f, %.4f, %.4f]\n",
-      o.x(), o.y(), o.z());
+      "\n!!! WARNING: o is poorly observable (cond %.1f >> 1).\n"
+      "    The 3 stage rotation axes did not span 3D — at least two were\n"
+      "    nearly parallel. Re-run, and make sure the rotation axis in each\n"
+      "    stage is clearly different from the others (yaw / pitch / roll,\n"
+      "    or bottle along Z / Y / X). The value below is unreliable.\n", cond);
   }
+  std::printf(
+    "\n>>> paste into real_ur.yaml:\n"
+    "    vive_pivot_offset: [%.4f, %.4f, %.4f]\n",
+    o.x(), o.y(), o.z());
 
   tracker.shutdown();
   return 0;
