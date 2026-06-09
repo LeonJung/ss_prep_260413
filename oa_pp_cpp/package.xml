@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>oa_pp_cpp</name>
+  <version>0.1.0</version>
+  <description>
+    OpenArm (A2 / openarmx) bimanual BILATERAL teleoperation — position-position
+    control. openarmx Robstride/CAN driver (MIT mode) grafted with the
+    pos-pos bilateral + deadband control law ported from ur10e_teleop_real_cpp.
+    Single control PC, 4 USB2CAN interfaces (leader R/L + follower R/L).
+  </description>
+  <maintainer email="jung.ryuwoon@gmail.com">Leon</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>kdl_parser</depend>
+  <depend>urdf</depend>
+  <depend>yaml-cpp</depend>
+  <!-- openarmx-can is provided by the openarmx-can_1.0.0 .deb (system /usr).
+       It exposes CMake package "OpenArmXCAN" / target headers under
+       /usr/include/openarmx. Declared here for documentation; resolved by
+       find_package in CMakeLists, not by rosdep. -->
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>

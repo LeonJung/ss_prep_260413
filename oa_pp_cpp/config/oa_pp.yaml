@@ -1,0 +1,51 @@
+# oa_pp_cpp — bimanual position-position bilateral, single control PC, 4 USB2CAN.
+#
+# Pairs:  RIGHT = leader can0 <-> follower can2
+#         LEFT  = leader can1 <-> follower can3
+#
+# Gains below are PLACEHOLDERS (UR-derived shape, scaled down for Robstride).
+# RE-TUNE on hardware. Robstride torque max: RS04(j1-2)=120, RS03(j3-4)=60,
+# RS00(j5-7)=14 Nm — torque_limit must stay well under these.
+
+can:
+  leader_right:   can0
+  leader_left:    can1
+  follower_right: can2
+  follower_left:  can3
+  fd: false                 # classic CAN (openarmx default). true = CAN-FD.
+  recv_timeout_us: 500
+
+timestep: 0.002             # 500 Hz. Raise to 0.004 (250Hz) if 4xUSB2CAN can't keep up.
+
+auto_home_on_start: true
+homing_duration: 5.0
+
+# per-joint (7 DOF)
+torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]
+home:         [0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0]
+
+leader:
+  KP_BI:    [60.0, 60.0, 40.0, 30.0, 10.0, 10.0, 8.0]
+  KD_BI:    [0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
+  DEADBAND: [0.6,  0.6,  0.4,  0.3,  0.15, 0.15, 0.12]   # Nm
+  KP_HOLD:  [80.0, 80.0, 50.0, 40.0, 12.0, 12.0, 10.0]
+  KD_HOLD:  [6.0,  6.0,  4.0,  3.0,  1.0,  1.0,  1.0]
+
+follower:
+  KP_TRACK: [120.0, 120.0, 80.0, 60.0, 18.0, 18.0, 14.0]
+  KD_TRACK: [6.0,   6.0,   4.0,  3.0,  1.0,  1.0,  1.0]
+  KP_HOLD:  [80.0,  80.0,  50.0, 40.0, 12.0, 12.0, 10.0]
+  KD_HOLD:  [6.0,   6.0,   4.0,  3.0,  1.0,  1.0,  1.0]
+
+# leader<->follower joint sign mapping, per side (set after checking mounting).
+mirror:
+  right: [1, 1, 1, 1, 1, 1, 1]
+  left:  [1, 1, 1, 1, 1, 1, 1]
+
+gravity:
+  enabled: true
+  urdf: ""                  # REQUIRED: absolute path to single-arm OpenArm A2 URDF
+  root_link: "openarmx_link0"
+  tip_link:  "openarmx_link7"
+  vec: [0.0, 0.0, -9.81]    # gravity in root frame; adjust for arm mounting
+  scale: 1.0
