@@ -1,0 +1,48 @@
+# oa_fd_cpp — bimanual enactic-style force-feedback bilateral, 1 PC, 4 USB2CAN.
+#
+# Pairs: RIGHT = leader can0 <-> follower can2 ; LEFT = leader can1 <-> follower can3
+# Per joint MIT: tau = Kp(q_ref-q) + Kd(dq_ref-dq) + g(q) + friction(q̇)
+#               leader_ref = follower state, follower_ref = leader state.
+#
+# Kp/Kd/friction are PLACEHOLDERS. enactic values are for Damiao motors;
+# OpenArm A2 uses Robstride — RE-TUNE / RE-IDENTIFY on hardware.
+# enactic leader ref: Kp[240,240,240,240,24,31,25], Kd[3,3,3,3,0.2,0.2,0.2].
+
+can:
+  leader_right:   can0
+  leader_left:    can1
+  follower_right: can2
+  follower_left:  can3
+  fd: false
+  recv_timeout_us: 500
+
+timestep: 0.001            # 1 kHz (enactic). Raise to 0.002 if 4xUSB2CAN saturates.
+
+auto_home_on_start: true
+homing_duration: 5.0
+
+torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]
+home:         [0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0]
+
+# MIT impedance (motor-side)
+Kp: [120.0, 120.0, 120.0, 120.0, 18.0, 20.0, 16.0]
+Kd: [2.0,   2.0,   2.0,   2.0,   0.2,  0.2,  0.2]
+
+# tanh friction: f = Fc*tanh(k*v) + Fv*v + Fo   (default OFF; identify per joint)
+friction:
+  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  k:  [30.0, 30.0, 30.0, 30.0, 30.0, 30.0, 30.0]
+  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+mirror:
+  right: [1, 1, 1, 1, 1, 1, 1]
+  left:  [1, 1, 1, 1, 1, 1, 1]
+
+gravity:
+  enabled: true
+  urdf: ""                 # REQUIRED: absolute path to single-arm OpenArm A2 URDF
+  root_link: "openarmx_link0"
+  tip_link:  "openarmx_link7"
+  vec: [0.0, 0.0, -9.81]
+  scale: 1.0

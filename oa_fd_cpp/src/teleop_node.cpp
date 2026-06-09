@@ -1,0 +1,260 @@
+// teleop_node.cpp — enactic-style bimanual force-feedback bilateral.
+// See teleop_node.hpp.
+//
+// Per joint, MIT command  tau = Kp(q_ref-q) + Kd(dq_ref-dq) + g(q) + friction(q̇)
+//   ACTIVE   : q_ref/dq_ref = mirrored peer state (leader<->follower cross-couple)
+//   PAUSED   : q_ref = home, dq_ref = 0
+//   HOMING   : q_ref = quintic ramp (start->home), dq_ref = 0
+//   FREEDRIVE: Kp=Kd=0  -> tau = g(q) + friction (gravity/friction balanced)
+// The Kp/Kd impedance is executed motor-side (sent inside the MIT packet);
+// g(q)+friction go in the torque-feedforward field.
+
+#include "oa_fd_cpp/teleop_node.hpp"
+
+#include <algorithm>
+#include <cmath>
+
+namespace oa_fd {
+
+namespace {
+inline double quintic_ease(double a) {
+  a = std::clamp(a, 0.0, 1.0);
+  return 10 * a*a*a - 15 * a*a*a*a + 6 * a*a*a*a*a;
+}
+}  // namespace
+
+TeleopNode::TeleopNode(const Options& opts)
+    : rclcpp::Node("oa_fd_node"), opts_(opts) {
+  rt_cfg_.enabled = opts.use_rt;
+  rt_cfg_.priority = opts.rt_priority;
+  rt_cfg_.cpu_affinity = opts.rt_cpu;
+
+  if (!opts.config_path.empty()) {
+    if (!load_config(opts.config_path, cfg_))
+      RCLCPP_WARN(get_logger(), "config load failed; using defaults");
+    else
+      RCLCPP_INFO(get_logger(), "config: %s", opts.config_path.c_str());
+  }
+
+  rclcpp::QoS state_qos{10};
+  rclcpp::QoS latched{1};
+  latched.reliable().transient_local();
+
+  mode_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>("/oa/mode", latched);
+  mode_sub_ = create_subscription<std_msgs::msg::Float64MultiArray>(
+      "/oa/mode", latched,
+      std::bind(&TeleopNode::mode_cb, this, std::placeholders::_1));
+
+  right_.name = "right";
+  right_.mirror = cfg_.mirror_right;
+  right_.leader   = std::make_unique<OaxArm>(cfg_.can_leader_right,   cfg_.can_fd, cfg_.recv_timeout_us);
+  right_.follower = std::make_unique<OaxArm>(cfg_.can_follower_right, cfg_.can_fd, cfg_.recv_timeout_us);
+  right_.leader_pub   = create_publisher<sensor_msgs::msg::JointState>("/oa/leader_right/joint_state", state_qos);
+  right_.follower_pub = create_publisher<sensor_msgs::msg::JointState>("/oa/follower_right/joint_state", state_qos);
+
+  left_.name = "left";
+  left_.mirror = cfg_.mirror_left;
+  left_.leader   = std::make_unique<OaxArm>(cfg_.can_leader_left,   cfg_.can_fd, cfg_.recv_timeout_us);
+  left_.follower = std::make_unique<OaxArm>(cfg_.can_follower_left, cfg_.can_fd, cfg_.recv_timeout_us);
+  left_.leader_pub   = create_publisher<sensor_msgs::msg::JointState>("/oa/leader_left/joint_state", state_qos);
+  left_.follower_pub = create_publisher<sensor_msgs::msg::JointState>("/oa/follower_left/joint_state", state_qos);
+
+  publish_mode(MODE_PAUSED);
+}
+
+TeleopNode::~TeleopNode() { stop(); }
+
+bool TeleopNode::connect() {
+  if (cfg_.gravity.enabled && !grav_.load(cfg_.gravity))
+    RCLCPP_WARN(get_logger(), "gravity comp OFF (URDF missing/invalid) — arm will sag!");
+
+  for (Pair* p : {&right_, &left_}) {
+    for (OaxArm* a : {p->leader.get(), p->follower.get()}) {
+      if (!a->init())   { RCLCPP_ERROR(get_logger(), "init failed %s", a->iface().c_str()); return false; }
+      if (!a->enable()) { RCLCPP_ERROR(get_logger(), "enable failed %s", a->iface().c_str()); return false; }
+      RCLCPP_INFO(get_logger(), "arm up: %s", a->iface().c_str());
+    }
+  }
+  return true;
+}
+
+void TeleopNode::run() {
+  if (running_.exchange(true)) return;
+  control_thread_ = std::thread(&TeleopNode::control_loop, this);
+}
+
+void TeleopNode::stop() {
+  running_ = false;
+  if (control_thread_.joinable()) control_thread_.join();
+  for (Pair* p : {&right_, &left_}) {
+    if (p->leader)   p->leader->disable();
+    if (p->follower) p->follower->disable();
+  }
+}
+
+void TeleopNode::mode_cb(const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+  if (msg->data.size() < 3) return;
+  std::lock_guard<std::mutex> lk(mode_mtx_);
+  mode_state_ = static_cast<int>(msg->data[0]);
+  mode_t_start_ = msg->data[1];
+  mode_duration_ = msg->data[2];
+}
+
+void TeleopNode::publish_mode(int mode, double t_start, double duration) {
+  std_msgs::msg::Float64MultiArray msg;
+  msg.data = {static_cast<double>(mode), t_start, duration};
+  mode_pub_->publish(msg);
+}
+
+void TeleopNode::friction(const Vec7& qd, Vec7& f) const {
+  for (int i = 0; i < DOF; ++i)
+    f[i] = cfg_.fric_Fc[i] * std::tanh(cfg_.fric_k[i] * qd[i])
+         + cfg_.fric_Fv[i] * qd[i] + cfg_.fric_Fo[i];
+}
+
+void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
+                              double h_t_start, double h_duration,
+                              MitCmd& lc, MitCmd& fc) {
+  Vec7 gl{}, gf{}, frl{}, frf{};
+  grav_.gravity(p.lq, gl);
+  grav_.gravity(p.fq, gf);
+  friction(p.lqd, frl);
+  friction(p.fqd, frf);
+
+  // mirror peer into local frame (delta about home)
+  Vec7 f_in_l{}, fd_in_l{}, l_in_f{}, ld_in_f{};
+  for (int i = 0; i < DOF; ++i) {
+    f_in_l[i]  = cfg_.home[i] + p.mirror[i] * (p.fq[i] - cfg_.home[i]);
+    fd_in_l[i] = p.mirror[i] * p.fqd[i];
+    l_in_f[i]  = cfg_.home[i] + p.mirror[i] * (p.lq[i] - cfg_.home[i]);
+    ld_in_f[i] = p.mirror[i] * p.lqd[i];
+  }
+
+  const double alpha = (h_duration > 0.0)
+      ? std::clamp((now_sec - h_t_start) / h_duration, 0.0, 1.0) : 1.0;
+  const double s = quintic_ease(alpha);
+
+  for (int i = 0; i < DOF; ++i) {
+    // feedforward (gravity + friction comp) always applied
+    lc.tau[i] = gl[i] + frl[i];
+    fc.tau[i] = gf[i] + frf[i];
+
+    switch (mode) {
+      case MODE_ACTIVE:
+        lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i];
+        lc.pos[i] = f_in_l[i];  lc.vel[i] = fd_in_l[i];
+        fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i];
+        fc.pos[i] = l_in_f[i];  fc.vel[i] = ld_in_f[i];
+        break;
+      case MODE_PAUSED:
+        lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i]; lc.pos[i] = cfg_.home[i]; lc.vel[i] = 0.0;
+        fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i]; fc.pos[i] = cfg_.home[i]; fc.vel[i] = 0.0;
+        break;
+      case MODE_HOMING: {
+        double lt = p.l_home_start[i] + s * (cfg_.home[i] - p.l_home_start[i]);
+        double ft = p.f_home_start[i] + s * (cfg_.home[i] - p.f_home_start[i]);
+        lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i]; lc.pos[i] = lt; lc.vel[i] = 0.0;
+        fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i]; fc.pos[i] = ft; fc.vel[i] = 0.0;
+        break;
+      }
+      case MODE_FREEDRIVE:
+      default:
+        lc.kp[i] = 0.0; lc.kd[i] = 0.0; lc.pos[i] = 0.0; lc.vel[i] = 0.0;
+        fc.kp[i] = 0.0; fc.kd[i] = 0.0; fc.pos[i] = 0.0; fc.vel[i] = 0.0;
+        break;
+    }
+    // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
+    lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);
+    fc.tau[i] = std::clamp(fc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);
+  }
+}
+
+void TeleopNode::publish_pair(Pair& p) {
+  auto fill = [this](const Vec7& q, const Vec7& qd, const Vec7& tau,
+                     rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr& pub) {
+    sensor_msgs::msg::JointState m;
+    m.header.stamp = this->now();
+    m.name = {"joint1","joint2","joint3","joint4","joint5","joint6","joint7"};
+    m.position.assign(q.begin(), q.end());
+    m.velocity.assign(qd.begin(), qd.end());
+    m.effort.assign(tau.begin(), tau.end());
+    pub->publish(m);
+  };
+  fill(p.lq, p.lqd, p.ltau, p.leader_pub);
+  fill(p.fq, p.fqd, p.ftau, p.follower_pub);
+}
+
+void TeleopNode::control_loop() {
+  init_rt_thread(rt_cfg_);
+  JitterTracker jitter(std::chrono::microseconds(
+      static_cast<int64_t>(cfg_.timestep * 1e6)));
+  auto deadline = now_monotonic();
+  const auto period = jitter.target_period();
+  RCLCPP_INFO(get_logger(), "control_loop  period=%ld us  rt=%s",
+              (long)(period.count() / 1000), rt_cfg_.enabled ? "ON" : "OFF");
+
+  int prev_mode = MODE_PAUSED;
+  int log_counter = 0;
+
+  if (cfg_.auto_home_on_start) {
+    publish_mode(MODE_HOMING, this->now().seconds(), cfg_.homing_duration);
+    RCLCPP_INFO(get_logger(), "auto_home_on_start -> HOMING %.1fs", cfg_.homing_duration);
+  }
+
+  while (running_) {
+    jitter.tick(now_monotonic());
+    const double now_sec = this->now().seconds();
+
+    for (Pair* p : {&right_, &left_}) {
+      p->leader->read(p->lq, p->lqd, p->ltau);
+      p->follower->read(p->fq, p->fqd, p->ftau);
+    }
+
+    int mode; double h_t_start, h_duration;
+    {
+      std::lock_guard<std::mutex> lk(mode_mtx_);
+      mode = mode_state_; h_t_start = mode_t_start_; h_duration = mode_duration_;
+    }
+
+    if (mode != prev_mode) {
+      RCLCPP_INFO(get_logger(), "mode %d -> %d", prev_mode, mode);
+      if (mode == MODE_HOMING)
+        for (Pair* p : {&right_, &left_}) { p->l_home_start = p->lq; p->f_home_start = p->fq; }
+    }
+
+    double worst_err = 0.0;
+    for (Pair* p : {&right_, &left_}) {
+      MitCmd lc, fc;
+      compute_pair(*p, mode, now_sec, h_t_start, h_duration, lc, fc);
+      p->leader->write_mit(lc.kp, lc.kd, lc.pos, lc.vel, lc.tau);
+      p->follower->write_mit(fc.kp, fc.kd, fc.pos, fc.vel, fc.tau);
+      if (mode == MODE_HOMING)
+        for (int i = 0; i < DOF; ++i) {
+          worst_err = std::max(worst_err, std::abs(p->lq[i] - cfg_.home[i]));
+          worst_err = std::max(worst_err, std::abs(p->fq[i] - cfg_.home[i]));
+        }
+      publish_pair(*p);
+    }
+
+    if (mode == MODE_HOMING) {
+      const double alpha = (h_duration > 0.0)
+          ? std::clamp((now_sec - h_t_start) / h_duration, 0.0, 1.0) : 1.0;
+      if (alpha >= 1.0 && worst_err < 0.05) {
+        publish_mode(MODE_PAUSED);
+        RCLCPP_INFO(get_logger(), "HOMING complete (err=%.3f) -> PAUSED", worst_err);
+      }
+    }
+
+    if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {
+      log_counter = 0;
+      RCLCPP_INFO(get_logger(), "[DIAG] mode=%d  %s", mode, jitter.log_line("").c_str());
+    }
+
+    prev_mode = mode;
+    deadline += period;
+    sleep_until(deadline);
+  }
+  RCLCPP_INFO(get_logger(), "control_loop exited");
+}
+
+}  // namespace oa_fd
