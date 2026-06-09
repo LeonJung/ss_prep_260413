@@ -12,6 +12,7 @@
 
 namespace oa_fd {
 
+GravityModel::GravityModel() = default;
 GravityModel::~GravityModel() = default;
 
 bool GravityModel::load(const GravityCfg& cfg) {

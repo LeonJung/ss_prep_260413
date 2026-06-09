@@ -17,7 +17,7 @@ namespace oa_pp {
 
 class GravityModel {
 public:
-  GravityModel() = default;
+  GravityModel();
   ~GravityModel();
 
   // Build KDL chain from URDF root->tip. Returns false on failure (then
