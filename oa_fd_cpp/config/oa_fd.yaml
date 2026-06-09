@@ -42,7 +42,12 @@ mirror:
 gravity:
   enabled: true
   urdf: ""                 # REQUIRED: absolute path to single-arm OpenArm A2 URDF
-  root_link: "openarmx_link0"
+  root_link: "openarmx_link0"   # MUST match your URDF (check_urdf). 7 joints root->tip.
   tip_link:  "openarmx_link7"
-  vec: [0.0, 0.0, -9.81]
   scale: 1.0
+  # Gravity in each arm's URDF ROOT frame. For OpenArm mounting this is usually
+  # along ±Y (not Z), OPPOSITE sign per side (cf. openarmx_gravity_comp:
+  # right=(0,-9.81,0), left=(0,+9.81,0)). Tune in FREEDRIVE until the arm floats.
+  vec:       [0.0,  0.0, -9.81]   # fallback if vec_right/left omitted
+  vec_right: [0.0, -9.81, 0.0]
+  vec_left:  [0.0,  9.81, 0.0]

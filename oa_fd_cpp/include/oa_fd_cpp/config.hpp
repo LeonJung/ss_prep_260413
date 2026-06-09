@@ -62,6 +62,10 @@ struct OaFdConfig {
   Vec7 mirror_left  = {1, 1, 1, 1, 1, 1, 1};
 
   GravityCfg gravity;
+  // Gravity vector expressed in each arm's URDF root frame. OpenArm mounting
+  // usually makes this ±Y (NOT Z), opposite sign per side. Tune in FREEDRIVE.
+  std::array<double, 3> grav_vec_right = {0.0, 0.0, -9.81};
+  std::array<double, 3> grav_vec_left  = {0.0, 0.0, -9.81};
 };
 
 bool load_config(const std::string& path, OaFdConfig& out);

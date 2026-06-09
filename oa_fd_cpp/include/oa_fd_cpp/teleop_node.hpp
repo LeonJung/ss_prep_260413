@@ -39,6 +39,7 @@ struct Pair {
   Vec7 lq{}, lqd{}, ltau{};
   Vec7 fq{}, fqd{}, ftau{};
   Vec7 l_home_start{}, f_home_start{};
+  GravityModel* grav = nullptr;     // this side's gravity model (right/left)
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr leader_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr follower_pub;
 };
@@ -74,7 +75,7 @@ private:
   Options opts_;
   OaFdConfig cfg_;
   RTConfig rt_cfg_;
-  GravityModel grav_;
+  GravityModel grav_right_, grav_left_;
 
   Pair right_, left_;
 

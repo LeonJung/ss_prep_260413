@@ -66,8 +66,16 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_scalar(g, "root_link", c.gravity.root_link);
     try_scalar(g, "tip_link",  c.gravity.tip_link);
     try_scalar(g, "scale",     c.gravity.scale);
-    if (g["vec"] && g["vec"].IsSequence() && g["vec"].size() == 3)
-      for (int i = 0; i < 3; ++i) c.gravity.vec[i] = g["vec"][i].as<double>();
+    auto read3 = [](const YAML::Node& n, std::array<double, 3>& o) {
+      if (n && n.IsSequence() && n.size() == 3)
+        for (int i = 0; i < 3; ++i) o[i] = n[i].as<double>();
+    };
+    // global 'vec' is the fallback for both sides
+    read3(g["vec"], c.gravity.vec);
+    c.grav_vec_right = c.gravity.vec;
+    c.grav_vec_left  = c.gravity.vec;
+    read3(g["vec_right"], c.grav_vec_right);
+    read3(g["vec_left"],  c.grav_vec_left);
   }
   return true;
 }

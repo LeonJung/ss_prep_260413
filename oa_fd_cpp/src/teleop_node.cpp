@@ -65,8 +65,16 @@ TeleopNode::TeleopNode(const Options& opts)
 TeleopNode::~TeleopNode() { stop(); }
 
 bool TeleopNode::connect() {
-  if (cfg_.gravity.enabled && !grav_.load(cfg_.gravity))
-    RCLCPP_WARN(get_logger(), "gravity comp OFF (URDF missing/invalid) — arm will sag!");
+  if (cfg_.gravity.enabled) {
+    GravityCfg gr = cfg_.gravity; gr.vec = cfg_.grav_vec_right;
+    GravityCfg gl = cfg_.gravity; gl.vec = cfg_.grav_vec_left;
+    bool okr = grav_right_.load(gr);
+    bool okl = grav_left_.load(gl);
+    if (!okr || !okl)
+      RCLCPP_WARN(get_logger(), "gravity comp OFF (URDF missing/invalid) — arm will sag!");
+  }
+  right_.grav = &grav_right_;
+  left_.grav  = &grav_left_;
 
   for (Pair* p : {&right_, &left_}) {
     for (OaxArm* a : {p->leader.get(), p->follower.get()}) {
@@ -116,8 +124,7 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
                               double h_t_start, double h_duration,
                               MitCmd& lc, MitCmd& fc) {
   Vec7 gl{}, gf{}, frl{}, frf{};
-  grav_.gravity(p.lq, gl);
-  grav_.gravity(p.fq, gf);
+  if (p.grav) { p.grav->gravity(p.lq, gl); p.grav->gravity(p.fq, gf); }
   friction(p.lqd, frl);
   friction(p.fqd, frf);
 
