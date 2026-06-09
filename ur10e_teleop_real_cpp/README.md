@@ -280,6 +280,23 @@ both packages.
         - optional: explicit haptic feedback onto leader for crisper
           "freedrive vs contact" distinction
 
+- [ ] **Explicit force-reflection channel (J^TᐧF → leader)**
+      Today the operator only feels contact *implicitly*, as the
+      position-position coupling spring `KP_BI·(q_peer − q)` when the
+      follower lags. Add a real force channel without going to a full
+      sensorless DOB / 4-channel stack:
+        F6        = follower's measured `actual_TCP_force` (RTDE)
+        τ_contact = J(q_foll)^T · F6        # follower contact → joint torque
+        τ_lead   += K_FR · τ_contact_peer   # reflect onto leader
+      This buys most of the "OpenArm-style" force-reflecting feel while
+      keeping real_cpp's model-free, near-unconditionally-stable
+      character (no M/C/g, no DOB, no URDF dependence). Gate behind a
+      config flag `force_reflection: { enabled, K_FR[6] }`; reuses the
+      same Jacobian module as the F/T-integration item above.
+      Rationale: the robot we are moving to (openarmx / OpenArm A2) ships
+      *unilateral* position teleop only — this keeps real_cpp's haptic
+      edge portable.
+
 - [ ] **TCP workspace safety — 2-tier virtual wall**
       Bounding box in base frame (xyz_min, xyz_max). Two layers:
         (i)  SOFT safety — when follower's TCP touches the box, inject
