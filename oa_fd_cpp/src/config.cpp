@@ -76,6 +76,15 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     c.grav_vec_left  = c.gravity.vec;
     read3(g["vec_right"], c.grav_vec_right);
     read3(g["vec_left"],  c.grav_vec_left);
+
+    // per-side chain endpoints: a single 'root_link'/'tip_link' applies to both;
+    // per-side keys override.
+    if (g["root_link"]) { c.root_link_right = c.root_link_left = c.gravity.root_link; }
+    if (g["tip_link"])  { c.tip_link_right  = c.tip_link_left  = c.gravity.tip_link; }
+    try_scalar(g, "root_link_right", c.root_link_right);
+    try_scalar(g, "tip_link_right",  c.tip_link_right);
+    try_scalar(g, "root_link_left",  c.root_link_left);
+    try_scalar(g, "tip_link_left",   c.tip_link_left);
   }
   return true;
 }

@@ -41,13 +41,19 @@ mirror:
 
 gravity:
   enabled: true
-  urdf: ""                 # REQUIRED: absolute path to single-arm OpenArm A2 URDF
-  root_link: "openarmx_link0"   # MUST match your URDF (check_urdf). 7 joints root->tip.
-  tip_link:  "openarmx_link7"
+  # REQUIRED. Generate ONCE on the control PC from the installed package:
+  #   xacro $(ros2 pkg prefix openarmx_description)/share/openarmx_description/urdf/robot/v10.urdf.xacro > /tmp/openarmx_v10.urdf
+  #   check_urdf /tmp/openarmx_v10.urdf
+  # (do NOT use the pre-baked openarmx_robot.urdf — it has unexpanded ${prefix}.)
+  urdf: "/tmp/openarmx_v10.urdf"
   scale: 1.0
-  # Gravity in each arm's URDF ROOT frame. For OpenArm mounting this is usually
-  # along ±Y (not Z), OPPOSITE sign per side (cf. openarmx_gravity_comp:
-  # right=(0,-9.81,0), left=(0,+9.81,0)). Tune in FREEDRIVE until the arm floats.
-  vec:       [0.0,  0.0, -9.81]   # fallback if vec_right/left omitted
+  # Per-side KDL chain (the bimanual URDF names left/right links differently).
+  # One arm chain = 7 revolute joints (joint4_ext is fixed). Verify with check_urdf.
+  root_link_right: "openarmx_right_link0"
+  tip_link_right:  "openarmx_right_link7"
+  root_link_left:  "openarmx_left_link0"
+  tip_link_left:   "openarmx_left_link7"
+  # Gravity in each arm's ROOT frame. OpenArm mounting -> usually along ±Y (not Z),
+  # OPPOSITE sign per side (cf. openarmx_gravity_comp). TUNE in FREEDRIVE.
   vec_right: [0.0, -9.81, 0.0]
   vec_left:  [0.0,  9.81, 0.0]

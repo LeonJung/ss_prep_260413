@@ -66,8 +66,10 @@ TeleopNode::~TeleopNode() { stop(); }
 
 bool TeleopNode::connect() {
   if (cfg_.gravity.enabled) {
-    GravityCfg gr = cfg_.gravity; gr.vec = cfg_.grav_vec_right;
-    GravityCfg gl = cfg_.gravity; gl.vec = cfg_.grav_vec_left;
+    GravityCfg gr = cfg_.gravity;
+    gr.vec = cfg_.grav_vec_right; gr.root_link = cfg_.root_link_right; gr.tip_link = cfg_.tip_link_right;
+    GravityCfg gl = cfg_.gravity;
+    gl.vec = cfg_.grav_vec_left;  gl.root_link = cfg_.root_link_left;  gl.tip_link = cfg_.tip_link_left;
     bool okr = grav_right_.load(gr);
     bool okl = grav_left_.load(gl);
     if (!okr || !okl)
