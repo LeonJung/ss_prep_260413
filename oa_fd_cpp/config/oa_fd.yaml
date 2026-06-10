@@ -52,10 +52,11 @@ gravity:
   tip_link_right:  "openarmx_link7"
   root_link_left:  "openarmx_link0"
   tip_link_left:   "openarmx_link7"
-  # Gravity in the arm ROOT (link0) frame. The bundled single-arm URDF has
-  # link0 base-aligned (all joint origins rpy=0, joint1 axis = +Z), i.e. Z is up.
-  # So for an UPRIGHT-mounted arm gravity = (0,0,-9.81).
-  # If your arm is mounted rotated (e.g. on a torso ±90° about X like the V10),
-  # use (0,-9.81,0)/(0,+9.81,0) instead. TUNE in FREEDRIVE (watch [DIAG] gR).
-  vec_right: [0.0, 0.0, -9.81]
-  vec_left:  [0.0, 0.0, -9.81]
+  # Gravity in the arm ROOT (link0) frame. NOTE the EFFECTIVE sign here is
+  # +9.81 (not -9.81): the motor command goes through the dir=-1 flip, so the
+  # gravity feedforward must be inverted to actually counteract gravity
+  # (verified on hardware: with -9.81 the arm pushed DOWN when lifted).
+  # Z is the base axis (joint1). If the arm is mounted rotated, move the 9.81
+  # onto another axis and flip sign as needed. TUNE in FREEDRIVE.
+  vec_right: [0.0, 0.0, 9.81]
+  vec_left:  [0.0, 0.0, 9.81]
