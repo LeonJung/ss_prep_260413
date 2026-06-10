@@ -73,7 +73,8 @@ void GravityModel::gravity(const Vec7& q, Vec7& tau_g) const {
   if (!ok_ || !dyn_) return;
   KDL::JntArray jq(n_), jg(n_);
   for (int i = 0; i < n_ && i < DOF; ++i) jq(i) = q[i];
-  if (dyn_->JntToGravity(jq, jg) != 0) return;
+  last_rc_ = dyn_->JntToGravity(jq, jg);
+  if (last_rc_ != 0) return;   // KDL error -> leave zeros
   for (int i = 0; i < n_ && i < DOF; ++i) tau_g[i] = scale_ * jg(i);
 }
 

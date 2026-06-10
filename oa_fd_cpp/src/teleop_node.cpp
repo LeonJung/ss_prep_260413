@@ -263,17 +263,16 @@ void TeleopNode::control_loop() {
       // gravity sanity: print computed g(q) for both leader arms (shoulder j2,
       // elbow j4). ~0 at a near-vertical pose is normal; lift the arm to a
       // horizontal pose to see it grow. ~0 everywhere -> model/load problem.
-      Vec7 gR{}, gL{};
-      const bool gon = (right_.grav && right_.grav->ok() &&
-                        left_.grav && left_.grav->ok());
-      if (right_.grav) right_.grav->gravity(right_.lq, gR);
-      if (left_.grav)  left_.grav->gravity(left_.lq, gL);
+      Vec7 gL{};
+      const bool gon = (left_.grav && left_.grav->ok());
+      if (left_.grav) left_.grav->gravity(left_.lq, gL);
+      const int rc = left_.grav ? left_.grav->last_rc() : -1;
       RCLCPP_INFO(get_logger(),
-        "[DIAG] mode=%d grav=%s | R g[j2,j4]=%.2f,%.2f q=%.2f,%.2f | "
-        "L g[j2,j4]=%.2f,%.2f q=%.2f,%.2f | %s",
-        mode, gon ? "ON" : "OFF",
-        gR[1], gR[3], right_.lq[1], right_.lq[3],
-        gL[1], gL[3], left_.lq[1], left_.lq[3],
+        "[DIAG] mode=%d grav=%s rc=%d | L q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
+        "g=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] | %s",
+        mode, gon ? "ON" : "OFF", rc,
+        left_.lq[0], left_.lq[1], left_.lq[2], left_.lq[3], left_.lq[4], left_.lq[5], left_.lq[6],
+        gL[0], gL[1], gL[2], gL[3], gL[4], gL[5], gL[6],
         jitter.log_line("").c_str());
     }
 

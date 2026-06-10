@@ -29,11 +29,14 @@ public:
   // g(q) per joint [Nm], already scaled by cfg.scale. Zeros if !ok().
   void gravity(const Vec7& q, Vec7& tau_g) const;
 
+  int last_rc() const { return last_rc_; }   // last JntToGravity() return code
+
 private:
   bool ok_ = false;
   double scale_ = 1.0;
   std::unique_ptr<KDL::ChainDynParam> dyn_;
   int n_ = 0;
+  mutable int last_rc_ = -99;
 };
 
 }  // namespace oa_fd
