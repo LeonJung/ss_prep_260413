@@ -29,12 +29,13 @@ bool GravityModel::load(const GravityCfg& cfg) {
     return false;
   }
 
-  KDL::Chain chain;
-  if (!tree.getChain(cfg.root_link, cfg.tip_link, chain)) {
+  chain_ = std::make_unique<KDL::Chain>();
+  if (!tree.getChain(cfg.root_link, cfg.tip_link, *chain_)) {
     std::fprintf(stderr, "[gravity] no chain %s -> %s in URDF\n",
                  cfg.root_link.c_str(), cfg.tip_link.c_str());
     return false;
   }
+  KDL::Chain& chain = *chain_;   // owned; outlives dyn_
 
   n_ = static_cast<int>(chain.getNrOfJoints());
   if (n_ != DOF) {

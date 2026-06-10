@@ -11,7 +11,7 @@
 
 #include "oa_fd_cpp/config.hpp"   // DOF, Vec7, GravityCfg
 
-namespace KDL { class ChainDynParam; }
+namespace KDL { class Chain; class ChainDynParam; }
 
 namespace oa_fd {
 
@@ -34,6 +34,9 @@ public:
 private:
   bool ok_ = false;
   double scale_ = 1.0;
+  // ChainDynParam stores a const reference to the Chain — it must outlive dyn_,
+  // so we own it here (do NOT pass a local chain).
+  std::unique_ptr<KDL::Chain> chain_;
   std::unique_ptr<KDL::ChainDynParam> dyn_;
   int n_ = 0;
   mutable int last_rc_ = -99;
