@@ -46,7 +46,7 @@ gravity:
   # v10.urdf.xacro, hand/ee/ros2_control stripped, check_urdf-clean, 7 revolute).
   # Override with: ros2 launch ... urdf:=/abs/path.urdf
   urdf: ""
-  scale: 0.9          # <1.0 to reduce gravity FF (was over-compensating at 1.0)
+  scale: 0.95         # <1.0 to reduce gravity FF (was over-compensating at 1.0)
   # Single-arm URDF uses the same link names for both sides.
   root_link_right: "openarmx_link0"
   tip_link_right:  "openarmx_link7"
