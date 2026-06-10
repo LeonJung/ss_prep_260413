@@ -44,13 +44,27 @@ bool GravityModel::load(const GravityCfg& cfg) {
     // still proceed if n_ > 0, clamping in gravity()
   }
 
+  // Sanity: how much mass did kdl_parser actually attach to the chain?
+  // (Some kdl_parser backends silently drop URDF <inertial> -> zero gravity.)
+  double total_mass = 0.0;
+  for (unsigned i = 0; i < chain.getNrOfSegments(); ++i)
+    total_mass += chain.getSegment(i).getInertia().getMass();
+
   KDL::Vector g(cfg.vec[0], cfg.vec[1], cfg.vec[2]);
   dyn_ = std::make_unique<KDL::ChainDynParam>(chain, g);
   scale_ = cfg.scale;
   ok_ = (n_ > 0);
-  if (ok_)
-    std::fprintf(stderr, "[gravity] loaded: %d joints, g=(%.2f,%.2f,%.2f), scale=%.3f\n",
-                 n_, cfg.vec[0], cfg.vec[1], cfg.vec[2], scale_);
+  if (ok_) {
+    std::fprintf(stderr,
+      "[gravity] loaded: %d joints, %u segs, total_mass=%.4f kg, "
+      "g=(%.2f,%.2f,%.2f), scale=%.3f\n",
+      n_, chain.getNrOfSegments(), total_mass,
+      cfg.vec[0], cfg.vec[1], cfg.vec[2], scale_);
+    if (total_mass < 1e-6)
+      std::fprintf(stderr,
+        "[gravity] WARNING: chain total mass ~0 -> kdl_parser dropped inertials; "
+        "gravity will be 0 (URDF has masses, so it's a parser issue).\n");
+  }
   return ok_;
 }
 
