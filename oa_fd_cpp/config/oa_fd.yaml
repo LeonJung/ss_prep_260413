@@ -53,9 +53,9 @@ gravity:
   tip_link_right:  "openarmx_link7"
   root_link_left:  "openarmx_link0"
   tip_link_left:   "openarmx_link7"
-  # Gravity in each arm's link0 frame. The arms are mounted ±90° about X, so in
-  # link0 gravity points along Y, OPPOSITE per side — matches the proven
-  # openarmx_gravity_comp (right GY=-9.81, left GY=+9.81; dir=-1 handled in
-  # write_mit). If a side is still wrong, flip that side's Y sign. Trim with scale.
-  vec_right: [0.0, -9.81, 0.0]
-  vec_left:  [0.0,  9.81, 0.0]
+  # Gravity in each arm's link0 frame. HW result: Z(+9.81) was nearly right
+  # (gentle, holdable, scale~0.95); Y made ALL arms slam up. So link0 Z is
+  # effectively up for this mounting -> use (0,0,9.81). (Effective +9.81 because
+  # the motor command goes through the dir=-1 flip in write_mit.)
+  vec_right: [0.0, 0.0, 9.81]
+  vec_left:  [0.0, 0.0, 9.81]
