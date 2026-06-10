@@ -19,6 +19,7 @@ int main(int argc, char** argv) {
     std::string a = argv[i];
     auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
     if (a == "--config")            opts.config_path = next();
+    else if (a == "--urdf")         opts.urdf_override = next();
     else if (a == "--rt-mode")      opts.use_rt = (next() == "true");
     else if (a == "--rt")           opts.use_rt = true;
     else if (a == "--no-rt")        opts.use_rt = false;

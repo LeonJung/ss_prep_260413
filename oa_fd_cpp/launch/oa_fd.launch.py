@@ -13,8 +13,10 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     pkg_share = get_package_share_directory('oa_fd_cpp')
     default_config = f'{pkg_share}/config/oa_fd.yaml'
+    default_urdf = f'{pkg_share}/urdf/openarmx_arm.urdf'   # bundled single-arm URDF
 
     config_arg = DeclareLaunchArgument('config', default_value=default_config)
+    urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)
     rt_arg = DeclareLaunchArgument('rt', default_value='false')
     rt_prio_arg = DeclareLaunchArgument('rt_priority', default_value='80')
     rt_cpu_arg = DeclareLaunchArgument('rt_cpu', default_value='-1')
@@ -26,10 +28,11 @@ def generate_launch_description():
         output='screen',
         arguments=[
             '--config', LaunchConfiguration('config'),
+            '--urdf', LaunchConfiguration('urdf'),
             '--rt-mode', LaunchConfiguration('rt'),
             '--rt-priority', LaunchConfiguration('rt_priority'),
             '--rt-cpu', LaunchConfiguration('rt_cpu'),
         ],
     )
 
-    return LaunchDescription([config_arg, rt_arg, rt_prio_arg, rt_cpu_arg, node])
+    return LaunchDescription([config_arg, urdf_arg, rt_arg, rt_prio_arg, rt_cpu_arg, node])

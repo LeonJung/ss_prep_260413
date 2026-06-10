@@ -41,19 +41,19 @@ mirror:
 
 gravity:
   enabled: true
-  # REQUIRED. Generate ONCE on the control PC from the installed package:
-  #   xacro $(ros2 pkg prefix openarmx_description)/share/openarmx_description/urdf/robot/v10.urdf.xacro > /tmp/openarmx_v10.urdf
-  #   check_urdf /tmp/openarmx_v10.urdf
-  # (do NOT use the pre-baked openarmx_robot.urdf — it has unexpanded ${prefix}.)
-  urdf: "/tmp/openarmx_v10.urdf"
+  # urdf: bundled single-arm URDF is auto-passed by the launch file
+  # (share/oa_fd_cpp/urdf/openarmx_arm.urdf, generated from openarmx_description
+  # v10.urdf.xacro, hand/ee/ros2_control stripped, check_urdf-clean, 7 revolute).
+  # Override with: ros2 launch ... urdf:=/abs/path.urdf
+  urdf: ""
   scale: 1.0
-  # Per-side KDL chain (the bimanual URDF names left/right links differently).
-  # One arm chain = 7 revolute joints (joint4_ext is fixed). Verify with check_urdf.
-  root_link_right: "openarmx_right_link0"
-  tip_link_right:  "openarmx_right_link7"
-  root_link_left:  "openarmx_left_link0"
-  tip_link_left:   "openarmx_left_link7"
-  # Gravity in each arm's ROOT frame. OpenArm mounting -> usually along ±Y (not Z),
-  # OPPOSITE sign per side (cf. openarmx_gravity_comp). TUNE in FREEDRIVE.
+  # Single-arm URDF uses the same link names for both sides.
+  root_link_right: "openarmx_link0"
+  tip_link_right:  "openarmx_link7"
+  root_link_left:  "openarmx_link0"
+  tip_link_left:   "openarmx_link7"
+  # Gravity in the arm ROOT (link0) frame. Arm base is mounted ±90° about X
+  # (right_arm_base_rpy=1.5708, left=-1.5708) -> gravity ~ along ±Y, opposite
+  # per side. These are STARTING guesses — TUNE in FREEDRIVE until the arm floats.
   vec_right: [0.0, -9.81, 0.0]
   vec_left:  [0.0,  9.81, 0.0]

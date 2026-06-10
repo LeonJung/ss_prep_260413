@@ -42,6 +42,6 @@ target_link_libraries(oa_fd_node
 )
 
 install(TARGETS oa_fd_node DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME}/)
+install(DIRECTORY config launch urdf DESTINATION share/${PROJECT_NAME}/)
 
 ament_package()

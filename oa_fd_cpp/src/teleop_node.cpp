@@ -35,6 +35,10 @@ TeleopNode::TeleopNode(const Options& opts)
     else
       RCLCPP_INFO(get_logger(), "config: %s", opts.config_path.c_str());
   }
+  if (!opts.urdf_override.empty()) {
+    cfg_.gravity.urdf = opts.urdf_override;
+    RCLCPP_INFO(get_logger(), "urdf (override): %s", cfg_.gravity.urdf.c_str());
+  }
 
   rclcpp::QoS state_qos{10};
   rclcpp::QoS latched{1};

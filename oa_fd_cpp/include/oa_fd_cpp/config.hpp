@@ -66,12 +66,13 @@ struct OaFdConfig {
   // usually makes this ±Y (NOT Z), opposite sign per side. Tune in FREEDRIVE.
   std::array<double, 3> grav_vec_right = {0.0, 0.0, -9.81};
   std::array<double, 3> grav_vec_left  = {0.0, 0.0, -9.81};
-  // Per-side KDL chain endpoints (a single bimanual URDF names them differently
-  // left vs right). One URDF (gravity.urdf) feeds both; only the chain differs.
-  std::string root_link_right = "openarmx_right_link0";
-  std::string tip_link_right  = "openarmx_right_link7";
-  std::string root_link_left  = "openarmx_left_link0";
-  std::string tip_link_left   = "openarmx_left_link7";
+  // Per-side KDL chain endpoints. The bundled single-arm URDF
+  // (urdf/openarmx_arm.urdf) uses generic names for both sides; only the
+  // gravity vector differs left/right (set by mounting).
+  std::string root_link_right = "openarmx_link0";
+  std::string tip_link_right  = "openarmx_link7";
+  std::string root_link_left  = "openarmx_link0";
+  std::string tip_link_left   = "openarmx_link7";
 };
 
 bool load_config(const std::string& path, OaFdConfig& out);

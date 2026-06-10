@@ -48,6 +48,7 @@ class TeleopNode : public rclcpp::Node {
 public:
   struct Options {
     std::string config_path;
+    std::string urdf_override;   // --urdf : overrides gravity.urdf (launch passes bundled path)
     bool use_rt = false;
     int  rt_priority = 80;
     int  rt_cpu = -1;
