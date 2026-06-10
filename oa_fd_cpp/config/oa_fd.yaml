@@ -18,7 +18,8 @@ can:
 
 timestep: 0.001            # 1 kHz (enactic). Raise to 0.002 if 4xUSB2CAN saturates.
 
-auto_home_on_start: true
+auto_home_on_start: false   # safety: launch starts in FREEDRIVE (gravity only),
+                            # NOT a stiff pull to home (which can slam the arm).
 homing_duration: 5.0
 
 torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]

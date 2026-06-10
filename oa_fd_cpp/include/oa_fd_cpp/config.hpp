@@ -37,7 +37,7 @@ struct OaFdConfig {
   double timestep = 0.001;             // enactic runs 1 kHz
 
   // ---- homing ----
-  bool   auto_home_on_start = true;
+  bool   auto_home_on_start = false;   // safety: no stiff pull-to-home on launch
   double homing_duration    = 5.0;
 
   // ---- per-joint ----

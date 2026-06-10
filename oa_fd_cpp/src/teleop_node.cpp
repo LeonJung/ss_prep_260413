@@ -63,7 +63,10 @@ TeleopNode::TeleopNode(const Options& opts)
   left_.leader_pub   = create_publisher<sensor_msgs::msg::JointState>("/oa/leader_left/joint_state", state_qos);
   left_.follower_pub = create_publisher<sensor_msgs::msg::JointState>("/oa/follower_left/joint_state", state_qos);
 
-  publish_mode(MODE_PAUSED);
+  // Safe startup: FREEDRIVE (gravity only). Operator verifies, then explicitly
+  // commands HOMING/PAUSED/ACTIVE. (No auto-home: a stiff pull-to-home on launch
+  // can slam the arm if it starts far from home.)
+  publish_mode(MODE_FREEDRIVE);
 }
 
 TeleopNode::~TeleopNode() { stop(); }
@@ -160,8 +163,9 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         fc.pos[i] = l_in_f[i];  fc.vel[i] = ld_in_f[i];
         break;
       case MODE_PAUSED:
-        lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i]; lc.pos[i] = cfg_.home[i]; lc.vel[i] = 0.0;
-        fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i]; fc.pos[i] = cfg_.home[i]; fc.vel[i] = 0.0;
+        // hold the pose captured at PAUSED entry (NOT a fixed home) -> no slam
+        lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i]; lc.pos[i] = p.l_hold[i]; lc.vel[i] = 0.0;
+        fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i]; fc.pos[i] = p.f_hold[i]; fc.vel[i] = 0.0;
         break;
       case MODE_HOMING: {
         double lt = p.l_home_start[i] + s * (cfg_.home[i] - p.l_home_start[i]);
@@ -233,6 +237,8 @@ void TeleopNode::control_loop() {
       RCLCPP_INFO(get_logger(), "mode %d -> %d", prev_mode, mode);
       if (mode == MODE_HOMING)
         for (Pair* p : {&right_, &left_}) { p->l_home_start = p->lq; p->f_home_start = p->fq; }
+      else if (mode == MODE_PAUSED)   // capture current pose -> hold in place (no slam)
+        for (Pair* p : {&right_, &left_}) { p->l_hold = p->lq; p->f_hold = p->fq; }
     }
 
     double worst_err = 0.0;

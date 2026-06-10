@@ -38,7 +38,8 @@ struct Pair {
   Vec7 mirror{};
   Vec7 lq{}, lqd{}, ltau{};
   Vec7 fq{}, fqd{}, ftau{};
-  Vec7 l_home_start{}, f_home_start{};
+  Vec7 l_home_start{}, f_home_start{};   // captured at HOMING entry
+  Vec7 l_hold{}, f_hold{};               // captured at PAUSED entry (hold-in-place)
   GravityModel* grav = nullptr;     // this side's gravity model (right/left)
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr leader_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr follower_pub;
@@ -84,7 +85,7 @@ private:
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr mode_sub_;
 
   std::mutex mode_mtx_;
-  int    mode_state_   = MODE_PAUSED;
+  int    mode_state_   = MODE_FREEDRIVE;   // safe startup: gravity only, no stiff pull
   double mode_t_start_ = 0.0;
   double mode_duration_ = 0.0;
 
