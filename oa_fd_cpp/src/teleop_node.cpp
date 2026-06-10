@@ -260,7 +260,16 @@ void TeleopNode::control_loop() {
 
     if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {
       log_counter = 0;
-      RCLCPP_INFO(get_logger(), "[DIAG] mode=%d  %s", mode, jitter.log_line("").c_str());
+      // gravity sanity: print computed g(q) for right-leader shoulder/elbow.
+      // If these are ~0 -> gravity model not loaded (or q==0). If nonzero but
+      // the arm still sags -> wrong vec direction/scale.
+      Vec7 gdbg{};
+      const bool gon = (right_.grav && right_.grav->ok());
+      if (right_.grav) right_.grav->gravity(right_.lq, gdbg);
+      RCLCPP_INFO(get_logger(),
+        "[DIAG] mode=%d grav=%s gR[j2,j4]=%.2f,%.2f Nm  qR[j2,j4]=%.2f,%.2f rad  %s",
+        mode, gon ? "ON" : "OFF", gdbg[1], gdbg[3], right_.lq[1], right_.lq[3],
+        jitter.log_line("").c_str());
     }
 
     prev_mode = mode;

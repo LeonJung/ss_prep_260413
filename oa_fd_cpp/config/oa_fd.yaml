@@ -52,8 +52,10 @@ gravity:
   tip_link_right:  "openarmx_link7"
   root_link_left:  "openarmx_link0"
   tip_link_left:   "openarmx_link7"
-  # Gravity in the arm ROOT (link0) frame. Arm base is mounted ±90° about X
-  # (right_arm_base_rpy=1.5708, left=-1.5708) -> gravity ~ along ±Y, opposite
-  # per side. These are STARTING guesses — TUNE in FREEDRIVE until the arm floats.
-  vec_right: [0.0, -9.81, 0.0]
-  vec_left:  [0.0,  9.81, 0.0]
+  # Gravity in the arm ROOT (link0) frame. The bundled single-arm URDF has
+  # link0 base-aligned (all joint origins rpy=0, joint1 axis = +Z), i.e. Z is up.
+  # So for an UPRIGHT-mounted arm gravity = (0,0,-9.81).
+  # If your arm is mounted rotated (e.g. on a torso ±90° about X like the V10),
+  # use (0,-9.81,0)/(0,+9.81,0) instead. TUNE in FREEDRIVE (watch [DIAG] gR).
+  vec_right: [0.0, 0.0, -9.81]
+  vec_left:  [0.0, 0.0, -9.81]
