@@ -66,6 +66,10 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_scalar(g, "root_link", c.gravity.root_link);
     try_scalar(g, "tip_link",  c.gravity.tip_link);
     try_scalar(g, "scale",     c.gravity.scale);
+    if (g["scale_joints"] && g["scale_joints"].IsSequence() &&
+        g["scale_joints"].size() == DOF)
+      for (int i = 0; i < DOF; ++i)
+        c.gravity.scale_joints[i] = g["scale_joints"][i].as<double>();
     auto read3 = [](const YAML::Node& n, std::array<double, 3>& o) {
       if (n && n.IsSequence() && n.size() == 3)
         for (int i = 0; i < 3; ++i) o[i] = n[i].as<double>();

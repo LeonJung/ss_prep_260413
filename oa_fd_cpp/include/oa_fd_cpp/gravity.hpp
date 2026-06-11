@@ -34,6 +34,7 @@ public:
 private:
   bool ok_ = false;
   double scale_ = 1.0;
+  std::array<double, DOF> scale_joints_ = {1, 1, 1, 1, 1, 1, 1};
   // ChainDynParam stores a const reference to the Chain — it must outlive dyn_,
   // so we own it here (do NOT pass a local chain).
   std::unique_ptr<KDL::Chain> chain_;

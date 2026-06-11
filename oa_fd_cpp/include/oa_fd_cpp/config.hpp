@@ -21,7 +21,10 @@ struct GravityCfg {
   std::string root_link = "openarmx_link0";
   std::string tip_link  = "openarmx_link7";
   std::array<double, 3> vec = {0.0, 0.0, -9.81};
-  double      scale    = 1.0;
+  double      scale    = 1.0;                       // global trim
+  // per-joint trim, multiplied with `scale` (model error differs per joint —
+  // e.g. j2 perfect at 0.95 global while j1 over-compensates).
+  std::array<double, DOF> scale_joints = {1, 1, 1, 1, 1, 1, 1};
 };
 
 struct OaFdConfig {

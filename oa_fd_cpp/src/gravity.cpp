@@ -54,6 +54,7 @@ bool GravityModel::load(const GravityCfg& cfg) {
   KDL::Vector g(cfg.vec[0], cfg.vec[1], cfg.vec[2]);
   dyn_ = std::make_unique<KDL::ChainDynParam>(chain, g);
   scale_ = cfg.scale;
+  scale_joints_ = cfg.scale_joints;
   ok_ = (n_ > 0);
   if (ok_) {
     std::fprintf(stderr,
@@ -76,7 +77,8 @@ void GravityModel::gravity(const Vec7& q, Vec7& tau_g) const {
   for (int i = 0; i < n_ && i < DOF; ++i) jq(i) = q[i];
   last_rc_ = dyn_->JntToGravity(jq, jg);
   if (last_rc_ != 0) return;   // KDL error -> leave zeros
-  for (int i = 0; i < n_ && i < DOF; ++i) tau_g[i] = scale_ * jg(i);
+  for (int i = 0; i < n_ && i < DOF; ++i)
+    tau_g[i] = scale_ * scale_joints_[i] * jg(i);
 }
 
 }  // namespace oa_fd
