@@ -16,6 +16,7 @@
 // from the CURRENT pose, returns to hang (q=0) at the end, then disables.
 // Keep the e-stop in reach anyway.
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
