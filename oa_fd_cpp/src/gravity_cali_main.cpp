@@ -40,17 +40,19 @@ double quintic(double a) {
 
 // Calibration poses (LEFT arm conventions; j1/j2 sign-flipped for right).
 // Chosen to excite j1/j2/j3/j4 gravity terms over their (conservative) ranges.
+// NOTE: j4 >= 0.3 everywhere — j4's range is [0,1.8] and q4=0 is the elbow
+// HARD STOP: resting on it makes the measured torque contact-contaminated.
 const std::vector<Vec7> POSES_LEFT = {
-    {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {-0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {-1.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {-1.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {-2.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {0.0, -0.6, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {0.0, -1.2, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {0.0, -1.6, 0.0, 0.0, 0.0, 0.0, 0.0},
-    {0.0, -2.2, 0.0, 0.0, 0.0, 0.0, 0.0},
+    {0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {0.5, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {-0.6, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {-1.2, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {-1.6, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {-2.2, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {0.0, -0.6, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {0.0, -1.2, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {0.0, -1.6, 0.0, 0.3, 0.0, 0.0, 0.0},
+    {0.0, -2.2, 0.0, 0.3, 0.0, 0.0, 0.0},
     {0.0, 0.0, 0.0, 0.6, 0.0, 0.0, 0.0},
     {0.0, 0.0, 0.0, 1.2, 0.0, 0.0, 0.0},
     {-0.8, 0.0, 0.0, 1.2, 0.0, 0.0, 0.0},
@@ -62,6 +64,10 @@ const std::vector<Vec7> POSES_LEFT = {
     {-0.8, -0.8, 0.8, 0.8, 0.0, 0.0, 0.0},
     {-0.8, -0.8, -0.8, 0.8, 0.0, 0.0, 0.0},
 };
+
+// Joint limits (left); used to clamp the two-sided approach offsets.
+const double LIM_LO_L[DOF] = {-3.34, -3.27, -1.57, 0.0, -1.5, -0.75, -1.4};
+const double LIM_HI_L[DOF] = {0.91, 0.13, 1.57, 1.8, 1.5, 0.75, 1.4};
 
 }  // namespace
 
@@ -100,8 +106,15 @@ int main(int argc, char** argv) {
 
   // poses (mirror j1/j2 for the right side, matching mirrored joint ranges)
   std::vector<Vec7> poses = POSES_LEFT;
-  if (side == "right")
+  double lim_lo[DOF], lim_hi[DOF];
+  for (int i = 0; i < DOF; ++i) { lim_lo[i] = LIM_LO_L[i]; lim_hi[i] = LIM_HI_L[i]; }
+  if (side == "right") {
     for (auto& p : poses) { p[0] = -p[0]; p[1] = -p[1]; }
+    for (int i = 0; i < 2; ++i) {   // mirrored ranges on j1/j2
+      lim_lo[i] = -LIM_HI_L[i];
+      lim_hi[i] = -LIM_LO_L[i];
+    }
+  }
 
   const Vec7 KP = {60, 60, 60, 60, 10, 10, 8};
   const Vec7 KD = {2, 2, 2, 2, 0.2, 0.2, 0.2};
@@ -138,41 +151,64 @@ int main(int argc, char** argv) {
   std::printf("oa_gravity_cali: %zu poses on %s (%s arm), dwell %.1fs\n",
               poses.size(), can.c_str(), side.c_str(), dwell);
 
-  for (size_t pi = 0; pi <= poses.size(); ++pi) {
-    // last "pose" = return to hang q=0
-    Vec7 target{};
-    if (pi < poses.size()) target = poses[pi];
-
-    // quintic move 4 s
-    const double T = 4.0;
+  auto move_to = [&](const Vec7& a, const Vec7& bgt, double T) {
     int nmove = static_cast<int>(T / dt);
     for (int s = 0; s < nmove; ++s) {
-      double a = quintic(static_cast<double>(s) / nmove);
+      double al = quintic(static_cast<double>(s) / nmove);
       Vec7 ref;
-      for (int i = 0; i < DOF; ++i) ref[i] = from[i] + a * (target[i] - from[i]);
+      for (int i = 0; i < DOF; ++i) ref[i] = a[i] + al * (bgt[i] - a[i]);
       hold_cmd(ref);
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
-    from = target;
-    if (pi == poses.size()) break;  // returned home — done
-
-    // settle
+  };
+  auto settle_and_measure = [&](const Vec7& target, Vec7& qa, Vec7& ta) {
     int nsettle = static_cast<int>(dwell / dt);
     for (int s = 0; s < nsettle; ++s) {
       hold_cmd(target);
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
-
-    // measure: 1 s average of q and measured torque
-    Vec7 qa{}, ta{};
+    qa.fill(0); ta.fill(0);
     int nmeas = static_cast<int>(1.0 / dt);
     for (int s = 0; s < nmeas; ++s) {
       hold_cmd(target);
       for (int i = 0; i < DOF; ++i) { qa[i] += q[i]; ta[i] += tau[i]; }
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
-    Vec7 gm{};
     for (int i = 0; i < DOF; ++i) { qa[i] /= nmeas; ta[i] /= nmeas; }
+  };
+
+  for (size_t pi = 0; pi <= poses.size(); ++pi) {
+    // last "pose" = return near-hang (elbow off its stop)
+    Vec7 target{};
+    target[3] = 0.3;
+    if (pi < poses.size()) target = poses[pi];
+
+    move_to(from, target, 4.0);
+    from = target;
+    if (pi == poses.size()) break;  // returned home — done
+
+    // STICTION DE-BIAS: approach the pose from BOTH sides and average.
+    // Friction holds part of gravity depending on approach direction; the
+    // two-sided mean cancels the first-order stiction bias.
+    const double DELTA = 0.12;
+    Vec7 above = target, below = target;
+    for (int i = 0; i < 4; ++i) {   // offset only the gravity-loaded joints
+      above[i] = std::clamp(target[i] + DELTA, lim_lo[i] + 0.1, lim_hi[i] - 0.1);
+      below[i] = std::clamp(target[i] - DELTA, lim_lo[i] + 0.1, lim_hi[i] - 0.1);
+    }
+    Vec7 qa1{}, ta1{}, qa2{}, ta2{};
+    move_to(target, above, 1.0);
+    move_to(above, target, 1.5);
+    settle_and_measure(target, qa1, ta1);
+    move_to(target, below, 1.0);
+    move_to(below, target, 1.5);
+    settle_and_measure(target, qa2, ta2);
+
+    Vec7 qa{}, ta{}, gm{};
+    for (int i = 0; i < DOF; ++i) {
+      qa[i] = 0.5 * (qa1[i] + qa2[i]);
+      ta[i] = 0.5 * (ta1[i] + ta2[i]);
+    }
     grav.gravity(qa, gm);
 
     csv << pi;

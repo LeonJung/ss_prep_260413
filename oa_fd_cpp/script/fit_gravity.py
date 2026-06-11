@@ -97,8 +97,21 @@ def main():
                          'URDF prior. Only fit links the pose set actually '
                          'excites! (default poses never move j5-j7 -> fitting '
                          'links 5-7 lets them drift to garbage = wrist runaway)')
+    ap.add_argument('--side', default='left', choices=['left', 'right'])
     args = ap.parse_args()
     fit_idx = {int(x) for x in args.fit_links.split(',')}
+
+    # joint limits (left arm; right mirrors j1/j2). Equations for a joint
+    # measured NEAR ITS LIMIT are dropped: at a hard stop the motor torque
+    # contains the contact force, not gravity (e.g. j4=0 is the elbow stop —
+    # half the default poses sit on it and poisoned the j4 column).
+    LIM_L = [(-3.34, 0.91), (-3.27, 0.13), (-1.57, 1.57), (0.0, 1.8),
+             (-1.5, 1.5), (-0.75, 0.75), (-1.4, 1.4)]
+    if args.side == 'right':
+        LIM = [(-hi, -lo) for lo, hi in LIM_L[:2]] + LIM_L[2:]
+    else:
+        LIM = LIM_L
+    MARGIN = 0.08
 
     tree, joints, links = load_urdf(args.urdf)
     gvec = np.array([0.0, 0.0, args.gz])
@@ -114,9 +127,14 @@ def main():
     #      params per link i: m_i (1) + first moment h_i = m_i c_i (3)
     nP = 4 * len(LINKS)
     A, b = [], []
+    dropped = 0
     for q, tau in zip(qs, taus):
         jpos, jax, linkT = fk(joints, q)
         for k in range(DOF):
+            lo, hi = LIM[k]
+            if q[k] < lo + MARGIN or q[k] > hi - MARGIN:
+                dropped += 1
+                continue          # joint resting on its hard stop -> torque ≠ gravity
             row = np.zeros(nP)
             for li, ln in enumerate(LINKS):
                 T = linkT[ln]
@@ -131,6 +149,7 @@ def main():
             b.append(tau[k])
     A = np.array(A)
     b = np.array(b)
+    print(f'{dropped} near-limit equations dropped, {len(b)} kept')
 
     # prior = current URDF params
     theta0 = np.zeros(nP)
