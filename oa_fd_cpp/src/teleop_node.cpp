@@ -63,6 +63,13 @@ TeleopNode::TeleopNode(const Options& opts)
   left_.leader_pub   = create_publisher<sensor_msgs::msg::JointState>("/oa/leader_left/joint_state", state_qos);
   left_.follower_pub = create_publisher<sensor_msgs::msg::JointState>("/oa/follower_left/joint_state", state_qos);
 
+  // Select active pair(s): --arms right|left|both
+  if (opts_.arms == "right")      pairs_ = {&right_};
+  else if (opts_.arms == "left")  pairs_ = {&left_};
+  else                            pairs_ = {&right_, &left_};
+  RCLCPP_INFO(get_logger(), "active arms: %s (%zu pair)",
+              opts_.arms.c_str(), pairs_.size());
+
   // Safe startup: FREEDRIVE (gravity only). Operator verifies, then explicitly
   // commands HOMING/PAUSED/ACTIVE. (No auto-home: a stiff pull-to-home on launch
   // can slam the arm if it starts far from home.)
@@ -85,7 +92,7 @@ bool TeleopNode::connect() {
   right_.grav = &grav_right_;
   left_.grav  = &grav_left_;
 
-  for (Pair* p : {&right_, &left_}) {
+  for (Pair* p : pairs_) {
     for (OaxArm* a : {p->leader.get(), p->follower.get()}) {
       if (!a->init())   { RCLCPP_ERROR(get_logger(), "init failed %s", a->iface().c_str()); return false; }
       if (!a->enable()) { RCLCPP_ERROR(get_logger(), "enable failed %s", a->iface().c_str()); return false; }
@@ -103,7 +110,7 @@ void TeleopNode::run() {
 void TeleopNode::stop() {
   running_ = false;
   if (control_thread_.joinable()) control_thread_.join();
-  for (Pair* p : {&right_, &left_}) {
+  for (Pair* p : pairs_) {
     if (p->leader)   p->leader->disable();
     if (p->follower) p->follower->disable();
   }
@@ -222,7 +229,7 @@ void TeleopNode::control_loop() {
     jitter.tick(now_monotonic());
     const double now_sec = this->now().seconds();
 
-    for (Pair* p : {&right_, &left_}) {
+    for (Pair* p : pairs_) {
       p->leader->read(p->lq, p->lqd, p->ltau);
       p->follower->read(p->fq, p->fqd, p->ftau);
     }
@@ -236,13 +243,13 @@ void TeleopNode::control_loop() {
     if (mode != prev_mode) {
       RCLCPP_INFO(get_logger(), "mode %d -> %d", prev_mode, mode);
       if (mode == MODE_HOMING)
-        for (Pair* p : {&right_, &left_}) { p->l_home_start = p->lq; p->f_home_start = p->fq; }
+        for (Pair* p : pairs_) { p->l_home_start = p->lq; p->f_home_start = p->fq; }
       else if (mode == MODE_PAUSED)   // capture current pose -> hold in place (no slam)
-        for (Pair* p : {&right_, &left_}) { p->l_hold = p->lq; p->f_hold = p->fq; }
+        for (Pair* p : pairs_) { p->l_hold = p->lq; p->f_hold = p->fq; }
     }
 
     double worst_err = 0.0;
-    for (Pair* p : {&right_, &left_}) {
+    for (Pair* p : pairs_) {
       MitCmd lc, fc;
       compute_pair(*p, mode, now_sec, h_t_start, h_duration, lc, fc);
       p->leader->write_mit(lc.kp, lc.kd, lc.pos, lc.vel, lc.tau);
@@ -266,20 +273,21 @@ void TeleopNode::control_loop() {
 
     if (++log_counter >= static_cast<int>(1.0 / cfg_.timestep)) {
       log_counter = 0;
-      // gravity sanity: print computed g(q) for both leader arms (shoulder j2,
-      // elbow j4). ~0 at a near-vertical pose is normal; lift the arm to a
-      // horizontal pose to see it grow. ~0 everywhere -> model/load problem.
-      Vec7 gL{};
-      const bool gon = (left_.grav && left_.grav->ok());
-      if (left_.grav) left_.grav->gravity(left_.lq, gL);
-      const int rc = left_.grav ? left_.grav->last_rc() : -1;
-      RCLCPP_INFO(get_logger(),
-        "[DIAG] mode=%d grav=%s rc=%d | L q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
-        "g=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] | %s",
-        mode, gon ? "ON" : "OFF", rc,
-        left_.lq[0], left_.lq[1], left_.lq[2], left_.lq[3], left_.lq[4], left_.lq[5], left_.lq[6],
-        gL[0], gL[1], gL[2], gL[3], gL[4], gL[5], gL[6],
-        jitter.log_line("").c_str());
+      // gravity sanity: print leader q and computed g(q) for each ACTIVE pair.
+      // ~0 at a near-vertical pose is normal; horizontal poses load j1/j2/j4.
+      for (Pair* p : pairs_) {
+        Vec7 g{};
+        const bool gon = (p->grav && p->grav->ok());
+        if (p->grav) p->grav->gravity(p->lq, g);
+        const int rc = p->grav ? p->grav->last_rc() : -1;
+        RCLCPP_INFO(get_logger(),
+          "[DIAG] mode=%d %s grav=%s rc=%d | q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
+          "g=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f]",
+          mode, p->name.c_str(), gon ? "ON" : "OFF", rc,
+          p->lq[0], p->lq[1], p->lq[2], p->lq[3], p->lq[4], p->lq[5], p->lq[6],
+          g[0], g[1], g[2], g[3], g[4], g[5], g[6]);
+      }
+      RCLCPP_INFO(get_logger(), "[DIAG] %s", jitter.log_line("").c_str());
     }
 
     prev_mode = mode;

@@ -17,6 +17,9 @@ def generate_launch_description():
 
     config_arg = DeclareLaunchArgument('config', default_value=default_config)
     urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)
+    arms_arg = DeclareLaunchArgument(
+        'arms', default_value='both',
+        description='which pair(s) to drive: right | left | both')
     rt_arg = DeclareLaunchArgument('rt', default_value='false')
     rt_prio_arg = DeclareLaunchArgument('rt_priority', default_value='80')
     rt_cpu_arg = DeclareLaunchArgument('rt_cpu', default_value='-1')
@@ -29,10 +32,12 @@ def generate_launch_description():
         arguments=[
             '--config', LaunchConfiguration('config'),
             '--urdf', LaunchConfiguration('urdf'),
+            '--arms', LaunchConfiguration('arms'),
             '--rt-mode', LaunchConfiguration('rt'),
             '--rt-priority', LaunchConfiguration('rt_priority'),
             '--rt-cpu', LaunchConfiguration('rt_cpu'),
         ],
     )
 
-    return LaunchDescription([config_arg, urdf_arg, rt_arg, rt_prio_arg, rt_cpu_arg, node])
+    return LaunchDescription([config_arg, urdf_arg, arms_arg, rt_arg,
+                              rt_prio_arg, rt_cpu_arg, node])

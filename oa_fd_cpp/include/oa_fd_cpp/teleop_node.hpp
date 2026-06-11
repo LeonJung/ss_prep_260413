@@ -14,6 +14,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
@@ -50,6 +51,7 @@ public:
   struct Options {
     std::string config_path;
     std::string urdf_override;   // --urdf : overrides gravity.urdf (launch passes bundled path)
+    std::string arms = "both";   // --arms right|left|both : which pair(s) to drive
     bool use_rt = false;
     int  rt_priority = 80;
     int  rt_cpu = -1;
@@ -80,6 +82,7 @@ private:
   GravityModel grav_right_, grav_left_;
 
   Pair right_, left_;
+  std::vector<Pair*> pairs_;   // active pairs per Options::arms (right/left/both)
 
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr mode_pub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr mode_sub_;
