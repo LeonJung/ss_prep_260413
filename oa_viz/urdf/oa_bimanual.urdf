@@ -22,13 +22,7 @@
         <mesh filename="package://oa_viz/meshes/body/v10/visual/body_link0.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_body_link0_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <mesh filename="package://oa_viz/meshes/body/v10/collision/body_link0_symp.stl" scale="1.0 1.0 1.0"/>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
       <mass value="13.89"/>
@@ -48,13 +42,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link0.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link0_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link0_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="0.000319 -0.00067 0.029184"/>
       <mass value="1.77268"/>
@@ -69,13 +57,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link1.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link1_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link1_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="0.004452 2.5e-05 0.073323"/>
       <mass value="1.688763"/>
@@ -97,13 +79,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link2.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link2_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link2_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.003787 -0.000221 0.04901"/>
       <mass value="0.396704"/>
@@ -125,13 +101,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link3.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link3_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link3_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.000828 -0.000236 0.083336"/>
       <mass value="2.492784"/>
@@ -153,13 +123,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link4.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link4_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link4_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.002591 -0.030135 0.07147"/>
       <mass value="0.779755"/>
@@ -187,13 +151,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link5.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link5_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link5_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.002256 -0.000305 0.0533"/>
       <mass value="0.687255"/>
@@ -215,13 +173,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link6.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link6_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link6_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.03564 0.005114 -0.003582"/>
       <mass value="0.384836"/>
@@ -243,13 +195,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link7.dae" scale="1.0 -1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_left_link7_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link7_symp.stl" scale="1.0 -1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-3e-06 -0.002128 0.091961"/>
       <mass value="0.624972"/>
@@ -289,13 +235,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link0.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link0_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link0_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="0.000319 0.00067 0.029184"/>
       <mass value="1.77268"/>
@@ -310,13 +250,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link1.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link1_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link1_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="0.004452 -2.5e-05 0.073323"/>
       <mass value="1.688763"/>
@@ -338,13 +272,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link2.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link2_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link2_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.003787 0.000221 0.04901"/>
       <mass value="0.396704"/>
@@ -366,13 +294,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link3.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link3_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link3_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.000828 0.000236 0.083336"/>
       <mass value="2.492784"/>
@@ -394,13 +316,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link4.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link4_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link4_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.002591 -0.030135 0.07147"/>
       <mass value="0.779755"/>
@@ -428,13 +344,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link5.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link5_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link5_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.002256 0.000305 0.0533"/>
       <mass value="0.687255"/>
@@ -456,13 +366,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link6.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link6_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link6_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.03564 -0.005114 -0.003582"/>
       <mass value="0.384836"/>
@@ -484,13 +388,7 @@
         <mesh filename="package://oa_viz/meshes/arm/v10/visual/link7.dae" scale="1.0 1.0 1.0"/>
       </geometry>
     </visual>
-    <collision name="openarmx_right_link7_collision">
-      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
-      <geometry>
-        <!-- <mesh filename="package://oa_viz/meshes/arm/${arm_type}/collision/${name}.stl" scale="0.001 0.001 0.001" /> -->
-        <mesh filename="package://oa_viz/meshes/arm/v10/collision/link7_symp.stl" scale="1.0 1.0 1.0"/>
-      </geometry>
-    </collision>
+    
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-3e-06 0.002128 0.091961"/>
       <mass value="0.624972"/>
