@@ -18,16 +18,38 @@ import numpy as np
 KS = [4, 8, 15, 25, 40, 60, 90]
 
 
+def _nnls2_plus_offset(X, f):
+    """LSQ with Fc>=0, Fv>=0 (Fo free): tiny active-set over the 2 bounds."""
+    best = None
+    for fix_fc in (False, True):
+        for fix_fv in (False, True):
+            cols = [2]  # Fo always free
+            if not fix_fc:
+                cols.insert(0, 0)
+            if not fix_fv:
+                cols.insert(-1, 1)
+            coef = np.zeros(3)
+            sol, *_ = np.linalg.lstsq(X[:, cols], f, rcond=None)
+            coef[cols] = sol
+            if coef[0] < 0 or coef[1] < 0:
+                continue
+            r = np.sqrt(np.mean((X @ coef - f) ** 2))
+            if best is None or r < best[0]:
+                best = (r, coef)
+    return best
+
+
 def fit_joint(v, f):
-    # measured speeds usually saturate tanh, making k weakly identifiable;
-    # prefer the SMALLEST k within 2% of the best rms (a too-large k makes the
-    # FF razor-sharp around v=0 -> chatter).
+    # Physical constraints: Fc >= 0, Fv >= 0 (a negative viscous term would
+    # INJECT energy -> instability; negatives in an unconstrained fit are
+    # Stribeck / gravity-model-error leakage, not real friction).
+    # k weakly identifiable at sweep speeds -> smallest k within 2% of best.
     results = []
     for k in KS:
         X = np.column_stack([np.tanh(k * v), v, np.ones_like(v)])
-        coef, *_ = np.linalg.lstsq(X, f, rcond=None)
-        r = np.sqrt(np.mean((X @ coef - f) ** 2))
-        results.append((r, k, coef))
+        out = _nnls2_plus_offset(X, f)
+        if out is not None:
+            results.append((out[0], k, out[1]))
     rbest = min(r for r, _, _ in results)
     r, k, (Fc, Fv, Fo) = next(t for t in results if t[0] <= rbest * 1.02)
     return dict(Fc=Fc, k=k, Fv=Fv, Fo=Fo, rms=r)
@@ -63,6 +85,15 @@ def main():
         fits[j] = fit
         print(f'{j:>5} {len(v):>6} {fit["Fc"]:7.3f} {fit["k"]:>4} '
               f'{fit["Fv"]:7.3f} {fit["Fo"]:7.3f} {fit["rms"]:6.3f}')
+
+    # Fo soaks up gravity-model bias, not just friction asymmetry — cap it
+    # so it cannot fight the gravity calibration. Anything bigger is reported.
+    FO_CAP = 0.25
+    for j in range(1, 8):
+        if abs(fits[j]['Fo']) > FO_CAP:
+            print(f'  ! j{j}: Fo={fits[j]["Fo"]:.3f} capped to ±{FO_CAP} '
+                  f'(likely gravity-model bias, not friction)')
+            fits[j]['Fo'] = float(np.clip(fits[j]['Fo'], -FO_CAP, FO_CAP))
 
     s = args.safety
     print(f'\n# paste into oa_fd.yaml (safety x{s} applied to Fc/Fv/Fo):')
