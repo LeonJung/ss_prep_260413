@@ -13,7 +13,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     pkg_share = get_package_share_directory('oa_fd_cpp')
     default_config = f'{pkg_share}/config/oa_fd.yaml'
-    default_urdf = f'{pkg_share}/urdf/openarmx_arm.urdf'   # bundled single-arm URDF
+    default_urdf = f'{pkg_share}/urdf/openarmx_arm_v2mass.urdf'  # enactic-v2 masses (urdf:=...openarmx_arm.urdf for the old V10 masses)
 
     config_arg = DeclareLaunchArgument('config', default_value=default_config)
     urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)

@@ -47,11 +47,12 @@ gravity:
   # v10.urdf.xacro, hand/ee/ros2_control stripped, check_urdf-clean, 7 revolute).
   # Override with: ros2 launch ... urdf:=/abs/path.urdf
   urdf: ""
-  scale: 0.95         # global trim (<1.0 reduces gravity FF)
-  # per-joint trim, multiplied with `scale` (hand-tuned on HW 2026-06-11).
-  # NOTE: j1 needing 0.70 means the model overestimates j1 gravity ~30%+ —
-  # that's a mass/COM model error, not a gain issue; see calibration TODO.
-  scale_joints: [0.70, 1.0, 1.0, 0.8, 1.0, 1.0, 1.0]
+  # Trims RESET for the v2mass URDF (enactic v2.0 masses replace V10's —
+  # the old hand trims [scale 0.95, j1 0.70, j4 0.8] belonged to the V10-mass
+  # model and matched the V10->v2 mass ratios almost exactly).
+  # Re-tune from here in FREEDRIVE if needed.
+  scale: 1.0
+  scale_joints: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   # Single-arm URDF uses the same link names for both sides.
   root_link_right: "openarmx_link0"
   tip_link_right:  "openarmx_link7"
