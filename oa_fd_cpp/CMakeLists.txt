@@ -41,7 +41,11 @@ target_link_libraries(oa_fd_node
   pthread rt
 )
 
-install(TARGETS oa_fd_node DESTINATION lib/${PROJECT_NAME})
+# ---- oa_diag: per-motor CAN connectivity/health check (no ROS, read-only) ----
+add_executable(oa_diag src/diag_main.cpp)
+target_link_libraries(oa_diag openarmx_can::openarmx_can)
+
+install(TARGETS oa_fd_node oa_diag DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch urdf DESTINATION share/${PROJECT_NAME}/)
 
 ament_package()
