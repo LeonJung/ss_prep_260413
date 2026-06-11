@@ -104,6 +104,11 @@ def main():
                          'to small-mass/far-COM and hits the clamps); masses '
                          'are pinned to the URDF prior (enactic values, '
                          'independently corroborated) and only COMs are fit.')
+    ap.add_argument('--fit-mass-links', default='',
+                    help='comma list of links whose MASS is also fit even with '
+                         'masses otherwise pinned (e.g. 7 — the hand/gripper '
+                         'mass has no reliable prior and its error shows up as '
+                         'q1<->q4 cross-coupling).')
     ap.add_argument('--drop-joints', default='',
                     help='comma list of joint indices whose MEASUREMENT '
                          'equations are excluded (e.g. 6,7 — wrist torque '
@@ -114,6 +119,8 @@ def main():
     fit_idx = {int(x) for x in args.fit_links.split(',')}
     drop_j = ({int(x) - 1 for x in args.drop_joints.split(',')}
               if args.drop_joints else set())
+    fit_mass_idx = ({int(x) for x in args.fit_mass_links.split(',')}
+                    if args.fit_mass_links else set())
 
     # joint limits (left arm; right mirrors j1/j2). Equations for a joint
     # measured NEAR ITS LIMIT are dropped: at a hard stop the motor torque
@@ -180,9 +187,9 @@ def main():
     # Links NOT in --fit-links are pinned hard to the prior.
     w = np.tile([1.0, 0.3, 0.3, 0.3], len(LINKS)) * args.lam * len(rows)
     for li in range(len(LINKS)):
-        if (li + 1) not in fit_idx:
+        if (li + 1) not in fit_idx and (li + 1) not in fit_mass_idx:
             w[4 * li:4 * li + 4] = 1e6          # pin to prior
-        elif not args.fit_mass:
+        elif not args.fit_mass and (li + 1) not in fit_mass_idx:
             w[4 * li] = 1e6                     # pin mass; fit COM only
     W = np.diag(w)
     lhs = A.T @ A + W
