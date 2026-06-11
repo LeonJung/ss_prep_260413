@@ -73,6 +73,7 @@ const double LIM_HI_L[DOF] = {0.91, 0.13, 1.57, 1.8, 1.5, 0.75, 1.4};
 
 int main(int argc, char** argv) {
   std::string can = "can1", urdf, out = "/tmp/gravity_cali.csv", side = "left";
+  std::string poses_file;
   double gz = 9.81, dwell = 2.0;
   bool fd = false;
 
@@ -83,6 +84,7 @@ int main(int argc, char** argv) {
     else if (a == "--urdf") urdf = next();
     else if (a == "--out") out = next();
     else if (a == "--side") side = next();
+    else if (a == "--poses") poses_file = next();   // gen_cali_poses.py output
     else if (a == "--gz") gz = std::stod(next());
     else if (a == "--dwell") dwell = std::stod(next());
     else if (a == "--fd") fd = true;
@@ -104,8 +106,26 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "gravity model load failed (continuing: FF=0)\n");
   }
 
-  // poses (mirror j1/j2 for the right side, matching mirrored joint ranges)
+  // poses: built-in list, or a gen_cali_poses.py file (one pose per line,
+  // 7 comma-separated radians, '#' comments). Always LEFT-arm conventions.
   std::vector<Vec7> poses = POSES_LEFT;
+  if (!poses_file.empty()) {
+    poses.clear();
+    std::ifstream pf(poses_file);
+    if (!pf.good()) {
+      std::fprintf(stderr, "cannot read --poses %s\n", poses_file.c_str());
+      return 1;
+    }
+    std::string line;
+    while (std::getline(pf, line)) {
+      if (line.empty() || line[0] == '#') continue;
+      Vec7 p{};
+      if (std::sscanf(line.c_str(), "%lf,%lf,%lf,%lf,%lf,%lf,%lf",
+                      &p[0], &p[1], &p[2], &p[3], &p[4], &p[5], &p[6]) == 7)
+        poses.push_back(p);
+    }
+    std::printf("loaded %zu poses from %s\n", poses.size(), poses_file.c_str());
+  }
   double lim_lo[DOF], lim_hi[DOF];
   for (int i = 0; i < DOF; ++i) { lim_lo[i] = LIM_LO_L[i]; lim_hi[i] = LIM_HI_L[i]; }
   if (side == "right") {
@@ -116,8 +136,10 @@ int main(int argc, char** argv) {
     }
   }
 
-  const Vec7 KP = {60, 60, 60, 60, 10, 10, 8};
-  const Vec7 KD = {2, 2, 2, 2, 0.2, 0.2, 0.2};
+  // Stiffer than v1: Kp=60 stick-slipped against joint friction (arm lagged
+  // the trajectory, error built up, then jerked forward in bursts).
+  const Vec7 KP = {110, 110, 100, 100, 16, 16, 12};
+  const Vec7 KD = {3.5, 3.5, 3.0, 3.0, 0.4, 0.4, 0.3};
   const Vec7 TAU_FF_MAX = {40, 40, 25, 25, 8, 8, 8};
 
   OaxArm arm(can, fd, 500);
