@@ -52,12 +52,16 @@ class JointStateBridge(Node):
     def _tick(self):
         if not any(self.seen.values()):
             return                      # nothing yet — publish only real states
+        names, pos, vel = [], [], []
+        for s in SIDES:
+            names += [f'openarmx_{s}_joint{k}' for k in range(1, NJ + 1)]
+            pos += list(self.pos[s])
+            vel += list(self.vel[s])
         out = JointState()
         out.header.stamp = self.get_clock().now().to_msg()
-        for s in SIDES:
-            out.name += [f'openarmx_{s}_joint{k}' for k in range(1, NJ + 1)]
-            out.position += list(self.pos[s])
-            out.velocity += list(self.vel[s])
+        out.name = names
+        out.position = pos      # assign whole lists (rclpy fields are array('d'),
+        out.velocity = vel      # += with a python list raises TypeError)
         self.pub.publish(out)
 
 
