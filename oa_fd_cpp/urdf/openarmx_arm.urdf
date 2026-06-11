@@ -55,7 +55,7 @@
     <origin rpy="-0.0 -0.0 -0.0" xyz="0.0 0.0 0.058"/>
     <parent link="openarmx_link0"/>
     <child link="openarmx_link1"/>
-    <axis xyz="0 0 1"/>
+    <axis xyz="0 -1 0"/>
     <limit effort="120" lower="-1.25" upper="3.0" velocity="10.47"/>
   </joint>
   <link name="openarmx_link2">
