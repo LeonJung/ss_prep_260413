@@ -45,7 +45,14 @@ target_link_libraries(oa_fd_node
 add_executable(oa_diag src/diag_main.cpp)
 target_link_libraries(oa_diag openarmx_can::openarmx_can)
 
-install(TARGETS oa_fd_node oa_diag DESTINATION lib/${PROJECT_NAME})
+# ---- oa_gravity_cali: static gravity identification data collector ----
+add_executable(oa_gravity_cali
+  src/gravity_cali_main.cpp src/oax_driver.cpp src/gravity.cpp src/config.cpp)
+ament_target_dependencies(oa_gravity_cali orocos_kdl_vendor kdl_parser urdf)
+target_link_libraries(oa_gravity_cali openarmx_can::openarmx_can yaml-cpp pthread)
+
+install(TARGETS oa_fd_node oa_diag oa_gravity_cali DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS script/fit_gravity.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch urdf DESTINATION share/${PROJECT_NAME}/)
 
 ament_package()
