@@ -98,6 +98,12 @@ def main():
                          'excites! (default poses never move j5-j7 -> fitting '
                          'links 5-7 lets them drift to garbage = wrist runaway)')
     ap.add_argument('--side', default='left', choices=['left', 'right'])
+    ap.add_argument('--fit-mass', action='store_true',
+                    help='also fit link masses. Default OFF: mass and COM are '
+                         'poorly separable from static torques (the fit slides '
+                         'to small-mass/far-COM and hits the clamps); masses '
+                         'are pinned to the URDF prior (enactic values, '
+                         'independently corroborated) and only COMs are fit.')
     args = ap.parse_args()
     fit_idx = {int(x) for x in args.fit_links.split(',')}
 
@@ -126,7 +132,7 @@ def main():
     # ---- build linear system: tau_k = SIGN * sum_i a_k.[(p_i + R_i c_i - p_k) x m_i g]
     #      params per link i: m_i (1) + first moment h_i = m_i c_i (3)
     nP = 4 * len(LINKS)
-    A, b = [], []
+    A, b, meta = [], [], []
     dropped = 0
     for q, tau in zip(qs, taus):
         jpos, jax, linkT = fk(joints, q)
@@ -135,6 +141,7 @@ def main():
             if q[k] < lo + MARGIN or q[k] > hi - MARGIN:
                 dropped += 1
                 continue          # joint resting on its hard stop -> torque ≠ gravity
+            meta.append((q, k))
             row = np.zeros(nP)
             for li, ln in enumerate(LINKS):
                 T = linkT[ln]
@@ -165,6 +172,8 @@ def main():
     for li in range(len(LINKS)):
         if (li + 1) not in fit_idx:
             w[4 * li:4 * li + 4] = 1e6          # pin to prior
+        elif not args.fit_mass:
+            w[4 * li] = 1e6                     # pin mass; fit COM only
     W = np.diag(w)
     lhs = A.T @ A + W
     rhs = A.T @ b + W @ theta0
@@ -183,6 +192,13 @@ def main():
     res1 = np.abs(A @ theta - b)
     print(f'residual |tau| Nm:  before mean={res0.mean():.3f} max={res0.max():.3f}'
           f'  ->  after mean={res1.mean():.3f} max={res1.max():.3f}')
+    # worst residuals: which pose/joint the model cannot explain
+    order = np.argsort(-res1)[:8]
+    print('worst residuals (after):')
+    for o in order:
+        q, jk = meta[o]
+        print(f'  j{jk+1} {res1[o]:5.2f} Nm  at q=[' +
+              ' '.join(f'{x:5.2f}' for x in q) + ']')
 
     # ---- write corrected URDF
     for li, ln in enumerate(LINKS):
