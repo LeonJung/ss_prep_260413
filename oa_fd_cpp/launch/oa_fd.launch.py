@@ -20,6 +20,10 @@ def generate_launch_description():
     arms_arg = DeclareLaunchArgument(
         'arms', default_value='both',
         description='which pair(s) to drive: right | left | both')
+    role_arg = DeclareLaunchArgument(
+        'role', default_value='both',
+        description='which side of each pair: leader | follower | both '
+                    '(single role disables ACTIVE coupling -> gravity-only)')
     rt_arg = DeclareLaunchArgument('rt', default_value='false')
     rt_prio_arg = DeclareLaunchArgument('rt_priority', default_value='80')
     rt_cpu_arg = DeclareLaunchArgument('rt_cpu', default_value='-1')
@@ -33,11 +37,12 @@ def generate_launch_description():
             '--config', LaunchConfiguration('config'),
             '--urdf', LaunchConfiguration('urdf'),
             '--arms', LaunchConfiguration('arms'),
+            '--role', LaunchConfiguration('role'),
             '--rt-mode', LaunchConfiguration('rt'),
             '--rt-priority', LaunchConfiguration('rt_priority'),
             '--rt-cpu', LaunchConfiguration('rt_cpu'),
         ],
     )
 
-    return LaunchDescription([config_arg, urdf_arg, arms_arg, rt_arg,
+    return LaunchDescription([config_arg, urdf_arg, arms_arg, role_arg, rt_arg,
                               rt_prio_arg, rt_cpu_arg, node])

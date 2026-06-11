@@ -67,8 +67,14 @@ TeleopNode::TeleopNode(const Options& opts)
   if (opts_.arms == "right")      pairs_ = {&right_};
   else if (opts_.arms == "left")  pairs_ = {&left_};
   else                            pairs_ = {&right_, &left_};
-  RCLCPP_INFO(get_logger(), "active arms: %s (%zu pair)",
-              opts_.arms.c_str(), pairs_.size());
+
+  // Select role(s) within each pair: --role leader|follower|both.
+  // With a single role, ACTIVE coupling is disabled for the driven arm
+  // (its peer state is invalid) — it behaves like FREEDRIVE instead.
+  drive_leader_   = (opts_.role != "follower");
+  drive_follower_ = (opts_.role != "leader");
+  RCLCPP_INFO(get_logger(), "active arms: %s (%zu pair), role: %s",
+              opts_.arms.c_str(), pairs_.size(), opts_.role.c_str());
 
   // Safe startup: FREEDRIVE (gravity only). Operator verifies, then explicitly
   // commands HOMING/PAUSED/ACTIVE. (No auto-home: a stiff pull-to-home on launch
@@ -93,7 +99,10 @@ bool TeleopNode::connect() {
   left_.grav  = &grav_left_;
 
   for (Pair* p : pairs_) {
-    for (OaxArm* a : {p->leader.get(), p->follower.get()}) {
+    std::vector<OaxArm*> arms;
+    if (drive_leader_)   arms.push_back(p->leader.get());
+    if (drive_follower_) arms.push_back(p->follower.get());
+    for (OaxArm* a : arms) {
       if (!a->init())   { RCLCPP_ERROR(get_logger(), "init failed %s", a->iface().c_str()); return false; }
       if (!a->enable()) { RCLCPP_ERROR(get_logger(), "enable failed %s", a->iface().c_str()); return false; }
       RCLCPP_INFO(get_logger(), "arm up: %s", a->iface().c_str());
@@ -111,8 +120,8 @@ void TeleopNode::stop() {
   running_ = false;
   if (control_thread_.joinable()) control_thread_.join();
   for (Pair* p : pairs_) {
-    if (p->leader)   p->leader->disable();
-    if (p->follower) p->follower->disable();
+    if (drive_leader_ && p->leader)     p->leader->disable();
+    if (drive_follower_ && p->follower) p->follower->disable();
   }
 }
 
@@ -164,10 +173,18 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
 
     switch (mode) {
       case MODE_ACTIVE:
-        lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i];
-        lc.pos[i] = f_in_l[i];  lc.vel[i] = fd_in_l[i];
-        fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i];
-        fc.pos[i] = l_in_f[i];  fc.vel[i] = ld_in_f[i];
+        // Cross-coupling needs BOTH sides' live state. With --role leader or
+        // follower the peer state is stale -> coupling would slam; fall back
+        // to gravity-only (freedrive-like) for the driven arm.
+        if (drive_leader_ && drive_follower_) {
+          lc.kp[i] = cfg_.Kp[i]; lc.kd[i] = cfg_.Kd[i];
+          lc.pos[i] = f_in_l[i];  lc.vel[i] = fd_in_l[i];
+          fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i];
+          fc.pos[i] = l_in_f[i];  fc.vel[i] = ld_in_f[i];
+        } else {
+          lc.kp[i] = 0.0; lc.kd[i] = 0.0; lc.pos[i] = 0.0; lc.vel[i] = 0.0;
+          fc.kp[i] = 0.0; fc.kd[i] = 0.0; fc.pos[i] = 0.0; fc.vel[i] = 0.0;
+        }
         break;
       case MODE_PAUSED:
         // hold the pose captured at PAUSED entry (NOT a fixed home) -> no slam
@@ -230,8 +247,8 @@ void TeleopNode::control_loop() {
     const double now_sec = this->now().seconds();
 
     for (Pair* p : pairs_) {
-      p->leader->read(p->lq, p->lqd, p->ltau);
-      p->follower->read(p->fq, p->fqd, p->ftau);
+      if (drive_leader_)   p->leader->read(p->lq, p->lqd, p->ltau);
+      if (drive_follower_) p->follower->read(p->fq, p->fqd, p->ftau);
     }
 
     int mode; double h_t_start, h_duration;
@@ -252,12 +269,14 @@ void TeleopNode::control_loop() {
     for (Pair* p : pairs_) {
       MitCmd lc, fc;
       compute_pair(*p, mode, now_sec, h_t_start, h_duration, lc, fc);
-      p->leader->write_mit(lc.kp, lc.kd, lc.pos, lc.vel, lc.tau);
-      p->follower->write_mit(fc.kp, fc.kd, fc.pos, fc.vel, fc.tau);
+      if (drive_leader_)   p->leader->write_mit(lc.kp, lc.kd, lc.pos, lc.vel, lc.tau);
+      if (drive_follower_) p->follower->write_mit(fc.kp, fc.kd, fc.pos, fc.vel, fc.tau);
       if (mode == MODE_HOMING)
         for (int i = 0; i < DOF; ++i) {
-          worst_err = std::max(worst_err, std::abs(p->lq[i] - cfg_.home[i]));
-          worst_err = std::max(worst_err, std::abs(p->fq[i] - cfg_.home[i]));
+          if (drive_leader_)
+            worst_err = std::max(worst_err, std::abs(p->lq[i] - cfg_.home[i]));
+          if (drive_follower_)
+            worst_err = std::max(worst_err, std::abs(p->fq[i] - cfg_.home[i]));
         }
       publish_pair(*p);
     }
@@ -276,15 +295,18 @@ void TeleopNode::control_loop() {
       // gravity sanity: print leader q and computed g(q) for each ACTIVE pair.
       // ~0 at a near-vertical pose is normal; horizontal poses load j1/j2/j4.
       for (Pair* p : pairs_) {
+        // show the driven side (leader if active, else follower)
+        const Vec7& q = drive_leader_ ? p->lq : p->fq;
+        const char* side = drive_leader_ ? "leader" : "follower";
         Vec7 g{};
         const bool gon = (p->grav && p->grav->ok());
-        if (p->grav) p->grav->gravity(p->lq, g);
+        if (p->grav) p->grav->gravity(q, g);
         const int rc = p->grav ? p->grav->last_rc() : -1;
         RCLCPP_INFO(get_logger(),
-          "[DIAG] mode=%d %s grav=%s rc=%d | q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
+          "[DIAG] mode=%d %s/%s grav=%s rc=%d | q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
           "g=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f]",
-          mode, p->name.c_str(), gon ? "ON" : "OFF", rc,
-          p->lq[0], p->lq[1], p->lq[2], p->lq[3], p->lq[4], p->lq[5], p->lq[6],
+          mode, p->name.c_str(), side, gon ? "ON" : "OFF", rc,
+          q[0], q[1], q[2], q[3], q[4], q[5], q[6],
           g[0], g[1], g[2], g[3], g[4], g[5], g[6]);
       }
       RCLCPP_INFO(get_logger(), "[DIAG] %s", jitter.log_line("").c_str());

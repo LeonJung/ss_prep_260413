@@ -52,6 +52,7 @@ public:
     std::string config_path;
     std::string urdf_override;   // --urdf : overrides gravity.urdf (launch passes bundled path)
     std::string arms = "both";   // --arms right|left|both : which pair(s) to drive
+    std::string role = "both";   // --role leader|follower|both : which side of each pair
     bool use_rt = false;
     int  rt_priority = 80;
     int  rt_cpu = -1;
@@ -83,6 +84,8 @@ private:
 
   Pair right_, left_;
   std::vector<Pair*> pairs_;   // active pairs per Options::arms (right/left/both)
+  bool drive_leader_   = true; // per Options::role
+  bool drive_follower_ = true;
 
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr mode_pub_;
   rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr mode_sub_;
