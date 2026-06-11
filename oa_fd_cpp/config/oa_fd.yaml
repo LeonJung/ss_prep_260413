@@ -48,10 +48,10 @@ gravity:
   # Override with: ros2 launch ... urdf:=/abs/path.urdf
   urdf: ""
   scale: 0.95         # global trim (<1.0 reduces gravity FF)
-  # per-joint trim, multiplied with `scale`. j2 is perfect at global 0.95;
-  # j1 over-compensates -> extra 0.90 on j1 only (effective j1 = 0.95*0.90).
-  # Raise/lower a joint's entry until it floats in FREEDRIVE.
-  scale_joints: [0.90, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  # per-joint trim, multiplied with `scale` (hand-tuned on HW 2026-06-11).
+  # NOTE: j1 needing 0.70 means the model overestimates j1 gravity ~30%+ —
+  # that's a mass/COM model error, not a gain issue; see calibration TODO.
+  scale_joints: [0.70, 1.0, 1.0, 0.8, 1.0, 1.0, 1.0]
   # Single-arm URDF uses the same link names for both sides.
   root_link_right: "openarmx_link0"
   tip_link_right:  "openarmx_link7"
