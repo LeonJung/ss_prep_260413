@@ -30,18 +30,15 @@ Kp: [120.0, 120.0, 120.0, 120.0, 18.0, 20.0, 16.0]
 Kd: [2.0,   2.0,   2.0,   2.0,   0.2,  0.2,  0.2]
 
 # tanh friction: f = Fc*tanh(k*v) + Fv*v + Fo
-# Identified on HW (left leader, 2026-06-11, oa_friction_cali + fit, x0.75
-# safety) then SANITIZED:
-#  - negative Fc/Fv clamped to 0 (unphysical; negative Fv = energy injection.
-#    Likely Stribeck + gravity-model error leakage in the fit.)
-#  - large Fo (j1 +0.71, j2 -1.21) dropped: constant bias mostly absorbed the
-#    v2com gravity error — the gravity calibration owns that correction.
-#    (Raw fit kept in git history / this comment for reference.)
+# Identified on HW (left leader, 2026-06-11): oa_friction_cali +
+# constrained fit_friction (Fc,Fv>=0 enforced, Fo capped, x0.75 safety).
+# Fo at the cap on j1/j2/j4 = residual gravity-model bias; the gravity
+# calibration owns that correction.
 friction:
-  Fc: [0.744, 0.641, 0.230, 0.0, 0.152, 0.156, 0.302]
+  Fc: [0.659, 0.577, 0.230, 0.0, 0.152, 0.156, 0.085]
   k:  [8.0, 8.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-  Fv: [0.0, 0.0, 0.086, 0.896, 0.005, 0.023, 0.0]
-  Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fv: [0.0, 0.0, 0.086, 0.878, 0.005, 0.023, 0.0]
+  Fo: [0.188, -0.188, 0.031, -0.188, 0.006, -0.057, -0.051]
 
 mirror:
   right: [1, 1, 1, 1, 1, 1, 1]
