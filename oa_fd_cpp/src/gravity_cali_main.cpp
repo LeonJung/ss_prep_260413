@@ -73,7 +73,7 @@ const double LIM_HI_L[DOF] = {0.91, 0.13, 1.57, 1.8, 1.5, 0.75, 1.4};
 
 int main(int argc, char** argv) {
   std::string can = "can1", urdf, out = "/tmp/gravity_cali.csv", side = "left";
-  std::string poses_file;
+  std::string poses_file, config_path;
   double gz = 9.81, dwell = 2.0;
   bool fd = false;
 
@@ -87,11 +87,25 @@ int main(int argc, char** argv) {
     else if (a == "--poses") poses_file = next();   // gen_cali_poses.py output
     else if (a == "--gz") gz = std::stod(next());
     else if (a == "--dwell") dwell = std::stod(next());
+    else if (a == "--config") config_path = next();   // oa_fd.yaml (friction FF)
     else if (a == "--fd") fd = true;
   }
   if (urdf.empty()) {
     std::fprintf(stderr, "need --urdf <model.urdf>\n");
     return 1;
+  }
+
+  // friction FF during MOVES (the identified yaml values): cancels joint
+  // friction so the impedance doesn't have to drag through it (stick-slip,
+  // "struggling" moves). Excluded during the static measurement windows —
+  // velocity noise through tanh would contaminate them (and v=0 anyway).
+  OaFdConfig fcfg;   // zeros if no --config
+  if (!config_path.empty()) {
+    if (load_config(config_path, fcfg))
+      std::printf("friction FF from %s (Fc1=%.2f ...)\n",
+                  config_path.c_str(), fcfg.fric_Fc[0]);
+    else
+      std::fprintf(stderr, "config load failed; friction FF = 0\n");
   }
 
   // gravity model (used only as feedforward DURING moves; measurement is raw)
@@ -160,12 +174,17 @@ int main(int argc, char** argv) {
   arm.read(q, dq, tau);
   Vec7 from = q;
 
+  bool friction_ff_on = true;   // moves: ON, static measurement windows: OFF
   auto hold_cmd = [&](const Vec7& target) {
     Vec7 g{};
     arm.read(q, dq, tau);
     grav.gravity(q, g);
-    for (int i = 0; i < DOF; ++i)
+    for (int i = 0; i < DOF; ++i) {
+      if (friction_ff_on)
+        g[i] += fcfg.fric_Fc[i] * std::tanh(fcfg.fric_k[i] * dq[i])
+              + fcfg.fric_Fv[i] * dq[i] + fcfg.fric_Fo[i];
       g[i] = std::clamp(g[i], -TAU_FF_MAX[i], TAU_FF_MAX[i]);
+    }
     Vec7 zero{};
     arm.write_mit(KP, KD, target, zero, g);
   };
@@ -184,6 +203,7 @@ int main(int argc, char** argv) {
     }
   };
   auto settle_and_measure = [&](const Vec7& target, Vec7& qa, Vec7& ta) {
+    friction_ff_on = false;   // static window: no FF noise via tanh(v_noise)
     int nsettle = static_cast<int>(dwell / dt);
     for (int s = 0; s < nsettle; ++s) {
       hold_cmd(target);
@@ -197,6 +217,7 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
     for (int i = 0; i < DOF; ++i) { qa[i] /= nmeas; ta[i] /= nmeas; }
+    friction_ff_on = true;
   };
 
   for (size_t pi = 0; pi <= poses.size(); ++pi) {
