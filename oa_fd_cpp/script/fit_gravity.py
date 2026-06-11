@@ -104,8 +104,16 @@ def main():
                          'to small-mass/far-COM and hits the clamps); masses '
                          'are pinned to the URDF prior (enactic values, '
                          'independently corroborated) and only COMs are fit.')
+    ap.add_argument('--drop-joints', default='',
+                    help='comma list of joint indices whose MEASUREMENT '
+                         'equations are excluded (e.g. 6,7 — wrist torque '
+                         'telemetry reads ~8Nm static, physically impossible '
+                         'for <2Nm wrist gravity: telemetry/differential '
+                         'artifact, poisons the fit)')
     args = ap.parse_args()
     fit_idx = {int(x) for x in args.fit_links.split(',')}
+    drop_j = ({int(x) - 1 for x in args.drop_joints.split(',')}
+              if args.drop_joints else set())
 
     # joint limits (left arm; right mirrors j1/j2). Equations for a joint
     # measured NEAR ITS LIMIT are dropped: at a hard stop the motor torque
@@ -137,6 +145,8 @@ def main():
     for q, tau in zip(qs, taus):
         jpos, jax, linkT = fk(joints, q)
         for k in range(DOF):
+            if k in drop_j:
+                continue          # excluded joint telemetry (see --drop-joints)
             lo, hi = LIM[k]
             if q[k] < lo + MARGIN or q[k] > hi - MARGIN:
                 dropped += 1
