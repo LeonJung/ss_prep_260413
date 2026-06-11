@@ -196,10 +196,15 @@ def main():
     rhs = A.T @ b + W @ theta0
     theta = np.linalg.solve(lhs, rhs)
 
-    # physical sanity clamps (protect against unobserved directions drifting)
+    # physical sanity clamps (protect against unobserved directions drifting).
+    # Links explicitly opened with --fit-mass-links get a wide range — their
+    # prior is known-wrong (e.g. leader handle vs V10 hand: much lighter).
     for li, ln in enumerate(LINKS):
         m0 = theta0[4 * li]
-        theta[4 * li] = np.clip(theta[4 * li], 0.3 * m0, 3.0 * m0)
+        if (li + 1) in fit_mass_idx:
+            theta[4 * li] = np.clip(theta[4 * li], 0.05, 5.0 * m0)
+        else:
+            theta[4 * li] = np.clip(theta[4 * li], 0.3 * m0, 3.0 * m0)
         m = theta[4 * li]
         com = theta[4 * li + 1:4 * li + 4] / m
         com = np.clip(com, -0.20, 0.20)          # |COM| <= 20 cm from link origin
