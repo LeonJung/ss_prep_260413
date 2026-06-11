@@ -92,7 +92,13 @@ def main():
     ap.add_argument('--gz', type=float, default=9.81)
     ap.add_argument('--lam', type=float, default=0.05,
                     help='ridge weight toward URDF prior')
+    ap.add_argument('--fit-links', default='1,2,3,4',
+                    help='comma list of link indices to fit; others stay at the '
+                         'URDF prior. Only fit links the pose set actually '
+                         'excites! (default poses never move j5-j7 -> fitting '
+                         'links 5-7 lets them drift to garbage = wrist runaway)')
     args = ap.parse_args()
+    fit_idx = {int(x) for x in args.fit_links.split(',')}
 
     tree, joints, links = load_urdf(args.urdf)
     gvec = np.array([0.0, 0.0, args.gz])
@@ -134,12 +140,25 @@ def main():
         theta0[4 * li + 1:4 * li + 4] = m * links[ln]['com']
 
     # ridge toward prior (scale-aware: mass entries get larger weight so the
-    # fit prefers adjusting COMs unless data demands mass changes)
+    # fit prefers adjusting COMs unless data demands mass changes).
+    # Links NOT in --fit-links are pinned hard to the prior.
     w = np.tile([1.0, 0.3, 0.3, 0.3], len(LINKS)) * args.lam * len(rows)
+    for li in range(len(LINKS)):
+        if (li + 1) not in fit_idx:
+            w[4 * li:4 * li + 4] = 1e6          # pin to prior
     W = np.diag(w)
     lhs = A.T @ A + W
     rhs = A.T @ b + W @ theta0
     theta = np.linalg.solve(lhs, rhs)
+
+    # physical sanity clamps (protect against unobserved directions drifting)
+    for li, ln in enumerate(LINKS):
+        m0 = theta0[4 * li]
+        theta[4 * li] = np.clip(theta[4 * li], 0.3 * m0, 3.0 * m0)
+        m = theta[4 * li]
+        com = theta[4 * li + 1:4 * li + 4] / m
+        com = np.clip(com, -0.20, 0.20)          # |COM| <= 20 cm from link origin
+        theta[4 * li + 1:4 * li + 4] = m * com
 
     res0 = np.abs(A @ theta0 - b)
     res1 = np.abs(A @ theta - b)
