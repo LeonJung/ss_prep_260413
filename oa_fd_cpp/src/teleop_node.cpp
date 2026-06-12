@@ -150,9 +150,19 @@ void TeleopNode::publish_mode(int mode, double t_start, double duration) {
 }
 
 void TeleopNode::friction(const Vec7& qd, Vec7& f) const {
-  for (int i = 0; i < DOF; ++i)
-    f[i] = cfg_.fric_Fc[i] * std::tanh(cfg_.fric_k[i] * qd[i])
-         + cfg_.fric_Fv[i] * qd[i] + cfg_.fric_Fo[i];
+  for (int i = 0; i < DOF; ++i) {
+    double raw = cfg_.fric_Fc[i] * std::tanh(cfg_.fric_k[i] * qd[i])
+               + cfg_.fric_Fv[i] * qd[i] + cfg_.fric_Fo[i];
+    // velocity gate: no comp at standstill (kills the negative-damping
+    // runaway in FREEDRIVE), full comp once clearly moving.
+    if (cfg_.fric_v_full > cfg_.fric_v_start) {
+      const double g = std::clamp(
+          (std::abs(qd[i]) - cfg_.fric_v_start)
+              / (cfg_.fric_v_full - cfg_.fric_v_start), 0.0, 1.0);
+      raw *= g;
+    }
+    f[i] = raw;
+  }
 }
 
 void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,

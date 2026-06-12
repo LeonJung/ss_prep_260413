@@ -29,28 +29,25 @@ home:         [0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0]
 Kp: [120.0, 120.0, 120.0, 120.0, 18.0, 20.0, 16.0]
 Kd: [2.0,   2.0,   2.0,   2.0,   0.2,  0.2,  0.2]
 
-# tanh friction: f = Fc*tanh(k*v) + Fv*v + Fo
+# tanh friction: f = gate(|v|) * (Fc*tanh(k*v) + Fv*v + Fo)
 #
-# DISABLED (all zero) — identified comp caused positive-feedback runaway in
-# FREEDRIVE (2026-06-12 HW): there Kp=Kd=0, so Fc*tanh(k*v) is pure NEGATIVE
-# damping (j1 slope Fc*k = 5.3 Nm/(rad/s)); push the joint and comp pushes
-# with you = the observed q1 runaway. Fo is a constant torque even at rest =
-# the observed q4/q6 drift-off from startup. The cali tools were immune
-# because they run high motor-side Kd. The "best-feel" era ran exactly this:
-# v2com URDF + friction all zero.
-#
-# Identified values (left leader, oa_friction_cali + constrained fit, x0.75),
-# kept for reference — reintroduce LATER with a safe scheme (fraction of Fc,
-# velocity deadband, Fo dropped):
-#   Fc: [0.659, 0.577, 0.230, 0.0, 0.152, 0.156, 0.085]
-#   k:  [8.0, 8.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-#   Fv: [0.0, 0.0, 0.086, 0.878, 0.005, 0.023, 0.0]
-#   Fo: [0.188, -0.188, 0.031, -0.188, 0.006, -0.057, -0.051]
+# SAFE REINTRODUCTION (2026-06-12). The raw identified comp caused
+# positive-feedback runaway in FREEDRIVE (Kp=Kd=0 there: Fc*tanh(k*v) is
+# negative damping, Fo a constant push at rest). Three guards:
+#   1. velocity gate: zero below v_start, ramps to 1 at v_full
+#      -> NO negative damping at standstill, nudges cannot run away
+#   2. Fo dropped (gravity-model bias, not friction)
+#   3. magnitudes x0.6 of identified -> comp stays BELOW real friction even
+#      while moving (net always dissipative)
+# Identified (x0.75 already): Fc [0.659,0.577,0.230,0,0.152,0.156,0.085]
+#                             Fv [0,0,0.086,0.878,0.005,0.023,0]
 friction:
-  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fc: [0.40, 0.35, 0.14, 0.0, 0.09, 0.09, 0.05]
   k:  [8.0, 8.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fv: [0.0, 0.0, 0.05, 0.53, 0.003, 0.014, 0.0]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  v_start: 0.03
+  v_full:  0.12
 
 mirror:
   right: [1, 1, 1, 1, 1, 1, 1]

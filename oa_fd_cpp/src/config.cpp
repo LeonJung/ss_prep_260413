@@ -55,6 +55,8 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_vec7(fr, "k",  c.fric_k);
     try_vec7(fr, "Fv", c.fric_Fv);
     try_vec7(fr, "Fo", c.fric_Fo);
+    try_scalar(fr, "v_start", c.fric_v_start);
+    try_scalar(fr, "v_full",  c.fric_v_full);
   }
   if (const auto& mr = root["mirror"]) {
     try_vec7(mr, "right", c.mirror_right);

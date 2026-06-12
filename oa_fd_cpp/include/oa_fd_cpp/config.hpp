@@ -53,12 +53,17 @@ struct OaFdConfig {
   Vec7 Kp = {120, 120, 120, 120, 18, 20, 16};
   Vec7 Kd = {2.0, 2.0, 2.0, 2.0, 0.2, 0.2, 0.2};
 
-  // ---- tanh friction model: f = Fc*tanh(k*v) + Fv*v + Fo ----
+  // ---- tanh friction model: f = gate(|v|) * (Fc*tanh(k*v) + Fv*v + Fo) ----
   // Default OFF (zeros). Identify per joint on hardware before enabling.
   Vec7 fric_Fc = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fric_k  = {30, 30, 30, 30, 30, 30, 30};
   Vec7 fric_Fv = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fric_Fo = {0, 0, 0, 0, 0, 0, 0};
+  // Velocity gate: 0 below v_start, ramps to 1 at v_full. Kills the
+  // negative-damping slope at standstill that made FREEDRIVE (Kp=Kd=0)
+  // run away when nudged. v_full <= v_start disables the gate (old behavior).
+  double fric_v_start = 0.0;   // [rad/s]
+  double fric_v_full  = 0.0;   // [rad/s]
 
   // ---- leader<->follower joint mirror, per side ----
   Vec7 mirror_right = {1, 1, 1, 1, 1, 1, 1};
