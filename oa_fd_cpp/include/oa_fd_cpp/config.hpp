@@ -73,7 +73,7 @@ struct OaFdConfig {
   Vec7 fd_posture_kd = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fd_posture_q  = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fd_limit_kp   = {0, 0, 0, 0, 0, 0, 0};  // Nm/rad inside the zone
-  double fd_limit_margin = 0.15;                // zone width [rad]
+  Vec7 fd_limit_margin = {0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15};  // zone width [rad], per joint
   // Repulsion boundaries per side (defaults: effectively disabled).
   Vec7 limit_lower_left  = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
   Vec7 limit_upper_left  = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};

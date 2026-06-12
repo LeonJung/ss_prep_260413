@@ -184,8 +184,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   auto repulse = [&](double q, int i) -> double {
     const double k = cfg_.fd_limit_kp[i];
     if (k <= 0.0) return 0.0;
-    const double lo = lim_lo[i] + cfg_.fd_limit_margin;
-    const double hi = lim_hi[i] - cfg_.fd_limit_margin;
+    const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
+    const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
     if (q < lo) return  k * (lo - q);
     if (q > hi) return -k * (q - hi);
     return 0.0;

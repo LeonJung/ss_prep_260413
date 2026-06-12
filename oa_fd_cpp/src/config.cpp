@@ -65,7 +65,16 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_vec7(fd, "posture_kd", c.fd_posture_kd);
     try_vec7(fd, "posture_q",  c.fd_posture_q);
     try_vec7(fd, "limit_kp",   c.fd_limit_kp);
-    try_scalar(fd, "limit_margin", c.fd_limit_margin);
+    // limit_margin: per-joint 7-vec, or a scalar applied to all joints
+    if (fd["limit_margin"]) {
+      if (fd["limit_margin"].IsSequence()) {
+        try_vec7(fd, "limit_margin", c.fd_limit_margin);
+      } else {
+        double m = c.fd_limit_margin[0];
+        try_scalar(fd, "limit_margin", m);
+        c.fd_limit_margin.fill(m);
+      }
+    }
   }
   if (const auto& jl = root["joint_limits"]) {
     try_vec7(jl, "lower_left",  c.limit_lower_left);

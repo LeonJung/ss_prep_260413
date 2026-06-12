@@ -65,7 +65,8 @@ freedrive:
   posture_kd: [0.0, 0.0, 0.3, 0.0, 0.3, 0.0, 0.0]
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   limit_kp:   [40.0, 40.0, 30.0, 30.0, 8.0, 8.0, 8.0]
-  limit_margin: 0.15
+  # per-joint zone width [rad] (scalar also accepted -> applies to all)
+  limit_margin: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15]
 
 # Repulsion boundaries [rad]. j1 left: -120..+45 deg per operator request;
 # j4 lower 0.0 + margin keeps the elbow off its hard stop. Right side j1/j2
