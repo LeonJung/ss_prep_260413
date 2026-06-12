@@ -63,10 +63,12 @@ freedrive:
   posture_kp: [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
   posture_kd: [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  # j6/j7 repulsion OFF; j3-j5 soft (8). j1/j2 firm (operator range fence).
-  limit_kp:   [40.0, 40.0, 8.0, 8.0, 8.0, 0.0, 0.0]
-  # in-zone damping: absorbs the spring rebound (q4 bounce w/ friction comp)
-  limit_kd:   [3.0, 3.0, 1.0, 2.0, 0.5, 0.0, 0.0]
+  # j6/j7 repulsion OFF; j3-j5 soft (5). j1/j2 firm (operator range fence).
+  limit_kp:   [40.0, 40.0, 5.0, 5.0, 5.0, 0.0, 0.0]
+  # in-zone damping, BOTH directions: hardens approach + slows the exit
+  limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
+  # spring fraction kept while exiting (1.0 = symmetric = catapult)
+  limit_exit_scale: 0.10
   # per-joint zone width [rad]; 7-vec also accepted for per-joint values
   limit_margin: 0.15
 

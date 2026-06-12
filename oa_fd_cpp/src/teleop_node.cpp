@@ -191,25 +191,24 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   const bool left_side = (p.name == "left");
   const Vec7& lim_lo = left_side ? cfg_.limit_lower_left  : cfg_.limit_lower_right;
   const Vec7& lim_hi = left_side ? cfg_.limit_upper_left  : cfg_.limit_upper_right;
-  // Asymmetric zone repulsion. Full spring+damping only while MOVING TOWARD
-  // the limit; once velocity reverses (exiting) the spring collapses to
-  // EXIT_SCALE — a symmetric spring stores k*depth and catapults the arm
-  // back out (the observed q4 rebound, amplified by gated friction comp).
-  constexpr double EXIT_SCALE = 0.25;
+  // Asymmetric zone repulsion. Full spring only while MOVING TOWARD the
+  // limit (a symmetric spring stores k*depth and catapults the arm back out
+  // — the observed q4 rebound). Exiting keeps just `limit_exit_scale` of
+  // the spring. Damping acts in BOTH directions: hardens the approach AND
+  // slows the way out.
   auto repulse = [&](double q, double qd, int i) -> double {
     const double k = cfg_.fd_limit_kp[i];
     if (k <= 0.0) return 0.0;
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
+    const double damp = -cfg_.fd_limit_kd[i] * qd;
     if (q < lo) {     // lower zone: approaching = qd < 0
       const double spring = k * (lo - q);
-      return (qd < 0.0) ? spring - cfg_.fd_limit_kd[i] * qd
-                        : EXIT_SCALE * spring;
+      return (qd < 0.0 ? spring : cfg_.fd_limit_exit_scale * spring) + damp;
     }
     if (q > hi) {     // upper zone: approaching = qd > 0
       const double spring = -k * (q - hi);
-      return (qd > 0.0) ? spring - cfg_.fd_limit_kd[i] * qd
-                        : EXIT_SCALE * spring;
+      return (qd > 0.0 ? spring : cfg_.fd_limit_exit_scale * spring) + damp;
     }
     return 0.0;
   };

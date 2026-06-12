@@ -68,6 +68,7 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_vec7(fd, "posture_q",  c.fd_posture_q);
     try_vec7(fd, "limit_kp",   c.fd_limit_kp);
     try_vec7(fd, "limit_kd",   c.fd_limit_kd);
+    try_scalar(fd, "limit_exit_scale", c.fd_limit_exit_scale);
     // limit_margin: per-joint 7-vec, or a scalar applied to all joints
     if (fd["limit_margin"]) {
       if (fd["limit_margin"].IsSequence()) {

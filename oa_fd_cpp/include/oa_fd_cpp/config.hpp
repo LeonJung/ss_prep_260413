@@ -79,7 +79,10 @@ struct OaFdConfig {
   Vec7 fd_posture_q  = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fd_limit_kp   = {0, 0, 0, 0, 0, 0, 0};  // Nm/rad inside the zone
   // damping applied ONLY inside the zone — absorbs the spring rebound
+  // (acts in BOTH directions: hardens approach, slows the exit)
   Vec7 fd_limit_kd   = {0, 0, 0, 0, 0, 0, 0};  // Nm/(rad/s) inside the zone
+  // spring fraction kept while exiting (1.0 = symmetric spring = catapult)
+  double fd_limit_exit_scale = 0.25;
   Vec7 fd_limit_margin = {0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15};  // zone width [rad], per joint
   // Repulsion boundaries per side (defaults: effectively disabled).
   Vec7 limit_lower_left  = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
