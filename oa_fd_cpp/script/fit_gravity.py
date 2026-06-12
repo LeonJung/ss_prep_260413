@@ -11,6 +11,15 @@ toward the current URDF values (prior) so a modest pose set stays well-posed.
 Usage:
   fit_gravity.py --csv /tmp/gravity_cali.csv --urdf openarmx_arm_v2mass.urdf \
                  --out openarmx_arm_cali.urdf [--gz 9.81] [--lam 0.05]
+
+Optionally ingest a friction-sweep CSV (oa_friction_cali output) as EXTRA
+gravity measurements via --friction-csv: averaging the +v and -v passes at the
+same angle cancels the symmetric friction, leaving gravity (plus the small Fo
+asymmetry, <~0.2 Nm, ignored). Sweeps provide hundreds of points along whole
+joint trajectories — far richer excitation than the static pose grid
+(notably for the q1 curve's amplitude/phase).
+Assumption: during a joint's sweep the OTHER joints sit at the cali base pose
+(left: [0,0,0,0.3,0,0,0]; right mirrors j1/j2) held by stiff impedance.
 """
 import argparse
 import csv
@@ -66,6 +75,39 @@ def load_urdf(path):
     return t, joints, links
 
 
+def friction_csv_to_static(path, side='left', bin_width=0.04, min_each=3):
+    """Convert friction-sweep samples into static-equivalent measurements.
+
+    Returns list of (q7, k, tau) — full joint vector, joint index (0-based),
+    gravity torque — one per q-bin that has BOTH +v and -v samples.
+    """
+    base = np.array([0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0])
+    if side == 'right':
+        base[0], base[1] = -base[0], -base[1]
+    # per joint: bin -> ([tau+...], [tau-...], [q...])
+    bins = {}
+    for r in csv.DictReader(open(path)):
+        j = int(r['joint']) - 1
+        q = float(r['q'])
+        v = float(r['dq'])
+        t = float(r['tau_meas'])
+        if abs(v) < 0.03:
+            continue                      # ~stationary: direction ambiguous
+        key = (j, int(np.floor(q / bin_width)))
+        e = bins.setdefault(key, ([], [], []))
+        e[0 if v > 0 else 1].append(t)
+        e[2].append(q)
+    out = []
+    for (j, _b), (tp, tm, qq) in bins.items():
+        if len(tp) < min_each or len(tm) < min_each:
+            continue                      # need both directions to cancel friction
+        tau = 0.5 * (np.mean(tp) + np.mean(tm))
+        q7 = base.copy()
+        q7[j] = np.mean(qq)
+        out.append((q7, j, tau))
+    return out
+
+
 def fk(joints, q):
     """Return per-chain-joint (world pos, world axis) and per-link (R, p)."""
     linkT = {'openarmx_link0': np.eye(4)}
@@ -104,6 +146,13 @@ def main():
                          'to small-mass/far-COM and hits the clamps); masses '
                          'are pinned to the URDF prior (enactic values, '
                          'independently corroborated) and only COMs are fit.')
+    ap.add_argument('--friction-csv', default='',
+                    help='oa_friction_cali CSV; +v/-v passes averaged per '
+                         'q-bin into extra gravity measurements (see header)')
+    ap.add_argument('--friction-weight', type=float, default=0.3,
+                    help='weight of each sweep-derived equation relative to a '
+                         'static one (sweeps contribute hundreds of points; '
+                         'keep them from drowning out the multi-joint poses)')
     ap.add_argument('--fit-mass-links', default='',
                     help='comma list of links whose MASS is also fit even with '
                          'masses otherwise pinned (e.g. 7 — the hand/gripper '
@@ -171,12 +220,49 @@ def main():
                         np.cross(Ri[:, ax3], gvec))
             A.append(row)
             b.append(tau[k])
+    n_static = len(b)
+
+    # ---- extra equations from friction sweeps (friction cancelled) ----
+    # The +v/-v average cancels SYMMETRIC friction but not the Fo asymmetry,
+    # which would otherwise bias the COMs. Add one bias unknown per swept
+    # joint (columns nP..nP+6) that only sweep equations see; it absorbs
+    # Fo + any constant torque-sensor offset.
+    nB = DOF if args.friction_csv else 0
+    A = [np.concatenate([row, np.zeros(nB)]) for row in A]
+    if args.friction_csv:
+        pts = friction_csv_to_static(args.friction_csv, side=args.side)
+        sw = np.sqrt(args.friction_weight)
+        added = 0
+        for q, k, tau in pts:
+            if k in drop_j:
+                continue
+            lo, hi = LIM[k]
+            if q[k] < lo + MARGIN or q[k] > hi - MARGIN:
+                continue
+            jpos, jax, linkT = fk(joints, q)
+            row = np.zeros(nP + nB)
+            for li, ln in enumerate(LINKS):
+                T = linkT[ln]
+                Ri, pi = T[:3, :3], T[:3, 3]
+                row[4 * li] = SIGN * jax[k].dot(np.cross(pi - jpos[k], gvec))
+                for ax3 in range(3):
+                    row[4 * li + 1 + ax3] = SIGN * jax[k].dot(
+                        np.cross(Ri[:, ax3], gvec))
+            row[nP + k] = 1.0             # per-joint sweep bias (Fo etc.)
+            A.append(row * sw)
+            b.append(tau * sw)
+            meta.append((q, k))
+            added += 1
+        print(f'friction sweeps: {added} bin-averaged equations added '
+              f'(weight {args.friction_weight}, +{nB} bias unknowns)')
+
     A = np.array(A)
     b = np.array(b)
-    print(f'{dropped} near-limit equations dropped, {len(b)} kept')
+    print(f'{dropped} near-limit equations dropped, '
+          f'{n_static} static + {len(b) - n_static} sweep kept')
 
-    # prior = current URDF params
-    theta0 = np.zeros(nP)
+    # prior = current URDF params (+ zero prior for sweep bias unknowns)
+    theta0 = np.zeros(nP + nB)
     for li, ln in enumerate(LINKS):
         m = links[ln]['m']
         theta0[4 * li] = m
@@ -191,6 +277,8 @@ def main():
             w[4 * li:4 * li + 4] = 1e6          # pin to prior
         elif not args.fit_mass and (li + 1) not in fit_mass_idx:
             w[4 * li] = 1e6                     # pin mass; fit COM only
+    if nB:
+        w = np.concatenate([w, np.full(nB, 0.1 * args.lam * len(rows))])
     W = np.diag(w)
     lhs = A.T @ A + W
     rhs = A.T @ b + W @ theta0
@@ -209,6 +297,11 @@ def main():
         com = theta[4 * li + 1:4 * li + 4] / m
         com = np.clip(com, -0.20, 0.20)          # |COM| <= 20 cm from link origin
         theta[4 * li + 1:4 * li + 4] = m * com
+
+    if nB:
+        bias = theta[nP:]
+        print('sweep bias per joint (should ~match friction Fo): ['
+              + ' '.join(f'{x:6.3f}' for x in bias) + ']')
 
     res0 = np.abs(A @ theta0 - b)
     res1 = np.abs(A @ theta - b)
