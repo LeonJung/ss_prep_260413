@@ -105,7 +105,17 @@ bool TeleopNode::connect() {
     for (OaxArm* a : arms) {
       if (!a->init())   { RCLCPP_ERROR(get_logger(), "init failed %s", a->iface().c_str()); return false; }
       if (!a->enable()) { RCLCPP_ERROR(get_logger(), "enable failed %s", a->iface().c_str()); return false; }
-      RCLCPP_INFO(get_logger(), "arm up: %s", a->iface().c_str());
+      // GATE: no torque until every motor proves live telemetry. Without this
+      // a cold first launch can run with q=0 -> gravity comp silently dead
+      // on q1/q2 ("first launch no torque, relaunch fixes it").
+      if (!a->verify_state()) {
+        RCLCPP_ERROR(get_logger(),
+                     "%s: motors enabled but state telemetry missing — REFUSING "
+                     "to start (would run gravity comp on q=0). Check CAN / "
+                     "power, then relaunch.", a->iface().c_str());
+        return false;
+      }
+      RCLCPP_INFO(get_logger(), "arm up: %s (7/7 motors reporting)", a->iface().c_str());
     }
   }
   return true;

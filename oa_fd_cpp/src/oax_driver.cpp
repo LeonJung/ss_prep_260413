@@ -57,6 +57,39 @@ void OaxArm::disable() {
   if (dev_) dev_->disable_all();
 }
 
+bool OaxArm::verify_state(int rounds, int recv_us) {
+  if (!dev_) return false;
+  for (int r = 0; r < rounds; ++r) {
+    dev_->refresh_all();
+    dev_->recv_all(recv_us);
+    auto motors = dev_->get_arm().get_motors();
+    int live = 0;
+    for (auto* mo : motors)
+      if (mo->get_temperature() > 0.5f) ++live;   // real state frame parsed
+    if (live >= DOF) {
+      if (r > 0)
+        std::fprintf(stderr, "[oax_driver:%s] state telemetry up after %d rounds\n",
+                     iface_.c_str(), r + 1);
+      return true;
+    }
+    if (r == rounds / 2) {
+      // Halfway with motors still silent: re-issue callback mode + enable
+      // (the same thing a relaunch does, which is known to recover it).
+      std::fprintf(stderr,
+                   "[oax_driver:%s] only %d/%d motors reporting — re-enabling\n",
+                   iface_.c_str(), live, DOF);
+      dev_->set_callback_mode_all(rm::CallbackMode::STATE);
+      dev_->enable_all();
+    }
+  }
+  auto motors = dev_->get_arm().get_motors();
+  std::fprintf(stderr, "[oax_driver:%s] NO state telemetry; silent motors:", iface_.c_str());
+  for (int i = 0; i < std::min<int>(DOF, (int)motors.size()); ++i)
+    if (motors[i]->get_temperature() <= 0.5f) std::fprintf(stderr, " %d", i + 1);
+  std::fprintf(stderr, "\n");
+  return false;
+}
+
 void OaxArm::read(Vec7& q, Vec7& qd, Vec7& tau) {
   if (!dev_) return;
   dev_->refresh_all();

@@ -48,6 +48,15 @@ public:
   // Send 0-torque disable to all motors.
   void disable();
 
+  // Block until ALL 7 motors have delivered at least one real state frame
+  // (temperature > 0.5 °C — same liveness test as oa_diag). On a cold power-up
+  // the STATE callback mode sometimes hasn't latched yet and the arm runs an
+  // entire session with q=0 telemetry -> gravity comp silently dead on
+  // q1/q2 ("first launch no torque, relaunch fixes it"). Halfway through the
+  // attempts this re-issues set_callback_mode + enable_all (emulating that
+  // relaunch). Returns false if telemetry never appears; callers must abort.
+  bool verify_state(int rounds = 50, int recv_us = 2000);
+
   // Refresh + receive, then copy per-joint state (already direction-corrected).
   void read(Vec7& q, Vec7& qd, Vec7& tau);
 
