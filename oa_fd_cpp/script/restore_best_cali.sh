@@ -22,8 +22,8 @@ python3 "$REPO/oa_fd_cpp/script/fit_gravity.py" \
     --fit-links 1,2,3,4,5,6,7 
 
 echo
-echo ">> CHECK the output above: 'openarmx_link7: m 0.625 -> 0.625' and"
-echo ">> 'after mean' ~= 0.875. If so, this is the validated-best version."
+echo ">> CHECK the output above: 'before mean=2.513 max=10.957' and"
+echo ">> 'after mean=1.895', worst j6 8.20Nm. If so, this is the validated-best version."
 echo
 
 cd "$REPO"
