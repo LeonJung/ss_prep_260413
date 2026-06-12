@@ -50,19 +50,39 @@ sudo setcap cap_sys_nice+ep,cap_ipc_lock+ep \
 
 ## Run / test
 ```bash
-ros2 launch oa_fd_cpp oa_fd.launch.py            # auto-homes -> PAUSED
-ros2 topic echo /oa/leader_right/joint_state
-# modes [m,t,dur]: 0=ACTIVE 1=PAUSED 2=HOMING 3=FREEDRIVE
+ros2 launch oa_fd_cpp oa_fd.launch.py                          # all 4 arms
+ros2 launch oa_fd_cpp oa_fd.launch.py arms:=left role:=leader  # one arm only
+# per-role URDFs (leader = handle tip, follower = gripper tip):
+ros2 launch oa_fd_cpp oa_fd.launch.py \
+    urdf_leader:=$HOME/git_ws/ss_prep_260413/oa_fd_cpp/urdf/openarmx_arm_cali_left_leader.urdf
+# modes [m,t,dur]: 0=ACTIVE 1=PAUSED 2=HOMING 3=FREEDRIVE (startup = FREEDRIVE)
 ros2 topic pub --once /oa/mode std_msgs/msg/Float64MultiArray "{data: [0,0,0]}"
 ```
+Launch args: `arms:=right|left|both`, `role:=leader|follower|both` (single
+role disables ACTIVE coupling — gravity-only), `urdf:=` (common fallback),
+`urdf_leader:=` / `urdf_follower:=`, `rt:= rt_priority:= rt_cpu:=`.
+
+## Tools (calibration & diagnostics)
+
+| tool | purpose |
+|---|---|
+| `oa_diag [canX ...] [--enable]` | per-motor link/health: responding, temp, RUN pattern, error codes |
+| `oa_gravity_cali` | static gravity ID: pose grid (collision-checked `--poses` file), two-sided approach (stiction cancel), trapezoid moves + friction FF (`--config`) |
+| `oa_friction_cali` | per-joint constant-velocity sweeps -> friction samples |
+| `fit_gravity.py` | per-link COM fit (masses pinned). Key flags: `--fit-links`, `--drop-joints 6,7` (wrist torque telemetry is broken: ~8Nm static), `--friction-csv` (ingest sweeps as extra gravity data, +v/-v bin-averaged, per-joint bias absorbs Fo), `--fit-mass-links` (use sparingly — overfits) |
+| `fit_friction.py` | tanh friction fit, Fc/Fv>=0 enforced, Fo capped; prints yaml block |
+| `gen_cali_poses.py` | random all-joint poses with self-collision / torso / mount checks |
+| `restore_best_cali.sh` | one-command regen+commit of the validated-best left-leader URDF |
+
+Calibration recipe (per arm): friction cali -> fit -> paste yaml -> gravity
+cali -> `fit_gravity.py --csv ... --friction-csv ... --fit-links 1,2,3,4,5
+--drop-joints 6,7` -> commit URDF -> launch with `urdf_leader:=`/`urdf_follower:=`.
 
 ### Bring-up order (safety)
-1. **FREEDRIVE** → tune `gravity.scale` / `gravity.vec` so the arm floats.
-2. Identify **friction** (Fc/k/Fv/Fo) per joint, enable gradually.
-3. **PAUSED** → confirm hold-at-home with low `Kp`, raise until stiff & stable.
-4. One pair only, **ACTIVE**, low `Kp` → operator moves leader, follower mirrors
-   and reflects contact force. Check `mirror` signs.
-5. Raise `Kp/Kd`, enable RT.
+1. `oa_diag` — all motors responding, no error codes.
+2. Launch (starts in **FREEDRIVE**) -> verify gravity float at several poses.
+3. PAUSED -> holds the captured pose (no slam). 4. One pair ACTIVE, low Kp.
+5. Check `mirror` signs, raise gains, enable RT.
 
 ## ⚠️ Status / caveats
 - **Not compiled here** — build/test on the control PC (openarmx-can + CAN hw).
