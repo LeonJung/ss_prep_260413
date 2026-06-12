@@ -33,14 +33,10 @@ using namespace oa_fd;
 
 namespace {
 
-double quintic(double a) {
-  a = std::clamp(a, 0.0, 1.0);
-  return 10 * a * a * a - 15 * a * a * a * a + 6 * a * a * a * a * a;
-}
-
 // Trapezoidal position profile s(a), a in [0,1]: 20% accel / 60% cruise /
-// 20% decel. Replaces quintic for MOVES — quintic's long near-zero-velocity
-// tails sit right in the stiction band and caused stick-slip "judder".
+// 20% decel. Replaced the earlier quintic for MOVES — quintic's long
+// near-zero-velocity tails sit right in the stiction band and caused
+// stick-slip "judder".
 double trapezoid(double a) {
   a = std::clamp(a, 0.0, 1.0);
   const double ta = 0.2;                  // accel fraction
