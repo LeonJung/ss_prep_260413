@@ -42,6 +42,7 @@ bool load_config(const std::string& path, OaFdConfig& c) {
   }
 
   try_scalar(root, "timestep",           c.timestep);
+  try_scalar(root, "vel_filter_alpha",   c.vel_filter_alpha);
   try_scalar(root, "auto_home_on_start", c.auto_home_on_start);
   try_scalar(root, "homing_duration",    c.homing_duration);
 

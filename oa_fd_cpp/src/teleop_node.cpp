@@ -170,8 +170,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
                               MitCmd& lc, MitCmd& fc) {
   Vec7 gl{}, gf{}, frl{}, frf{};
   if (p.grav) { p.grav->gravity(p.lq, gl); p.grav->gravity(p.fq, gf); }
-  friction(p.lqd, frl);
-  friction(p.fqd, frf);
+  friction(p.lqd_f, frl);   // filtered: raw qd noise chatters the gate
+  friction(p.fqd_f, frf);
 
   // mirror peer into local frame (delta about home)
   Vec7 f_in_l{}, fd_in_l{}, l_in_f{}, ld_in_f{};
@@ -195,21 +195,27 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   // limit (a symmetric spring stores k*depth and catapults the arm back out
   // — the observed q4 rebound). Exiting keeps just `limit_exit_scale` of
   // the spring. Damping acts in BOTH directions: hardens the approach AND
-  // slows the way out.
-  auto repulse = [&](double q, double qd, int i) -> double {
+  // slows the way out. Uses FILTERED velocity, and the approach/exit branch
+  // blends continuously over V_BLEND — a hard qd-sign switch chattered on
+  // the ±0.15 rad/s telemetry noise (q4 1.2 Hz limit cycle at rest in zone).
+  constexpr double V_BLEND = 0.05;   // [rad/s] full approach weight beyond this
+  auto repulse = [&](double q, double qdf, int i) -> double {
     const double k = cfg_.fd_limit_kp[i];
     if (k <= 0.0) return 0.0;
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
-    const double damp = -cfg_.fd_limit_kd[i] * qd;
+    const double damp = -cfg_.fd_limit_kd[i] * qdf;
     const double fmax = cfg_.fd_limit_fmax[i];
+    const double es = cfg_.fd_limit_exit_scale;
     if (q < lo) {     // lower zone: approaching = qd < 0
       const double spring = std::min(k * (lo - q), fmax);
-      return (qd < 0.0 ? spring : cfg_.fd_limit_exit_scale * spring) + damp;
+      const double w = std::clamp(-qdf / V_BLEND, 0.0, 1.0);
+      return (es + (1.0 - es) * w) * spring + damp;
     }
     if (q > hi) {     // upper zone: approaching = qd > 0
       const double spring = std::max(-k * (q - hi), -fmax);
-      return (qd > 0.0 ? spring : cfg_.fd_limit_exit_scale * spring) + damp;
+      const double w = std::clamp(qdf / V_BLEND, 0.0, 1.0);
+      return (es + (1.0 - es) * w) * spring + damp;
     }
     return 0.0;
   };
@@ -263,8 +269,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         break;
     }
     if (freedrive_like) {
-      lc.tau[i] += repulse(p.lq[i], p.lqd[i], i);
-      fc.tau[i] += repulse(p.fq[i], p.fqd[i], i);
+      lc.tau[i] += repulse(p.lq[i], p.lqd_f[i], i);
+      fc.tau[i] += repulse(p.fq[i], p.fqd_f[i], i);
     }
     // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
     lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);
@@ -311,6 +317,12 @@ void TeleopNode::control_loop() {
     for (Pair* p : pairs_) {
       if (drive_leader_)   p->leader->read(p->lq, p->lqd, p->ltau);
       if (drive_follower_) p->follower->read(p->fq, p->fqd, p->ftau);
+      // low-pass velocities for friction gate / zone repulsion
+      const double a = std::clamp(cfg_.vel_filter_alpha, 0.0, 1.0);
+      for (int i = 0; i < DOF; ++i) {
+        p->lqd_f[i] += a * (p->lqd[i] - p->lqd_f[i]);
+        p->fqd_f[i] += a * (p->fqd[i] - p->fqd_f[i]);
+      }
     }
 
     int mode; double h_t_start, h_duration;

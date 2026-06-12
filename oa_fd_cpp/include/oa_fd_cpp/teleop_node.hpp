@@ -39,6 +39,8 @@ struct Pair {
   Vec7 mirror{};
   Vec7 lq{}, lqd{}, ltau{};
   Vec7 fq{}, fqd{}, ftau{};
+  Vec7 lqd_f{}, fqd_f{};   // low-pass velocities (friction gate / zone logic;
+                           // raw qd is ±0.15 rad/s noisy at standstill)
   Vec7 l_home_start{}, f_home_start{};   // captured at HOMING entry
   Vec7 l_hold{}, f_hold{};               // captured at PAUSED entry (hold-in-place)
   GravityModel* grav = nullptr;     // this side's gravity model (right/left)

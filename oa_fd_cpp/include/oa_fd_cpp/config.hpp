@@ -38,6 +38,10 @@ struct OaFdConfig {
 
   // ---- loop ----
   double timestep = 0.001;             // enactic runs 1 kHz
+  // EMA coefficient for the filtered velocity used by friction gate and
+  // zone repulsion (1.0 = raw). 0.05 @1kHz ~= 8 Hz cutoff; raw telemetry
+  // shows +-0.15 rad/s noise at standstill which chattered the zone spring.
+  double vel_filter_alpha = 1.0;
 
   // ---- homing ----
   bool   auto_home_on_start = false;   // safety: no stiff pull-to-home on launch
