@@ -42,9 +42,10 @@ Kd: [2.0,   2.0,   2.0,   2.0,   0.2,  0.2,  0.2]
 # Identified (x0.75 already): Fc [0.659,0.577,0.230,0,0.152,0.156,0.085]
 #                             Fv [0,0,0.086,0.878,0.005,0.023,0]
 friction:
-  Fc: [0.40, 0.35, 0.14, 0.0, 0.09, 0.09, 0.05]
+  # x0.85 of identified (was x0.6; operator wanted more comp, no runaway seen)
+  Fc: [0.56, 0.49, 0.20, 0.0, 0.13, 0.13, 0.07]
   k:  [8.0, 8.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-  Fv: [0.0, 0.0, 0.05, 0.53, 0.003, 0.014, 0.0]
+  Fv: [0.0, 0.0, 0.073, 0.75, 0.004, 0.020, 0.0]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: 0.03
   v_full:  0.12
@@ -64,6 +65,8 @@ freedrive:
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   # j6/j7 repulsion OFF; j3-j5 soft (8). j1/j2 firm (operator range fence).
   limit_kp:   [40.0, 40.0, 8.0, 8.0, 8.0, 0.0, 0.0]
+  # in-zone damping: absorbs the spring rebound (q4 bounce w/ friction comp)
+  limit_kd:   [3.0, 3.0, 1.0, 2.0, 0.5, 0.0, 0.0]
   # per-joint zone width [rad]; 7-vec also accepted for per-joint values
   limit_margin: 0.15
 

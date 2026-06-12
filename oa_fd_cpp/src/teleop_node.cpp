@@ -191,13 +191,15 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   const bool left_side = (p.name == "left");
   const Vec7& lim_lo = left_side ? cfg_.limit_lower_left  : cfg_.limit_lower_right;
   const Vec7& lim_hi = left_side ? cfg_.limit_upper_left  : cfg_.limit_upper_right;
-  auto repulse = [&](double q, int i) -> double {
+  auto repulse = [&](double q, double qd, int i) -> double {
     const double k = cfg_.fd_limit_kp[i];
     if (k <= 0.0) return 0.0;
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
-    if (q < lo) return  k * (lo - q);
-    if (q > hi) return -k * (q - hi);
+    // In-zone damping absorbs the spring rebound (an undamped zone spring
+    // bounced the arm back out; gated friction comp then amplified it).
+    if (q < lo) return  k * (lo - q) - cfg_.fd_limit_kd[i] * qd;
+    if (q > hi) return -k * (q - hi) - cfg_.fd_limit_kd[i] * qd;
     return 0.0;
   };
   const bool freedrive_like =
@@ -250,8 +252,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         break;
     }
     if (freedrive_like) {
-      lc.tau[i] += repulse(p.lq[i], i);
-      fc.tau[i] += repulse(p.fq[i], i);
+      lc.tau[i] += repulse(p.lq[i], p.lqd[i], i);
+      fc.tau[i] += repulse(p.fq[i], p.fqd[i], i);
     }
     // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
     lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);
