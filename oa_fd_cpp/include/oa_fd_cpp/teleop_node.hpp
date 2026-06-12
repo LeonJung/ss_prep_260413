@@ -41,7 +41,9 @@ struct Pair {
   Vec7 fq{}, fqd{}, ftau{};
   Vec7 l_home_start{}, f_home_start{};   // captured at HOMING entry
   Vec7 l_hold{}, f_hold{};               // captured at PAUSED entry (hold-in-place)
-  GravityModel* grav = nullptr;     // this side's gravity model (right/left)
+  // per-arm gravity models: leader (handle tip) vs follower (gripper tip)
+  GravityModel* grav_leader = nullptr;
+  GravityModel* grav_follower = nullptr;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr leader_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr follower_pub;
 };
@@ -50,7 +52,9 @@ class TeleopNode : public rclcpp::Node {
 public:
   struct Options {
     std::string config_path;
-    std::string urdf_override;   // --urdf : overrides gravity.urdf (launch passes bundled path)
+    std::string urdf_override;          // --urdf : common fallback URDF
+    std::string urdf_leader_override;   // --urdf-leader : leader arms (handle tip)
+    std::string urdf_follower_override; // --urdf-follower : follower arms (gripper tip)
     std::string arms = "both";   // --arms right|left|both : which pair(s) to drive
     std::string role = "both";   // --role leader|follower|both : which side of each pair
     bool use_rt = false;
@@ -80,7 +84,9 @@ private:
   Options opts_;
   OaFdConfig cfg_;
   RTConfig rt_cfg_;
-  GravityModel grav_right_, grav_left_;
+  // role x side: tip mass differs by role, gravity vector by side
+  GravityModel grav_leader_right_, grav_leader_left_;
+  GravityModel grav_follower_right_, grav_follower_left_;
 
   Pair right_, left_;
   std::vector<Pair*> pairs_;   // active pairs per Options::arms (right/left/both)

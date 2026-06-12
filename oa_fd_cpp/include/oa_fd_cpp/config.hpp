@@ -65,6 +65,11 @@ struct OaFdConfig {
   Vec7 mirror_left  = {1, 1, 1, 1, 1, 1, 1};
 
   GravityCfg gravity;
+  // Per-ROLE URDFs: the leader carries a light HANDLE, the follower a GRIPPER —
+  // different tip masses need different gravity models. Empty = fall back to
+  // gravity.urdf (the common one, e.g. passed by launch --urdf).
+  std::string urdf_leader;
+  std::string urdf_follower;
   // Gravity vector expressed in each arm's URDF root frame. OpenArm mounting
   // usually makes this ±Y (NOT Z), opposite sign per side. Tune in FREEDRIVE.
   std::array<double, 3> grav_vec_right = {0.0, 0.0, -9.81};

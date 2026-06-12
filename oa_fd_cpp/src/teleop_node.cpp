@@ -39,6 +39,13 @@ TeleopNode::TeleopNode(const Options& opts)
     cfg_.gravity.urdf = opts.urdf_override;
     RCLCPP_INFO(get_logger(), "urdf (override): %s", cfg_.gravity.urdf.c_str());
   }
+  if (!opts.urdf_leader_override.empty())   cfg_.urdf_leader = opts.urdf_leader_override;
+  if (!opts.urdf_follower_override.empty()) cfg_.urdf_follower = opts.urdf_follower_override;
+  // role URDFs fall back to the common one
+  if (cfg_.urdf_leader.empty())   cfg_.urdf_leader = cfg_.gravity.urdf;
+  if (cfg_.urdf_follower.empty()) cfg_.urdf_follower = cfg_.gravity.urdf;
+  RCLCPP_INFO(get_logger(), "urdf leader:   %s", cfg_.urdf_leader.c_str());
+  RCLCPP_INFO(get_logger(), "urdf follower: %s", cfg_.urdf_follower.c_str());
 
   rclcpp::QoS state_qos{10};
   rclcpp::QoS latched{1};
@@ -86,17 +93,36 @@ TeleopNode::~TeleopNode() { stop(); }
 
 bool TeleopNode::connect() {
   if (cfg_.gravity.enabled) {
-    GravityCfg gr = cfg_.gravity;
-    gr.vec = cfg_.grav_vec_right; gr.root_link = cfg_.root_link_right; gr.tip_link = cfg_.tip_link_right;
-    GravityCfg gl = cfg_.gravity;
-    gl.vec = cfg_.grav_vec_left;  gl.root_link = cfg_.root_link_left;  gl.tip_link = cfg_.tip_link_left;
-    bool okr = grav_right_.load(gr);
-    bool okl = grav_left_.load(gl);
-    if (!okr || !okl)
+    auto side_cfg = [&](const std::string& urdf, bool is_right) {
+      GravityCfg c = cfg_.gravity;
+      c.urdf = urdf;
+      if (is_right) {
+        c.vec = cfg_.grav_vec_right;
+        c.root_link = cfg_.root_link_right;
+        c.tip_link = cfg_.tip_link_right;
+      } else {
+        c.vec = cfg_.grav_vec_left;
+        c.root_link = cfg_.root_link_left;
+        c.tip_link = cfg_.tip_link_left;
+      }
+      return c;
+    };
+    bool ok = true;
+    if (drive_leader_) {
+      ok &= grav_leader_right_.load(side_cfg(cfg_.urdf_leader, true));
+      ok &= grav_leader_left_.load(side_cfg(cfg_.urdf_leader, false));
+    }
+    if (drive_follower_) {
+      ok &= grav_follower_right_.load(side_cfg(cfg_.urdf_follower, true));
+      ok &= grav_follower_left_.load(side_cfg(cfg_.urdf_follower, false));
+    }
+    if (!ok)
       RCLCPP_WARN(get_logger(), "gravity comp OFF (URDF missing/invalid) — arm will sag!");
   }
-  right_.grav = &grav_right_;
-  left_.grav  = &grav_left_;
+  right_.grav_leader   = &grav_leader_right_;
+  right_.grav_follower = &grav_follower_right_;
+  left_.grav_leader    = &grav_leader_left_;
+  left_.grav_follower  = &grav_follower_left_;
 
   for (Pair* p : pairs_) {
     std::vector<OaxArm*> arms;
@@ -149,7 +175,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
                               double h_t_start, double h_duration,
                               MitCmd& lc, MitCmd& fc) {
   Vec7 gl{}, gf{}, frl{}, frf{};
-  if (p.grav) { p.grav->gravity(p.lq, gl); p.grav->gravity(p.fq, gf); }
+  if (p.grav_leader)   p.grav_leader->gravity(p.lq, gl);
+  if (p.grav_follower) p.grav_follower->gravity(p.fq, gf);
   friction(p.lqd, frl);
   friction(p.fqd, frf);
 
@@ -298,10 +325,11 @@ void TeleopNode::control_loop() {
         // show the driven side (leader if active, else follower)
         const Vec7& q = drive_leader_ ? p->lq : p->fq;
         const char* side = drive_leader_ ? "leader" : "follower";
+        GravityModel* gm = drive_leader_ ? p->grav_leader : p->grav_follower;
         Vec7 g{};
-        const bool gon = (p->grav && p->grav->ok());
-        if (p->grav) p->grav->gravity(q, g);
-        const int rc = p->grav ? p->grav->last_rc() : -1;
+        const bool gon = (gm && gm->ok());
+        if (gm) gm->gravity(q, g);
+        const int rc = gm ? gm->last_rc() : -1;
         RCLCPP_INFO(get_logger(),
           "[DIAG] mode=%d %s/%s grav=%s rc=%d | q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
           "g=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f]",

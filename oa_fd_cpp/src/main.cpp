@@ -19,7 +19,9 @@ int main(int argc, char** argv) {
     std::string a = argv[i];
     auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
     if (a == "--config")            opts.config_path = next();
-    else if (a == "--urdf")         opts.urdf_override = next();
+    else if (a == "--urdf")          opts.urdf_override = next();
+    else if (a == "--urdf-leader")   opts.urdf_leader_override = next();
+    else if (a == "--urdf-follower") opts.urdf_follower_override = next();
     else if (a == "--arms")         opts.arms = next();   // right|left|both
     else if (a == "--role")         opts.role = next();   // leader|follower|both
     else if (a == "--rt-mode")      opts.use_rt = (next() == "true");

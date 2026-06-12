@@ -2,6 +2,9 @@
 
   ros2 launch oa_fd_cpp oa_fd.launch.py
   ros2 launch oa_fd_cpp oa_fd.launch.py rt:=true rt_cpu:=2
+  # calibrated leader model (handle tip), stock follower model (gripper tip):
+  ros2 launch oa_fd_cpp oa_fd.launch.py arms:=left role:=leader \
+      urdf_leader:=$HOME/git_ws/ss_prep_260413/oa_fd_cpp/urdf/openarmx_arm_cali_left_leader.urdf
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -17,6 +20,10 @@ def generate_launch_description():
 
     config_arg = DeclareLaunchArgument('config', default_value=default_config)
     urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)
+    # per-role URDFs (leader = handle tip, follower = gripper tip). Empty ->
+    # falls back to `urdf`. Point urdf_leader at the calibrated leader URDF.
+    urdf_leader_arg = DeclareLaunchArgument('urdf_leader', default_value='')
+    urdf_follower_arg = DeclareLaunchArgument('urdf_follower', default_value='')
     arms_arg = DeclareLaunchArgument(
         'arms', default_value='both',
         description='which pair(s) to drive: right | left | both')
@@ -36,6 +43,8 @@ def generate_launch_description():
         arguments=[
             '--config', LaunchConfiguration('config'),
             '--urdf', LaunchConfiguration('urdf'),
+            '--urdf-leader', LaunchConfiguration('urdf_leader'),
+            '--urdf-follower', LaunchConfiguration('urdf_follower'),
             '--arms', LaunchConfiguration('arms'),
             '--role', LaunchConfiguration('role'),
             '--rt-mode', LaunchConfiguration('rt'),
@@ -44,5 +53,6 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([config_arg, urdf_arg, arms_arg, role_arg, rt_arg,
+    return LaunchDescription([config_arg, urdf_arg, urdf_leader_arg,
+                              urdf_follower_arg, arms_arg, role_arg, rt_arg,
                               rt_prio_arg, rt_cpu_arg, node])
