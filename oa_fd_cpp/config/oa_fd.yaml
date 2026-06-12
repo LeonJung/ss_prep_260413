@@ -17,9 +17,10 @@ can:
   recv_timeout_us: 500
 
 timestep: 0.001            # 1 kHz (enactic). Raise to 0.002 if 4xUSB2CAN saturates.
-# Low-pass for the velocity used by the friction gate / zone repulsion only
-# (raw telemetry: +-0.15 rad/s noise at standstill -> spring chatter).
-# EMA coefficient; 0.05 @ 1 kHz ~= 8 Hz cutoff. 1.0 = raw.
+# Low-pass for the velocity used by the FRICTION GATE only (raw telemetry:
+# +-0.15 rad/s noise at standstill chattered the gate). Zone damping uses
+# RAW qd on purpose — filtered (lagged) damping injected energy on fast
+# reversals. EMA coefficient; 0.05 @ 1 kHz ~= 8 Hz cutoff. 1.0 = raw.
 vel_filter_alpha: 0.05
 
 auto_home_on_start: false   # safety: launch starts in FREEDRIVE (gravity only),
@@ -74,12 +75,11 @@ freedrive:
   limit_kp:   [40.0, 40.0, 5.0, 5.0, 5.0, 0.0, 0.0]
   # in-zone damping, BOTH directions: hardens approach + slows the exit
   limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
-  # spring fraction kept while exiting (1.0 = symmetric = catapult)
-  limit_exit_scale: 0.10
   # spring force cap [Nm]: q2's -45deg fence puts home(0deg) 0.94 rad deep
   # in the zone -> uncapped spring would command ~37 Nm. Capped: lifting into
-  # the fence meets a firm-but-finite 10 Nm; parked at home the steady push
-  # is exit_scale*cap = ~1 Nm until the arm settles below -45deg.
+  # the fence meets a firm-but-finite 10 Nm. (Zone force is a SYMMETRIC
+  # capped spring + raw-qd damper = passive; velocity-sign spring tricks
+  # injected energy twice — see teleop_node.cpp repulse() comment.)
   limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
   # per-joint zone width [rad]; 7-vec also accepted for per-joint values
   limit_margin: 0.15

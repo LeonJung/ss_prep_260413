@@ -191,32 +191,28 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   const bool left_side = (p.name == "left");
   const Vec7& lim_lo = left_side ? cfg_.limit_lower_left  : cfg_.limit_lower_right;
   const Vec7& lim_hi = left_side ? cfg_.limit_upper_left  : cfg_.limit_upper_right;
-  // Asymmetric zone repulsion. Full spring only while MOVING TOWARD the
-  // limit (a symmetric spring stores k*depth and catapults the arm back out
-  // — the observed q4 rebound). Exiting keeps just `limit_exit_scale` of
-  // the spring. Damping acts in BOTH directions: hardens the approach AND
-  // slows the way out. Uses FILTERED velocity, and the approach/exit branch
-  // blends continuously over V_BLEND — a hard qd-sign switch chattered on
-  // the ±0.15 rad/s telemetry noise (q4 1.2 Hz limit cycle at rest in zone).
-  constexpr double V_BLEND = 0.05;   // [rad/s] full approach weight beyond this
-  auto repulse = [&](double q, double qdf, int i) -> double {
+  // Zone repulsion: SYMMETRIC capped spring + RAW-velocity damping = a
+  // passive (spring+damper) element — it can only ever absorb energy.
+  //
+  // History (do not repeat): velocity-sign-dependent spring scaling was
+  // tried twice. With raw qd it chattered on the ±0.15 rad/s telemetry
+  // noise (1.2 Hz limit cycle at rest in zone); with EMA-filtered qd the
+  // ~20 ms lag flipped the asymmetry into an energy INJECTOR after a fast
+  // reversal (q4 kicked out at 8 rad/s, +9.4 Nm motor torque, multi-joint
+  // jolt). A passive element needs no such cleverness: rebound is handled
+  // by overdamping (kd=3 vs critical ~1 for q4's inertia at kp=5).
+  // Damping uses RAW qd on purpose — lag in a damper changes its phase and
+  // can excite; noise here just dithers ±kd*0.15 Nm, far below stiction.
+  auto repulse = [&](double q, double qd, int i) -> double {
     const double k = cfg_.fd_limit_kp[i];
     if (k <= 0.0) return 0.0;
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
-    const double damp = -cfg_.fd_limit_kd[i] * qdf;
     const double fmax = cfg_.fd_limit_fmax[i];
-    const double es = cfg_.fd_limit_exit_scale;
-    if (q < lo) {     // lower zone: approaching = qd < 0
-      const double spring = std::min(k * (lo - q), fmax);
-      const double w = std::clamp(-qdf / V_BLEND, 0.0, 1.0);
-      return (es + (1.0 - es) * w) * spring + damp;
-    }
-    if (q > hi) {     // upper zone: approaching = qd > 0
-      const double spring = std::max(-k * (q - hi), -fmax);
-      const double w = std::clamp(qdf / V_BLEND, 0.0, 1.0);
-      return (es + (1.0 - es) * w) * spring + damp;
-    }
+    if (q < lo)
+      return std::min(k * (lo - q), fmax) - cfg_.fd_limit_kd[i] * qd;
+    if (q > hi)
+      return std::max(-k * (q - hi), -fmax) - cfg_.fd_limit_kd[i] * qd;
     return 0.0;
   };
   const bool freedrive_like =
@@ -269,8 +265,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         break;
     }
     if (freedrive_like) {
-      lc.tau[i] += repulse(p.lq[i], p.lqd_f[i], i);
-      fc.tau[i] += repulse(p.fq[i], p.fqd_f[i], i);
+      lc.tau[i] += repulse(p.lq[i], p.lqd[i], i);
+      fc.tau[i] += repulse(p.fq[i], p.fqd[i], i);
     }
     // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
     lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);
