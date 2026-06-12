@@ -38,6 +38,19 @@ double quintic(double a) {
   return 10 * a * a * a - 15 * a * a * a * a + 6 * a * a * a * a * a;
 }
 
+// Trapezoidal position profile s(a), a in [0,1]: 20% accel / 60% cruise /
+// 20% decel. Replaces quintic for MOVES — quintic's long near-zero-velocity
+// tails sit right in the stiction band and caused stick-slip "judder".
+double trapezoid(double a) {
+  a = std::clamp(a, 0.0, 1.0);
+  const double ta = 0.2;                  // accel fraction
+  const double vmax = 1.0 / (1.0 - ta);   // unit-area cruise velocity
+  if (a < ta) return 0.5 * vmax * a * a / ta;
+  if (a < 1.0 - ta) return 0.5 * vmax * ta + vmax * (a - ta);
+  double r = 1.0 - a;
+  return 1.0 - 0.5 * vmax * r * r / ta;
+}
+
 // Calibration poses (LEFT arm conventions; j1/j2 sign-flipped for right).
 // Chosen to excite j1/j2/j3/j4 gravity terms over their (conservative) ranges.
 // NOTE: j4 >= 0.3 everywhere — j4's range is [0,1.8] and q4=0 is the elbow
@@ -153,7 +166,7 @@ int main(int argc, char** argv) {
   // Stiffer than v1: Kp=60 stick-slipped against joint friction (arm lagged
   // the trajectory, error built up, then jerked forward in bursts).
   const Vec7 KP = {110, 110, 100, 100, 16, 16, 12};
-  const Vec7 KD = {3.5, 3.5, 3.0, 3.0, 0.4, 0.4, 0.3};
+  const Vec7 KD = {2.0, 2.0, 1.8, 1.8, 0.3, 0.3, 0.25};
   const Vec7 TAU_FF_MAX = {40, 40, 25, 25, 8, 8, 8};
 
   OaxArm arm(can, fd, 500);
@@ -180,9 +193,11 @@ int main(int argc, char** argv) {
     arm.read(q, dq, tau);
     grav.gravity(q, g);
     for (int i = 0; i < DOF; ++i) {
-      if (friction_ff_on)
-        g[i] += fcfg.fric_Fc[i] * std::tanh(fcfg.fric_k[i] * dq[i])
-              + fcfg.fric_Fv[i] * dq[i] + fcfg.fric_Fo[i];
+      if (friction_ff_on) {
+        const double boost = 1.25;   // yaml has x0.75 safety; ~full during moves
+        g[i] += boost * (fcfg.fric_Fc[i] * std::tanh(fcfg.fric_k[i] * dq[i])
+              + fcfg.fric_Fv[i] * dq[i] + fcfg.fric_Fo[i]);
+      }
       g[i] = std::clamp(g[i], -TAU_FF_MAX[i], TAU_FF_MAX[i]);
     }
     Vec7 zero{};
@@ -195,7 +210,7 @@ int main(int argc, char** argv) {
   auto move_to = [&](const Vec7& a, const Vec7& bgt, double T) {
     int nmove = static_cast<int>(T / dt);
     for (int s = 0; s < nmove; ++s) {
-      double al = quintic(static_cast<double>(s) / nmove);
+      double al = trapezoid(static_cast<double>(s) / nmove);
       Vec7 ref;
       for (int i = 0; i < DOF; ++i) ref[i] = a[i] + al * (bgt[i] - a[i]);
       hold_cmd(ref);
