@@ -19,7 +19,7 @@ python3 "$REPO/oa_fd_cpp/script/fit_gravity.py" \
     --csv "$CSV" \
     --urdf "$REPO/oa_fd_cpp/urdf/openarmx_arm_v2com.urdf" \
     --out  "$OUT" \
-    --fit-links 1,2,3,4,5 --drop-joints 6,7
+    --fit-links 1,2,3,4,5,6,7 
 
 echo
 echo ">> CHECK the output above: 'openarmx_link7: m 0.625 -> 0.625' and"
