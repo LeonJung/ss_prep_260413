@@ -210,6 +210,11 @@ def main():
             meta.append((q, k))
             row = np.zeros(nP)
             for li, ln in enumerate(LINKS):
+                if li < k:
+                    continue   # only links DISTAL to joint k carry its gravity
+                               # torque (LINKS[li]=link{li+1}, joint k+1 moves
+                               # links k+1..7). Summing proximal links injected
+                               # huge phantom torques (the fake "j6/j7 8Nm").
                 T = linkT[ln]
                 Ri, pi = T[:3, :3], T[:3, 3]
                 # d tau_k / d m_i  (with c at link origin)
@@ -242,6 +247,8 @@ def main():
             jpos, jax, linkT = fk(joints, q)
             row = np.zeros(nP + nB)
             for li, ln in enumerate(LINKS):
+                if li < k:
+                    continue   # distal links only (same fix as static loop)
                 T = linkT[ln]
                 Ri, pi = T[:3, :3], T[:3, 3]
                 row[4 * li] = SIGN * jax[k].dot(np.cross(pi - jpos[k], gvec))
