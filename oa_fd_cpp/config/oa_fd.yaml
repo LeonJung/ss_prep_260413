@@ -46,11 +46,6 @@ mirror:
 
 gravity:
   enabled: true
-  # Per-ROLE URDFs (leader = light handle tip, follower = gripper tip).
-  # Empty -> both fall back to the common `urdf` below / launch urdf:=.
-  # Launch args urdf_leader:= / urdf_follower:= override these.
-  urdf_leader: ""
-  urdf_follower: ""
   # urdf: bundled single-arm URDF is auto-passed by the launch file
   # (share/oa_fd_cpp/urdf/openarmx_arm.urdf, generated from openarmx_description
   # v10.urdf.xacro, hand/ee/ros2_control stripped, check_urdf-clean, 7 revolute).

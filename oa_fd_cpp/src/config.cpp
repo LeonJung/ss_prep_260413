@@ -63,8 +63,6 @@ bool load_config(const std::string& path, OaFdConfig& c) {
   if (const auto& g = root["gravity"]) {
     try_scalar(g, "enabled",   c.gravity.enabled);
     try_scalar(g, "urdf",      c.gravity.urdf);
-    try_scalar(g, "urdf_leader",   c.urdf_leader);
-    try_scalar(g, "urdf_follower", c.urdf_follower);
     try_scalar(g, "root_link", c.gravity.root_link);
     try_scalar(g, "tip_link",  c.gravity.tip_link);
     try_scalar(g, "scale",     c.gravity.scale);
