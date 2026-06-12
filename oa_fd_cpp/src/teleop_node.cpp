@@ -176,6 +176,24 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
       ? std::clamp((now_sec - h_t_start) / h_duration, 0.0, 1.0) : 1.0;
   const double s = quintic_ease(alpha);
 
+  // FREEDRIVE shaping: joint-limit repulsion (PC-side torque, this side's
+  // boundaries). Active only in the modes with no other position stiffness.
+  const bool left_side = (p.name == "left");
+  const Vec7& lim_lo = left_side ? cfg_.limit_lower_left  : cfg_.limit_lower_right;
+  const Vec7& lim_hi = left_side ? cfg_.limit_upper_left  : cfg_.limit_upper_right;
+  auto repulse = [&](double q, int i) -> double {
+    const double k = cfg_.fd_limit_kp[i];
+    if (k <= 0.0) return 0.0;
+    const double lo = lim_lo[i] + cfg_.fd_limit_margin;
+    const double hi = lim_hi[i] - cfg_.fd_limit_margin;
+    if (q < lo) return  k * (lo - q);
+    if (q > hi) return -k * (q - hi);
+    return 0.0;
+  };
+  const bool freedrive_like =
+      (mode == MODE_FREEDRIVE) ||
+      (mode == MODE_ACTIVE && !(drive_leader_ && drive_follower_));
+
   for (int i = 0; i < DOF; ++i) {
     // feedforward (gravity + friction comp) always applied
     lc.tau[i] = gl[i] + frl[i];
@@ -192,8 +210,11 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
           fc.kp[i] = cfg_.Kp[i]; fc.kd[i] = cfg_.Kd[i];
           fc.pos[i] = l_in_f[i];  fc.vel[i] = ld_in_f[i];
         } else {
-          lc.kp[i] = 0.0; lc.kd[i] = 0.0; lc.pos[i] = 0.0; lc.vel[i] = 0.0;
-          fc.kp[i] = 0.0; fc.kd[i] = 0.0; fc.pos[i] = 0.0; fc.vel[i] = 0.0;
+          // single-role fallback = freedrive-like -> same posture shaping
+          lc.kp[i] = cfg_.fd_posture_kp[i]; lc.kd[i] = cfg_.fd_posture_kd[i];
+          lc.pos[i] = cfg_.fd_posture_q[i]; lc.vel[i] = 0.0;
+          fc.kp[i] = cfg_.fd_posture_kp[i]; fc.kd[i] = cfg_.fd_posture_kd[i];
+          fc.pos[i] = cfg_.fd_posture_q[i]; fc.vel[i] = 0.0;
         }
         break;
       case MODE_PAUSED:
@@ -210,9 +231,17 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
       }
       case MODE_FREEDRIVE:
       default:
-        lc.kp[i] = 0.0; lc.kd[i] = 0.0; lc.pos[i] = 0.0; lc.vel[i] = 0.0;
-        fc.kp[i] = 0.0; fc.kd[i] = 0.0; fc.pos[i] = 0.0; fc.vel[i] = 0.0;
+        // weak posture spring (motor-side) — tames q3<->q5 self-motion while
+        // staying easy to override by hand. Zeros = old pure freedrive.
+        lc.kp[i] = cfg_.fd_posture_kp[i]; lc.kd[i] = cfg_.fd_posture_kd[i];
+        lc.pos[i] = cfg_.fd_posture_q[i]; lc.vel[i] = 0.0;
+        fc.kp[i] = cfg_.fd_posture_kp[i]; fc.kd[i] = cfg_.fd_posture_kd[i];
+        fc.pos[i] = cfg_.fd_posture_q[i]; fc.vel[i] = 0.0;
         break;
+    }
+    if (freedrive_like) {
+      lc.tau[i] += repulse(p.lq[i], i);
+      fc.tau[i] += repulse(p.fq[i], i);
     }
     // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
     lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);

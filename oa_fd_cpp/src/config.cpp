@@ -60,6 +60,19 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_vec7(mr, "right", c.mirror_right);
     try_vec7(mr, "left",  c.mirror_left);
   }
+  if (const auto& fd = root["freedrive"]) {
+    try_vec7(fd, "posture_kp", c.fd_posture_kp);
+    try_vec7(fd, "posture_kd", c.fd_posture_kd);
+    try_vec7(fd, "posture_q",  c.fd_posture_q);
+    try_vec7(fd, "limit_kp",   c.fd_limit_kp);
+    try_scalar(fd, "limit_margin", c.fd_limit_margin);
+  }
+  if (const auto& jl = root["joint_limits"]) {
+    try_vec7(jl, "lower_left",  c.limit_lower_left);
+    try_vec7(jl, "upper_left",  c.limit_upper_left);
+    try_vec7(jl, "lower_right", c.limit_lower_right);
+    try_vec7(jl, "upper_right", c.limit_upper_right);
+  }
   if (const auto& g = root["gravity"]) {
     try_scalar(g, "enabled",   c.gravity.enabled);
     try_scalar(g, "urdf",      c.gravity.urdf);

@@ -64,6 +64,22 @@ struct OaFdConfig {
   Vec7 mirror_right = {1, 1, 1, 1, 1, 1, 1};
   Vec7 mirror_left  = {1, 1, 1, 1, 1, 1, 1};
 
+  // ---- FREEDRIVE shaping: weak posture spring + joint-limit repulsion ----
+  // Spring (motor-side impedance toward posture_q) tames the 7-DOF q3<->q5
+  // self-motion; repulsion (PC-side torque inside `limit_margin` of a
+  // boundary) keeps joints off hard stops / out of forbidden ranges.
+  // All zeros = the old pure gravity-only FREEDRIVE.
+  Vec7 fd_posture_kp = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 fd_posture_kd = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 fd_posture_q  = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 fd_limit_kp   = {0, 0, 0, 0, 0, 0, 0};  // Nm/rad inside the zone
+  double fd_limit_margin = 0.15;                // zone width [rad]
+  // Repulsion boundaries per side (defaults: effectively disabled).
+  Vec7 limit_lower_left  = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
+  Vec7 limit_upper_left  = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};
+  Vec7 limit_lower_right = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
+  Vec7 limit_upper_right = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};
+
   GravityCfg gravity;
   // Gravity vector expressed in each arm's URDF root frame. OpenArm mounting
   // usually makes this ±Y (NOT Z), opposite sign per side. Tune in FREEDRIVE.

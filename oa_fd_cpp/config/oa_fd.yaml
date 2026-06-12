@@ -56,6 +56,26 @@ mirror:
   right: [1, 1, 1, 1, 1, 1, 1]
   left:  [1, 1, 1, 1, 1, 1, 1]
 
+# FREEDRIVE shaping (also applies to single-role ACTIVE fallback).
+# posture spring: weak motor-side pull of q3/q5 toward 0 — tames the 7-DOF
+#   self-motion (q3<->q5 co-rotation flipping the elbow). Hand-overridable.
+# limit repulsion: PC-side spring inside `limit_margin` of a boundary.
+freedrive:
+  posture_kp: [0.0, 0.0, 2.5, 0.0, 2.5, 0.0, 0.0]
+  posture_kd: [0.0, 0.0, 0.3, 0.0, 0.3, 0.0, 0.0]
+  posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  limit_kp:   [40.0, 40.0, 30.0, 30.0, 8.0, 8.0, 8.0]
+  limit_margin: 0.15
+
+# Repulsion boundaries [rad]. j1 left: -120..+45 deg per operator request;
+# j4 lower 0.0 + margin keeps the elbow off its hard stop. Right side j1/j2
+# mirrored from left.
+joint_limits:
+  lower_left:  [-2.094, -3.27, -1.57, 0.0, -1.5, -0.75, -1.4]
+  upper_left:  [ 0.785,  0.13,  1.57, 1.8,  1.5,  0.75,  1.4]
+  lower_right: [-0.785, -0.13, -1.57, 0.0, -1.5, -0.75, -1.4]
+  upper_right: [ 2.094,  3.27,  1.57, 1.8,  1.5,  0.75,  1.4]
+
 gravity:
   enabled: true
   # urdf: bundled single-arm URDF is auto-passed by the launch file

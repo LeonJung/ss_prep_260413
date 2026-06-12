@@ -2,7 +2,9 @@
 
 #include "oa_fd_cpp/oax_driver.hpp"
 
+#include <chrono>
 #include <cstdio>
+#include <thread>
 #include <vector>
 
 #include <openarmx/can/socket/openarmx.hpp>
@@ -45,6 +47,12 @@ bool OaxArm::init() {
 
 bool OaxArm::enable() {
   if (!inited_) return false;
+  // Cold-power-up motors have been seen ignoring MIT torque until they get a
+  // disable->enable cycle. A relaunch always recovered it — because the
+  // previous session's exit sent disable_all(). Reproduce that here so the
+  // FIRST session behaves like every later one.
+  dev_->disable_all();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   dev_->set_callback_mode_all(rm::CallbackMode::STATE);
   if (!dev_->enable_all()) {
     std::fprintf(stderr, "[oax_driver:%s] enable_all() reported failure\n", iface_.c_str());
@@ -65,7 +73,9 @@ bool OaxArm::verify_state(int rounds, int recv_us) {
     auto motors = dev_->get_arm().get_motors();
     int live = 0;
     for (auto* mo : motors)
-      if (mo->get_temperature() > 0.5f) ++live;   // real state frame parsed
+      // real state frame parsed AND driver confirms enabled — temp alone
+      // passed once while torque commands were still being ignored
+      if (mo->get_temperature() > 0.5f && mo->is_enabled()) ++live;
     if (live >= DOF) {
       if (r > 0)
         std::fprintf(stderr, "[oax_driver:%s] state telemetry up after %d rounds\n",
@@ -73,19 +83,22 @@ bool OaxArm::verify_state(int rounds, int recv_us) {
       return true;
     }
     if (r == rounds / 2) {
-      // Halfway with motors still silent: re-issue callback mode + enable
-      // (the same thing a relaunch does, which is known to recover it).
+      // Halfway with motors still silent/disabled: full disable->enable
+      // cycle (what a relaunch effectively does, which always recovered it).
       std::fprintf(stderr,
-                   "[oax_driver:%s] only %d/%d motors reporting — re-enabling\n",
+                   "[oax_driver:%s] only %d/%d motors live+enabled — disable/enable cycle\n",
                    iface_.c_str(), live, DOF);
+      dev_->disable_all();
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       dev_->set_callback_mode_all(rm::CallbackMode::STATE);
       dev_->enable_all();
     }
   }
   auto motors = dev_->get_arm().get_motors();
-  std::fprintf(stderr, "[oax_driver:%s] NO state telemetry; silent motors:", iface_.c_str());
+  std::fprintf(stderr, "[oax_driver:%s] motors not ready; silent/disabled:", iface_.c_str());
   for (int i = 0; i < std::min<int>(DOF, (int)motors.size()); ++i)
-    if (motors[i]->get_temperature() <= 0.5f) std::fprintf(stderr, " %d", i + 1);
+    if (motors[i]->get_temperature() <= 0.5f || !motors[i]->is_enabled())
+      std::fprintf(stderr, " %d", i + 1);
   std::fprintf(stderr, "\n");
   return false;
 }
