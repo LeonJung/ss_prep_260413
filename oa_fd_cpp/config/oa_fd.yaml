@@ -61,12 +61,14 @@ mirror:
 #   self-motion (q3<->q5 co-rotation flipping the elbow). Hand-overridable.
 # limit repulsion: PC-side spring inside `limit_margin` of a boundary.
 freedrive:
-  posture_kp: [0.0, 0.0, 2.5, 0.0, 2.5, 0.0, 0.0]
-  posture_kd: [0.0, 0.0, 0.3, 0.0, 0.3, 0.0, 0.0]
+  # HW-tuned 2026-06-12 (left leader): spring strength confirmed by operator.
+  posture_kp: [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
+  posture_kd: [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  limit_kp:   [40.0, 40.0, 30.0, 30.0, 8.0, 8.0, 8.0]
-  # per-joint zone width [rad] (scalar also accepted -> applies to all)
-  limit_margin: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15]
+  # j6/j7 repulsion OFF; j3-j5 soft (8). j1/j2 firm (operator range fence).
+  limit_kp:   [40.0, 40.0, 8.0, 8.0, 8.0, 0.0, 0.0]
+  # per-joint zone width [rad]; 7-vec also accepted for per-joint values
+  limit_margin: 0.15
 
 # Repulsion boundaries [rad]. j1 left: -120..+45 deg per operator request;
 # j4 lower 0.0 + margin keeps the elbow off its hard stop. Right side j1/j2
