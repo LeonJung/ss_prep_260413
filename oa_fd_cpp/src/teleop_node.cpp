@@ -191,29 +191,39 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   const bool left_side = (p.name == "left");
   const Vec7& lim_lo = left_side ? cfg_.limit_lower_left  : cfg_.limit_lower_right;
   const Vec7& lim_hi = left_side ? cfg_.limit_upper_left  : cfg_.limit_upper_right;
-  // Zone repulsion: SYMMETRIC capped spring + RAW-velocity damping = a
-  // passive (spring+damper) element — it can only ever absorb energy.
+  // Zone repulsion: executed MOTOR-SIDE as MIT impedance toward the zone
+  // edge. The motor closes this loop on its LOCAL encoder with no CAN
+  // delay, so it is passive regardless of arm configuration.
   //
-  // History (do not repeat): velocity-sign-dependent spring scaling was
-  // tried twice. With raw qd it chattered on the ±0.15 rad/s telemetry
-  // noise (1.2 Hz limit cycle at rest in zone); with EMA-filtered qd the
-  // ~20 ms lag flipped the asymmetry into an energy INJECTOR after a fast
-  // reversal (q4 kicked out at 8 rad/s, +9.4 Nm motor torque, multi-joint
-  // jolt). A passive element needs no such cleverness: rebound is handled
-  // by overdamping (kd=3 vs critical ~1 for q4's inertia at kp=5).
-  // Damping uses RAW qd on purpose — lag in a damper changes its phase and
-  // can excite; noise here just dithers ±kd*0.15 Nm, far below stiction.
-  auto repulse = [&](double q, double qd, int i) -> double {
+  // History (do not repeat): three PC-side torque variants all failed on
+  // hardware. (1) raw-qd asymmetric spring -> chattered on ±0.15 rad/s
+  // velocity noise (1.2 Hz limit cycle at rest in zone). (2) EMA-filtered
+  // damping -> ~20 ms lag turned the damper into an energy injector after
+  // fast reversals (q4 fired out at 8 rad/s). (3) symmetric spring +
+  // raw-qd PC-side damping -> the 1-3 ms CAN telemetry delay broke
+  // discrete-time passivity in LOW-INERTIA configurations (j2 sustained
+  // 13 Hz / 12 Nm when the arm was aligned with its axis). PC-computed
+  // velocity feedback through a delayed channel is structurally unsafe
+  // here; only the motor-local loop is delay-free.
+  //
+  // fmax cap: deep violations get kp_eff = fmax/depth so the commanded
+  // torque at the CURRENT depth never exceeds fmax (re-evaluated at 1 kHz;
+  // converges to the full kp as the joint nears the edge).
+  auto zone_override = [&](double q, int i, MitCmd& c) {
     const double k = cfg_.fd_limit_kp[i];
-    if (k <= 0.0) return 0.0;
+    if (k <= 0.0) return;
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
-    const double fmax = cfg_.fd_limit_fmax[i];
-    if (q < lo)
-      return std::min(k * (lo - q), fmax) - cfg_.fd_limit_kd[i] * qd;
-    if (q > hi)
-      return std::max(-k * (q - hi), -fmax) - cfg_.fd_limit_kd[i] * qd;
-    return 0.0;
+    double edge, depth;
+    if (q < lo)      { edge = lo; depth = lo - q; }
+    else if (q > hi) { edge = hi; depth = q - hi; }
+    else return;
+    const double kp_eff =
+        (depth > 1e-6) ? std::min(k, cfg_.fd_limit_fmax[i] / depth) : k;
+    c.kp[i] = std::max(c.kp[i], kp_eff);          // posture spring may coexist
+    c.kd[i] = std::max(c.kd[i], cfg_.fd_limit_kd[i]);
+    c.pos[i] = edge;
+    c.vel[i] = 0.0;
   };
   const bool freedrive_like =
       (mode == MODE_FREEDRIVE) ||
@@ -265,8 +275,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         break;
     }
     if (freedrive_like) {
-      lc.tau[i] += repulse(p.lq[i], p.lqd[i], i);
-      fc.tau[i] += repulse(p.fq[i], p.fqd[i], i);
+      zone_override(p.lq[i], i, lc);
+      zone_override(p.fq[i], i, fc);
     }
     // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
     lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);
