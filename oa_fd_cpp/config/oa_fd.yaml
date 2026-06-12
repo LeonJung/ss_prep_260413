@@ -72,17 +72,23 @@ freedrive:
   limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
   # spring fraction kept while exiting (1.0 = symmetric = catapult)
   limit_exit_scale: 0.10
+  # spring force cap [Nm]: q2's -45deg fence puts home(0deg) 0.94 rad deep
+  # in the zone -> uncapped spring would command ~37 Nm. Capped: lifting into
+  # the fence meets a firm-but-finite 10 Nm; parked at home the steady push
+  # is exit_scale*cap = ~1 Nm until the arm settles below -45deg.
+  limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
   # per-joint zone width [rad]; 7-vec also accepted for per-joint values
   limit_margin: 0.15
 
-# Repulsion boundaries [rad]. j1 left: -120..+45 deg per operator request;
+# Repulsion boundaries [rad]. Operator fences (left): j1 -120..+45 deg,
+# j2 upper -45 deg (NOTE: home 0 lies inside this fence — see limit_fmax).
 # j4 lower 0.0 + margin keeps the elbow off its hard stop. Right side j1/j2
 # mirrored from left.
 joint_limits:
-  lower_left:  [-2.094, -3.27, -1.57, 0.0, -1.5, -0.75, -1.4]
-  upper_left:  [ 0.785,  0.13,  1.57, 1.8,  1.5,  0.75,  1.4]
-  lower_right: [-0.785, -0.13, -1.57, 0.0, -1.5, -0.75, -1.4]
-  upper_right: [ 2.094,  3.27,  1.57, 1.8,  1.5,  0.75,  1.4]
+  lower_left:  [-2.094, -3.27,  -1.57, 0.0, -1.5, -0.75, -1.4]
+  upper_left:  [ 0.785, -0.785,  1.57, 1.8,  1.5,  0.75,  1.4]
+  lower_right: [-0.785,  0.785, -1.57, 0.0, -1.5, -0.75, -1.4]
+  upper_right: [ 2.094,  3.27,   1.57, 1.8,  1.5,  0.75,  1.4]
 
 gravity:
   enabled: true

@@ -202,12 +202,13 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
     const double damp = -cfg_.fd_limit_kd[i] * qd;
+    const double fmax = cfg_.fd_limit_fmax[i];
     if (q < lo) {     // lower zone: approaching = qd < 0
-      const double spring = k * (lo - q);
+      const double spring = std::min(k * (lo - q), fmax);
       return (qd < 0.0 ? spring : cfg_.fd_limit_exit_scale * spring) + damp;
     }
     if (q > hi) {     // upper zone: approaching = qd > 0
-      const double spring = -k * (q - hi);
+      const double spring = std::max(-k * (q - hi), -fmax);
       return (qd > 0.0 ? spring : cfg_.fd_limit_exit_scale * spring) + damp;
     }
     return 0.0;

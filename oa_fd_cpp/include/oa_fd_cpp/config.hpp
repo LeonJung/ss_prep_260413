@@ -83,6 +83,9 @@ struct OaFdConfig {
   Vec7 fd_limit_kd   = {0, 0, 0, 0, 0, 0, 0};  // Nm/(rad/s) inside the zone
   // spring fraction kept while exiting (1.0 = symmetric spring = catapult)
   double fd_limit_exit_scale = 0.25;
+  // cap on the spring force [Nm] — keeps a DEEP zone violation (e.g. parking
+  // inside a relocated fence) from commanding huge torque
+  Vec7 fd_limit_fmax = {1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9};
   Vec7 fd_limit_margin = {0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15};  // zone width [rad], per joint
   // Repulsion boundaries per side (defaults: effectively disabled).
   Vec7 limit_lower_left  = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
