@@ -84,21 +84,23 @@ freedrive:
   limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
   # gentle inward nudge: motor target sits this far inside the valid range
   # from the edge -> small steady push-back even resting at the limit
-  limit_push: [0.04, 0.04, 0.03, 0.03, 0.03, 0.0, 0.0]
+  limit_push: [0.07, 0.07, 0.05, 0.05, 0.05, 0.0, 0.0]
   # damping scale while EXITING the zone (1.0 = as stiff as entering,
-  # 0.0 = free exit). 0.25 -> coming back out is no longer draggy.
-  limit_exit_kd: 0.25
-  # per-joint zone width [rad]; 7-vec also accepted for per-joint values
-  limit_margin: 0.15
+  # 0.0 = free exit). 0.10 -> exit is nearly drag-free.
+  limit_exit_kd: 0.10
+  # per-joint zone width [rad]. j2 narrowed to 0.05 so its +0.13 edge sits at
+  # +0.08 -> home(0) is outside the zone -> no launch-time push on q2.
+  limit_margin: [0.15, 0.05, 0.15, 0.15, 0.15, 0.15, 0.15]
 
-# Repulsion boundaries [rad]. Operator fences (left): j1 -120..+45 deg,
-# j2 upper -45 deg (NOTE: home 0 lies inside this fence — see limit_fmax).
+# Repulsion boundaries [rad]. Operator fence (left): j1 -120..+45 deg.
+# q2 -45deg fence REMOVED (operator) -> back to mechanical upper +0.13;
+# home(0) no longer sits inside a fence, so no launch-time downward drift.
 # j4 lower 0.0 + margin keeps the elbow off its hard stop. Right side j1/j2
 # mirrored from left.
 joint_limits:
   lower_left:  [-2.094, -3.27,  -1.57, 0.0, -1.5, -0.75, -1.4]
-  upper_left:  [ 0.785, -0.785,  1.57, 1.8,  1.5,  0.75,  1.4]
-  lower_right: [-0.785,  0.785, -1.57, 0.0, -1.5, -0.75, -1.4]
+  upper_left:  [ 0.785,  0.13,   1.57, 1.8,  1.5,  0.75,  1.4]
+  lower_right: [-0.785, -0.13,  -1.57, 0.0, -1.5, -0.75, -1.4]
   upper_right: [ 2.094,  3.27,   1.57, 1.8,  1.5,  0.75,  1.4]
 
 gravity:
