@@ -149,14 +149,21 @@ int main(int argc, char** argv) {
     }
     std::printf("loaded %zu poses from %s\n", poses.size(), poses_file.c_str());
   }
+  // Right arm = y-mirror of left: joints q1,q3,q5,q7 flip, q2,q4,q6 same
+  // (matches gravity.mirror_right; verified on HW that q1/q3/q5/q7 mirror).
+  // NOTE: the old code mirrored only j1/j2 — wrong map. Now: a --poses file
+  // is taken AS-IS (gen_cali_poses --side right already wrote right-frame
+  // values); only the built-in POSES_LEFT is mirrored. Limits are mirrored
+  // per-joint for the clamp either way.
+  static const double MIR[DOF] = {-1, 1, -1, 1, -1, 1, -1};
   double lim_lo[DOF], lim_hi[DOF];
   for (int i = 0; i < DOF; ++i) { lim_lo[i] = LIM_LO_L[i]; lim_hi[i] = LIM_HI_L[i]; }
   if (side == "right") {
-    for (auto& p : poses) { p[0] = -p[0]; p[1] = -p[1]; }
-    for (int i = 0; i < 2; ++i) {   // mirrored ranges on j1/j2
-      lim_lo[i] = -LIM_HI_L[i];
-      lim_hi[i] = -LIM_LO_L[i];
-    }
+    if (poses_file.empty())                       // mirror only the built-in set
+      for (auto& p : poses)
+        for (int i = 0; i < DOF; ++i) p[i] *= MIR[i];
+    for (int i = 0; i < DOF; ++i)
+      if (MIR[i] < 0) { lim_lo[i] = -LIM_HI_L[i]; lim_hi[i] = -LIM_LO_L[i]; }
   }
 
   // Stiffer than v1: Kp=60 stick-slipped against joint friction (arm lagged
