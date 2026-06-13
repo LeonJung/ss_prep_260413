@@ -155,10 +155,10 @@ void TeleopNode::friction(const Vec7& qd, Vec7& f) const {
                + cfg_.fric_Fv[i] * qd[i] + cfg_.fric_Fo[i];
     // velocity gate: no comp at standstill (kills the negative-damping
     // runaway in FREEDRIVE), full comp once clearly moving.
-    if (cfg_.fric_v_full > cfg_.fric_v_start) {
+    if (cfg_.fric_v_full[i] > cfg_.fric_v_start[i]) {
       const double g = std::clamp(
-          (std::abs(qd[i]) - cfg_.fric_v_start)
-              / (cfg_.fric_v_full - cfg_.fric_v_start), 0.0, 1.0);
+          (std::abs(qd[i]) - cfg_.fric_v_start[i])
+              / (cfg_.fric_v_full[i] - cfg_.fric_v_start[i]), 0.0, 1.0);
       raw *= g;
     }
     f[i] = raw;

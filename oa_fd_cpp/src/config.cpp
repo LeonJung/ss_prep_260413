@@ -56,8 +56,13 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_vec7(fr, "k",  c.fric_k);
     try_vec7(fr, "Fv", c.fric_Fv);
     try_vec7(fr, "Fo", c.fric_Fo);
-    try_scalar(fr, "v_start", c.fric_v_start);
-    try_scalar(fr, "v_full",  c.fric_v_full);
+    auto load_gate = [&](const char* key, Vec7& out){
+      if (!fr[key]) return;
+      if (fr[key].IsSequence()) { try_vec7(fr, key, out); }
+      else { double v=out[0]; try_scalar(fr, key, v); out.fill(v); }
+    };
+    load_gate("v_start", c.fric_v_start);
+    load_gate("v_full",  c.fric_v_full);
   }
   if (const auto& mr = root["mirror"]) {
     try_vec7(mr, "right", c.mirror_right);

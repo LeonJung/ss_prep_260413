@@ -66,8 +66,8 @@ struct OaFdConfig {
   // Velocity gate: 0 below v_start, ramps to 1 at v_full. Kills the
   // negative-damping slope at standstill that made FREEDRIVE (Kp=Kd=0)
   // run away when nudged. v_full <= v_start disables the gate (old behavior).
-  double fric_v_start = 0.0;   // [rad/s]
-  double fric_v_full  = 0.0;   // [rad/s]
+  Vec7 fric_v_start = {0,0,0,0,0,0,0};   // [rad/s] per joint
+  Vec7 fric_v_full  = {0,0,0,0,0,0,0};   // [rad/s] per joint
 
   // ---- leader<->follower joint mirror, per side ----
   Vec7 mirror_right = {1, 1, 1, 1, 1, 1, 1};

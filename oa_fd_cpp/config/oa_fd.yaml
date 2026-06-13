@@ -55,8 +55,13 @@ friction:
   k:  [8.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
   Fv: [0.0, 0.0, 0.073, 0.0, 0.004, 0.023, 0.0]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  v_start: 0.03
-  v_full:  0.12
+  # velocity gate per joint (scalar also accepted -> all joints). q2 'gargle'
+  # = friction-comp limit cycle at 1-3 Hz while moving through zero velocity
+  # (undamped in FREEDRIVE: motor-side Kd=0). A WIDE gate keeps comp near-zero
+  # through the low-speed band so it can't pump the cycle, while staying full
+  # at the ~0.5 rad/s working speed -> still light. Others keep tight 0.12.
+  v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
+  v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
 
 mirror:
   right: [1, 1, 1, 1, 1, 1, 1]
