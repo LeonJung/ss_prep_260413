@@ -132,7 +132,8 @@ gravity:
   vec_right: [0.0, 0.0, 9.81]
   vec_left:  [0.0, 0.0, 9.81]
   # Per-joint gravity-model axis mirror (the arms are sagittal-plane mirrors).
-  # Measured motor view R vs L: q1,q7 MIRROR; q2,q4,q6 SAME. q3,q5 are roll
+  # Measured motor view R vs L: q1,q2,q3,q5,q7 MIRROR; q4,q6 SAME. (q2 was wrongly SAME -> wrong-side
+  # cali poses + q2 gravity fly-up; fixed to MIRROR.) q3,q5 are roll
   # joints -> inferred MIRROR (verify; ~0 in use so low impact). Left = all 1.
-  mirror_right: [-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
+  mirror_right: [-1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
   mirror_left:  [ 1.0, 1.0,  1.0, 1.0,  1.0, 1.0,  1.0]

@@ -134,12 +134,12 @@ def main():
     ap.add_argument('--margin', type=float, default=0.15)
     ap.add_argument('--side', default='left', choices=['left', 'right'],
                     help='right: write the spatial-mirror of each validated '
-                         'left pose (m=[-1,1,-1,1,-1,1,-1]); collision/torso/'
+                         'left pose (m=[-1,-1,-1,1,-1,1,-1]); collision/torso/'
                          'reach are guaranteed by mirror symmetry')
     args = ap.parse_args()
-    # kinematic mirror map L->R (q1,q3,q5,q7 flip; q2,q4,q6 same) — matches
+    # kinematic mirror map L->R (q1,q2,q3,q5,q7 flip; q4,q6 same) — matches
     # the gravity.mirror_right pattern that behaved correctly on HW.
-    MIRROR = np.array([-1, 1, -1, 1, -1, 1, -1.0])
+    MIRROR = np.array([-1, -1, -1, 1, -1, 1, -1.0])
 
     J = load(args.urdf)
     rng = np.random.default_rng(args.seed)
@@ -177,7 +177,7 @@ def main():
         f.write(f'# auto-generated calibration poses ({args.side}-arm frame), '
                 'self-collision/torso/mount/reach checked'
                 + ('' if args.side == 'left'
-                   else ' (mirror of validated left set, m=[-1,1,-1,1,-1,1,-1])')
+                   else ' (mirror of validated left set, m=[-1,-1,-1,1,-1,1,-1])')
                 + '\n')
         for q in out_poses:
             f.write(','.join(f'{v:.4f}' for v in q) + '\n')
