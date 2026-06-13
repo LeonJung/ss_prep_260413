@@ -47,14 +47,13 @@ Kd: [2.0,   2.0,   2.0,   2.0,   0.2,  0.2,  0.2]
 # Identified (x0.75 already): Fc [0.659,0.577,0.230,0,0.152,0.156,0.085]
 #                             Fv [0,0,0.086,0.878,0.005,0.023,0]
 friction:
-  # x0.85 of identified; j6/j7 raised to ~x1.0 (operator wants them smoother,
-  # they carry no limit zone so there's no zone interaction to worry about).
-  Fc: [0.56, 0.49, 0.20, 0.0, 0.13, 0.156, 0.085]
+  # j1/j2 nudged to ~x0.92 of identified; j6/j7 ~x1.0. j4 gets a SMALL gated
+  # viscous term (~x0.3 of its identified 0.878) — safe now that the limit
+  # zone is motor-side (the earlier q4 divergence was PC-side zone damping
+  # x viscous comp; that coupling is gone). Watch q4 for any oscillation.
+  Fc: [0.60, 0.53, 0.20, 0.0, 0.13, 0.156, 0.085]
   k:  [8.0, 8.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-  # j4 comp fully OFF: its identified model was pure viscous (Fc=0, Fv .878)
-  # = negative damping at ALL gated speeds; against the limit zone it pumped
-  # a growing oscillation. Tune the q4 zone first, revisit comp later.
-  Fv: [0.0, 0.0, 0.073, 0.0, 0.004, 0.023, 0.0]
+  Fv: [0.0, 0.0, 0.073, 0.25, 0.004, 0.023, 0.0]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: 0.03
   v_full:  0.12
