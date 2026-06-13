@@ -69,8 +69,12 @@ friction:
 # magnitudes ~x0.85 of identified, gated like the left. q2 wide gate too.
 # Starting point — RE-TUNE by feel on HW like the left was.
 friction_right:
+  # q2 k 8->2 ported from the left's anti-chatter fix (structural, arm-
+  # independent: a steep tanh at low speed -> limit cycle). The rest are fit
+  # starting values; FEEL-TUNE on HW like the left (q1 toward its own ceiling
+  # ~0.79, q6/q7 for smoothness, etc.).
   Fc: [0.79, 0.60, 0.27, 0.0, 0.06, 0.07, 0.0]
-  k:  [4.0, 8.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
   Fv: [0.0, 0.0, 0.055, 0.0, 0.018, 0.058, 0.062]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
