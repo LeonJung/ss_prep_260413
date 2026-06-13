@@ -37,8 +37,10 @@ TeleopNode::TeleopNode(const Options& opts)
   }
   if (!opts.urdf_override.empty()) {
     cfg_.gravity.urdf = opts.urdf_override;
-    RCLCPP_INFO(get_logger(), "urdf (override): %s", cfg_.gravity.urdf.c_str());
+    RCLCPP_INFO(get_logger(), "urdf (override, both): %s", cfg_.gravity.urdf.c_str());
   }
+  if (!opts.urdf_left_override.empty())  cfg_.gravity_urdf_left  = opts.urdf_left_override;
+  if (!opts.urdf_right_override.empty()) cfg_.gravity_urdf_right = opts.urdf_right_override;
 
   rclcpp::QoS state_qos{10};
   rclcpp::QoS latched{1};
@@ -88,8 +90,12 @@ bool TeleopNode::connect() {
   if (cfg_.gravity.enabled) {
     GravityCfg gr = cfg_.gravity;
     gr.vec = cfg_.grav_vec_right; gr.root_link = cfg_.root_link_right; gr.tip_link = cfg_.tip_link_right;
+    if (!cfg_.gravity_urdf_right.empty()) gr.urdf = cfg_.gravity_urdf_right;
     GravityCfg gl = cfg_.gravity;
     gl.vec = cfg_.grav_vec_left;  gl.root_link = cfg_.root_link_left;  gl.tip_link = cfg_.tip_link_left;
+    if (!cfg_.gravity_urdf_left.empty()) gl.urdf = cfg_.gravity_urdf_left;
+    RCLCPP_INFO(get_logger(), "gravity urdf  left:%s  right:%s",
+                gl.urdf.c_str(), gr.urdf.c_str());
     bool okr = grav_right_.load(gr);
     bool okl = grav_left_.load(gl);
     if (!okr || !okl)

@@ -53,7 +53,9 @@ class TeleopNode : public rclcpp::Node {
 public:
   struct Options {
     std::string config_path;
-    std::string urdf_override;   // --urdf : overrides gravity.urdf (launch passes bundled path)
+    std::string urdf_override;   // --urdf : overrides gravity.urdf (both sides)
+    std::string urdf_left_override;   // --urdf-left  : per-side gravity URDF
+    std::string urdf_right_override;  // --urdf-right : per-side gravity URDF
     std::string arms = "both";   // --arms right|left|both : which pair(s) to drive
     std::string role = "both";   // --role leader|follower|both : which side of each pair
     bool use_rt = false;

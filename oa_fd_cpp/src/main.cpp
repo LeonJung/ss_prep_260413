@@ -20,6 +20,8 @@ int main(int argc, char** argv) {
     auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
     if (a == "--config")            opts.config_path = next();
     else if (a == "--urdf")         opts.urdf_override = next();
+    else if (a == "--urdf-left")    opts.urdf_left_override = next();
+    else if (a == "--urdf-right")   opts.urdf_right_override = next();
     else if (a == "--arms")         opts.arms = next();   // right|left|both
     else if (a == "--role")         opts.role = next();   // leader|follower|both
     else if (a == "--rt-mode")      opts.use_rt = (next() == "true");

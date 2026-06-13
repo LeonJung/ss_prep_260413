@@ -118,6 +118,12 @@ struct OaFdConfig {
   std::string root_link_left  = "openarmx_link0";
   std::string tip_link_left   = "openarmx_link7";
 
+  // Per-SIDE gravity URDF (mass/COM differ slightly L vs R). Empty -> fall
+  // back to gravity.urdf (the single shared model). The axis mirror is still
+  // handled by grav_mirror_*; these only carry the per-arm inertial fit.
+  std::string gravity_urdf_left;
+  std::string gravity_urdf_right;
+
   // Per-joint MIRROR sign for the gravity model. The two arms are sagittal-
   // plane mirror images; some joint AXES spin opposite (gravity is in that
   // vertical plane, so it's invariant -> g_right = m * gravity(m * q_right)

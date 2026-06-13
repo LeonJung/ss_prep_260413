@@ -13,10 +13,15 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     pkg_share = get_package_share_directory('oa_fd_cpp')
     default_config = f'{pkg_share}/config/oa_fd.yaml'
-    default_urdf = f'{pkg_share}/urdf/openarmx_arm_v2com.urdf'  # enactic masses + COMs(links2-5); v2mass / openarmx_arm.urdf via urdf:=
+    default_urdf = f'{pkg_share}/urdf/openarmx_arm_v2com.urdf'  # shared fallback
+    # per-side calibrated gravity models (mass/COM differ slightly L vs R)
+    default_urdf_left  = f'{pkg_share}/urdf/openarmx_arm_cali_left_leader.urdf'
+    default_urdf_right = f'{pkg_share}/urdf/openarmx_arm_cali_right_leader.urdf'
 
     config_arg = DeclareLaunchArgument('config', default_value=default_config)
     urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)
+    urdf_left_arg  = DeclareLaunchArgument('urdf_left',  default_value=default_urdf_left)
+    urdf_right_arg = DeclareLaunchArgument('urdf_right', default_value=default_urdf_right)
     arms_arg = DeclareLaunchArgument(
         'arms', default_value='both',
         description='which pair(s) to drive: right | left | both')
@@ -36,6 +41,8 @@ def generate_launch_description():
         arguments=[
             '--config', LaunchConfiguration('config'),
             '--urdf', LaunchConfiguration('urdf'),
+            '--urdf-left', LaunchConfiguration('urdf_left'),
+            '--urdf-right', LaunchConfiguration('urdf_right'),
             '--arms', LaunchConfiguration('arms'),
             '--role', LaunchConfiguration('role'),
             '--rt-mode', LaunchConfiguration('rt'),
@@ -44,5 +51,6 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([config_arg, urdf_arg, arms_arg, role_arg, rt_arg,
+    return LaunchDescription([config_arg, urdf_arg, urdf_left_arg, urdf_right_arg,
+                              arms_arg, role_arg, rt_arg,
                               rt_prio_arg, rt_cpu_arg, node])
