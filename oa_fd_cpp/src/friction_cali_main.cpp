@@ -76,14 +76,17 @@ int main(int argc, char** argv) {
   GravityModel grav;
   if (!grav.load(gc)) { std::fprintf(stderr, "gravity model load failed\n"); return 1; }
 
+  // Right arm = y-mirror of left, full map (q1,q2,q3,q5,q7 flip; q4,q6 same) —
+  // same m as gravity.mirror_right / cali_poses_right. The old code mirrored
+  // only j1/j2, which sent the sweeps to the WRONG (inner/torso) side.
+  static const double MIR[DOF] = {-1, -1, -1, 1, -1, 1, -1};
   Vec7 base = BASE_LEFT;
   double lo[DOF], hi[DOF];
   for (int i = 0; i < DOF; ++i) { lo[i] = SWEEP_LO_L[i]; hi[i] = SWEEP_HI_L[i]; }
   if (side == "right") {
-    base[0] = -base[0]; base[1] = -base[1];
-    for (int i = 0; i < 2; ++i) {
-      double l = lo[i], h = hi[i];
-      lo[i] = -h; hi[i] = -l;
+    for (int i = 0; i < DOF; ++i) {
+      base[i] *= MIR[i];
+      if (MIR[i] < 0) { double l = lo[i], h = hi[i]; lo[i] = -h; hi[i] = -l; }
     }
   }
 
