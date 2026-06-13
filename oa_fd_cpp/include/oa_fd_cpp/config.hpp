@@ -90,6 +90,13 @@ struct OaFdConfig {
   // cap on the spring force [Nm] — keeps a DEEP zone violation (e.g. parking
   // inside a relocated fence) from commanding huge torque
   Vec7 fd_limit_fmax = {1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9};
+  // a gentle steady inward nudge: motor-side target is set this far INSIDE
+  // the valid range from the edge, so even resting at the edge gets a small
+  // k*push force back into range (operator: 'slight push-back at the limit')
+  Vec7 fd_limit_push = {0, 0, 0, 0, 0, 0, 0};   // [rad] inward target offset
+  // damping scale while EXITING the zone (moving back into range): 1.0 = same
+  // as approach (stiff/draggy on the way out), 0.0 = free exit
+  double fd_limit_exit_kd = 1.0;
   Vec7 fd_limit_margin = {0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15};  // zone width [rad], per joint
   // Repulsion boundaries per side (defaults: effectively disabled).
   Vec7 limit_lower_left  = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};

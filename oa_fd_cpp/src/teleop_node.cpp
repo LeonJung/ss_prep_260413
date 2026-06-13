@@ -209,20 +209,30 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   // fmax cap: deep violations get kp_eff = fmax/depth so the commanded
   // torque at the CURRENT depth never exceeds fmax (re-evaluated at 1 kHz;
   // converges to the full kp as the joint nears the edge).
-  auto zone_override = [&](double q, int i, MitCmd& c) {
+  //
+  // The MIT target is set `limit_push` INSIDE the valid range (not exactly
+  // on the edge) -> a small steady inward force even at the edge (operator
+  // request). Damping is scaled by `limit_exit_kd` while EXITING (moving
+  // back into range), so coming out isn't draggy. Exit direction is judged
+  // from FILTERED velocity, and it only GATES the motor-side kd (a passive
+  // damping term) — no PC-side velocity torque, so the delay trap doesn't
+  // apply.
+  auto zone_override = [&](double q, double qdf, int i, MitCmd& c) {
     const double k = cfg_.fd_limit_kp[i];
     if (k <= 0.0) return;
     const double lo = lim_lo[i] + cfg_.fd_limit_margin[i];
     const double hi = lim_hi[i] - cfg_.fd_limit_margin[i];
-    double edge, depth;
-    if (q < lo)      { edge = lo; depth = lo - q; }
-    else if (q > hi) { edge = hi; depth = q - hi; }
+    double target, depth; bool exiting;
+    if (q < lo)      { target = lo + cfg_.fd_limit_push[i]; depth = lo - q; exiting = (qdf > 0.0); }
+    else if (q > hi) { target = hi - cfg_.fd_limit_push[i]; depth = q - hi; exiting = (qdf < 0.0); }
     else return;
     const double kp_eff =
         (depth > 1e-6) ? std::min(k, cfg_.fd_limit_fmax[i] / depth) : k;
+    const double kd_eff =
+        cfg_.fd_limit_kd[i] * (exiting ? cfg_.fd_limit_exit_kd : 1.0);
     c.kp[i] = std::max(c.kp[i], kp_eff);          // posture spring may coexist
-    c.kd[i] = std::max(c.kd[i], cfg_.fd_limit_kd[i]);
-    c.pos[i] = edge;
+    c.kd[i] = std::max(c.kd[i], kd_eff);
+    c.pos[i] = target;
     c.vel[i] = 0.0;
   };
   const bool freedrive_like =
@@ -275,8 +285,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         break;
     }
     if (freedrive_like) {
-      zone_override(p.lq[i], i, lc);
-      zone_override(p.fq[i], i, fc);
+      zone_override(p.lq[i], p.lqd_f[i], i, lc);
+      zone_override(p.fq[i], p.fqd_f[i], i, fc);
     }
     // clamp feedforward torque (Kp/Kd part is bounded motor-side by limits)
     lc.tau[i] = std::clamp(lc.tau[i], -cfg_.torque_limit[i], cfg_.torque_limit[i]);

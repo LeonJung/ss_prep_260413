@@ -82,6 +82,12 @@ freedrive:
   # capped spring + raw-qd damper = passive; velocity-sign spring tricks
   # injected energy twice — see teleop_node.cpp repulse() comment.)
   limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
+  # gentle inward nudge: motor target sits this far inside the valid range
+  # from the edge -> small steady push-back even resting at the limit
+  limit_push: [0.04, 0.04, 0.03, 0.03, 0.03, 0.0, 0.0]
+  # damping scale while EXITING the zone (1.0 = as stiff as entering,
+  # 0.0 = free exit). 0.25 -> coming back out is no longer draggy.
+  limit_exit_kd: 0.25
   # per-joint zone width [rad]; 7-vec also accepted for per-joint values
   limit_margin: 0.15
 
