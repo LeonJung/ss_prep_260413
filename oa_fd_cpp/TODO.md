@@ -23,8 +23,18 @@ pairs, and that it is repeatable pass-to-pass), then add -ripple(q) on top of
 g(q). Not present in enactic. Needs /tmp/q2_nofric_slow.csv (effort vs
 position) to confirm period/amplitude/repeatability first.
 
-**Could also be a motor unit issue** — worth comparing the same joint on
-another arm before investing in a ripple map.
+**RESOLVED to a MOTOR-UNIT issue (2026-06-13)**: the RIGHT arm q2, under
+IDENTICAL control/config (per-side friction k=2, same gravity/limits), has
+ZERO gargle. The LEFT q2 still gargles. Same code, different result ->
+it is the LEFT q2 motor (can1, RS04 id 2) as a hardware characteristic
+(torque ripple / cogging / marginal unit), NOT a control or friction-comp
+bug. Friction-comp k tuning could never fix it for that reason.
+Options for the left q2 specifically:
+  (a) live with it,
+  (b) position-indexed torque-ripple FF map for left q2 only (needs a slow
+      steady-sweep CSV: effort vs motor position; check spatial period &
+      repeatability),
+  (c) inspect / swap the left q2 motor.
 
 ## Per-role URDF (Task #5)
 leader tip = light handle, follower tip = gripper -> separate gravity models.
