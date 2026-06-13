@@ -44,6 +44,7 @@ struct Pair {
   Vec7 l_home_start{}, f_home_start{};   // captured at HOMING entry
   Vec7 l_hold{}, f_hold{};               // captured at PAUSED entry (hold-in-place)
   GravityModel* grav = nullptr;     // this side's gravity model (right/left)
+  Vec7 grav_mirror{1,1,1,1,1,1,1};  // per-joint axis-mirror sign for gravity
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr leader_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr follower_pub;
 };

@@ -124,6 +124,8 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_scalar(g, "tip_link_right",  c.tip_link_right);
     try_scalar(g, "root_link_left",  c.root_link_left);
     try_scalar(g, "tip_link_left",   c.tip_link_left);
+    try_vec7(g, "mirror_right", c.grav_mirror_right);
+    try_vec7(g, "mirror_left",  c.grav_mirror_left);
   }
   return true;
 }

@@ -125,12 +125,14 @@ gravity:
   tip_link_right:  "openarmx_link7"
   root_link_left:  "openarmx_link0"
   tip_link_left:   "openarmx_link7"
-  # Gravity in each arm's link0 frame. LEFT validated on HW as (0,0,+9.81).
-  # The two arms mount with OPPOSITE base X-rotations (description: left
-  # rpy=-1.5708, right rpy=+1.5708 about X), so world gravity maps to link0
-  # as exact negatives left<->right. Our single-arm URDF convention is the
-  # same linear map for both arms, hence vec_right = -vec_left.
-  #   -> RIGHT must be (0,0,-9.81), NOT a copy of left. (Derived from the
-  #      bimanual URDF mounting, not trial-and-error.)
-  vec_right: [0.0, 0.0, -9.81]
+  # Gravity in each arm's link0 frame. BOTH arms (0,0,+9.81); the left/right
+  # difference is the joint-axis MIRROR below, NOT this vector. (Flipping the
+  # vector was tried: -9.81 -> right resisted, +9.81 -> right flew up; neither
+  # works because the mismatch is per-joint axis mirroring, not a global sign.)
+  vec_right: [0.0, 0.0, 9.81]
   vec_left:  [0.0, 0.0, 9.81]
+  # Per-joint gravity-model axis mirror (the arms are sagittal-plane mirrors).
+  # Measured motor view R vs L: q1,q7 MIRROR; q2,q4,q6 SAME. q3,q5 are roll
+  # joints -> inferred MIRROR (verify; ~0 in use so low impact). Left = all 1.
+  mirror_right: [-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
+  mirror_left:  [ 1.0, 1.0,  1.0, 1.0,  1.0, 1.0,  1.0]

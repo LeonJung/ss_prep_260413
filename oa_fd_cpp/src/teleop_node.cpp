@@ -97,6 +97,8 @@ bool TeleopNode::connect() {
   }
   right_.grav = &grav_right_;
   left_.grav  = &grav_left_;
+  right_.grav_mirror = cfg_.grav_mirror_right;
+  left_.grav_mirror  = cfg_.grav_mirror_left;
 
   for (Pair* p : pairs_) {
     std::vector<OaxArm*> arms;
@@ -168,8 +170,19 @@ void TeleopNode::friction(const Vec7& qd, Vec7& f) const {
 void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
                               double h_t_start, double h_duration,
                               MitCmd& lc, MitCmd& fc) {
+  // Gravity with per-joint axis mirror: g_side = m * gravity(m * q).
+  // (Right arm is the left arm's mirror; m flips the mirrored joints' angle
+  //  on the way in and their torque on the way out. m=all-1 on the left.)
   Vec7 gl{}, gf{}, frl{}, frf{};
-  if (p.grav) { p.grav->gravity(p.lq, gl); p.grav->gravity(p.fq, gf); }
+  if (p.grav) {
+    Vec7 lqm, fqm;
+    for (int i = 0; i < DOF; ++i) { lqm[i] = p.grav_mirror[i] * p.lq[i];
+                                    fqm[i] = p.grav_mirror[i] * p.fq[i]; }
+    p.grav->gravity(lqm, gl);
+    p.grav->gravity(fqm, gf);
+    for (int i = 0; i < DOF; ++i) { gl[i] *= p.grav_mirror[i];
+                                    gf[i] *= p.grav_mirror[i]; }
+  }
   friction(p.lqd_f, frl);   // filtered: raw qd noise chatters the gate
   friction(p.fqd_f, frf);
 

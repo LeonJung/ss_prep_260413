@@ -105,10 +105,11 @@ struct OaFdConfig {
   Vec7 limit_upper_right = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};
 
   GravityCfg gravity;
-  // Gravity vector expressed in each arm's URDF root frame. OpenArm mounting
-  // usually makes this ±Y (NOT Z), opposite sign per side. Tune in FREEDRIVE.
-  std::array<double, 3> grav_vec_right = {0.0, 0.0, -9.81};
-  std::array<double, 3> grav_vec_left  = {0.0, 0.0, -9.81};
+  // Gravity vector in each arm's link0 frame. BOTH arms use (0,0,+9.81) —
+  // the left/right difference is handled by grav_mirror_* (joint-axis mirror),
+  // NOT by flipping this vector (flipping it made the arm fly up / sag).
+  std::array<double, 3> grav_vec_right = {0.0, 0.0, 9.81};
+  std::array<double, 3> grav_vec_left  = {0.0, 0.0, 9.81};
   // Per-side KDL chain endpoints. The bundled single-arm URDF
   // (urdf/openarmx_arm.urdf) uses generic names for both sides; only the
   // gravity vector differs left/right (set by mounting).
@@ -116,6 +117,17 @@ struct OaFdConfig {
   std::string tip_link_right  = "openarmx_link7";
   std::string root_link_left  = "openarmx_link0";
   std::string tip_link_left   = "openarmx_link7";
+
+  // Per-joint MIRROR sign for the gravity model. The two arms are sagittal-
+  // plane mirror images; some joint AXES spin opposite (gravity is in that
+  // vertical plane, so it's invariant -> g_right = m * gravity(m * q_right)
+  // using the SAME left-arm URDF and vec). Friction/posture are motor-local
+  // (odd in their own qd / symmetric about 0) so they get NO mirror — that's
+  // why q3/q5 posture already worked on the right arm.
+  // Measured motor view (R vs L): q1,q7 MIRROR; q2,q4,q6 SAME; q3,q5 are roll
+  // joints -> inferred MIRROR (verify; near 0 in use so low impact).
+  Vec7 grav_mirror_right = {1, 1, 1, 1, 1, 1, 1};
+  Vec7 grav_mirror_left  = {1, 1, 1, 1, 1, 1, 1};
 };
 
 bool load_config(const std::string& path, OaFdConfig& out);
