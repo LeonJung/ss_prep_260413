@@ -69,6 +69,16 @@ struct OaFdConfig {
   Vec7 fric_v_start = {0,0,0,0,0,0,0};   // [rad/s] per joint
   Vec7 fric_v_full  = {0,0,0,0,0,0,0};   // [rad/s] per joint
 
+  // Per-SIDE friction (arms differ — identified separately). Default = copy
+  // of the shared block above; a `friction_right:` yaml block overrides the
+  // RIGHT pair only. Friction is motor-local so NO mirror is applied to it.
+  Vec7 fric_Fc_right = {0,0,0,0,0,0,0};
+  Vec7 fric_k_right  = {30,30,30,30,30,30,30};
+  Vec7 fric_Fv_right = {0,0,0,0,0,0,0};
+  Vec7 fric_Fo_right = {0,0,0,0,0,0,0};
+  Vec7 fric_v_start_right = {0,0,0,0,0,0,0};
+  Vec7 fric_v_full_right  = {0,0,0,0,0,0,0};
+
   // ---- leader<->follower joint mirror, per side ----
   Vec7 mirror_right = {1, 1, 1, 1, 1, 1, 1};
   Vec7 mirror_left  = {1, 1, 1, 1, 1, 1, 1};

@@ -79,7 +79,7 @@ private:
   void compute_pair(Pair& p, int mode, double now_sec,
                     double h_t_start, double h_duration,
                     MitCmd& leader_cmd, MitCmd& follower_cmd);
-  void friction(const Vec7& qd, Vec7& f) const;
+  void friction(const Vec7& qd, Vec7& f, bool right = false) const;
   void publish_pair(Pair& p);
 
   Options opts_;

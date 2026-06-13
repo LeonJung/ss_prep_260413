@@ -64,6 +64,24 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     load_gate("v_start", c.fric_v_start);
     load_gate("v_full",  c.fric_v_full);
   }
+  // right side defaults to a copy of the shared block...
+  c.fric_Fc_right = c.fric_Fc; c.fric_k_right = c.fric_k;
+  c.fric_Fv_right = c.fric_Fv; c.fric_Fo_right = c.fric_Fo;
+  c.fric_v_start_right = c.fric_v_start; c.fric_v_full_right = c.fric_v_full;
+  // ...overridden by an optional friction_right block (right pair only)
+  if (const auto& fr = root["friction_right"]) {
+    try_vec7(fr, "Fc", c.fric_Fc_right);
+    try_vec7(fr, "k",  c.fric_k_right);
+    try_vec7(fr, "Fv", c.fric_Fv_right);
+    try_vec7(fr, "Fo", c.fric_Fo_right);
+    auto load_gate_r = [&](const char* key, Vec7& out){
+      if (!fr[key]) return;
+      if (fr[key].IsSequence()) { try_vec7(fr, key, out); }
+      else { double v=out[0]; try_scalar(fr, key, v); out.fill(v); }
+    };
+    load_gate_r("v_start", c.fric_v_start_right);
+    load_gate_r("v_full",  c.fric_v_full_right);
+  }
   if (const auto& mr = root["mirror"]) {
     try_vec7(mr, "right", c.mirror_right);
     try_vec7(mr, "left",  c.mirror_left);

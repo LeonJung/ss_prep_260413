@@ -157,16 +157,20 @@ void TeleopNode::publish_mode(int mode, double t_start, double duration) {
   mode_pub_->publish(msg);
 }
 
-void TeleopNode::friction(const Vec7& qd, Vec7& f) const {
+void TeleopNode::friction(const Vec7& qd, Vec7& f, bool right) const {
+  const Vec7& Fc = right ? cfg_.fric_Fc_right : cfg_.fric_Fc;
+  const Vec7& k  = right ? cfg_.fric_k_right  : cfg_.fric_k;
+  const Vec7& Fv = right ? cfg_.fric_Fv_right : cfg_.fric_Fv;
+  const Vec7& Fo = right ? cfg_.fric_Fo_right : cfg_.fric_Fo;
+  const Vec7& vs = right ? cfg_.fric_v_start_right : cfg_.fric_v_start;
+  const Vec7& vf = right ? cfg_.fric_v_full_right  : cfg_.fric_v_full;
   for (int i = 0; i < DOF; ++i) {
-    double raw = cfg_.fric_Fc[i] * std::tanh(cfg_.fric_k[i] * qd[i])
-               + cfg_.fric_Fv[i] * qd[i] + cfg_.fric_Fo[i];
+    double raw = Fc[i] * std::tanh(k[i] * qd[i]) + Fv[i] * qd[i] + Fo[i];
     // velocity gate: no comp at standstill (kills the negative-damping
     // runaway in FREEDRIVE), full comp once clearly moving.
-    if (cfg_.fric_v_full[i] > cfg_.fric_v_start[i]) {
+    if (vf[i] > vs[i]) {
       const double g = std::clamp(
-          (std::abs(qd[i]) - cfg_.fric_v_start[i])
-              / (cfg_.fric_v_full[i] - cfg_.fric_v_start[i]), 0.0, 1.0);
+          (std::abs(qd[i]) - vs[i]) / (vf[i] - vs[i]), 0.0, 1.0);
       raw *= g;
     }
     f[i] = raw;
@@ -189,8 +193,9 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
     for (int i = 0; i < DOF; ++i) { gl[i] *= p.grav_mirror[i];
                                     gf[i] *= p.grav_mirror[i]; }
   }
-  friction(p.lqd_f, frl);   // filtered: raw qd noise chatters the gate
-  friction(p.fqd_f, frf);
+  const bool right = (p.name == "right");
+  friction(p.lqd_f, frl, right);   // filtered: raw qd noise chatters the gate
+  friction(p.fqd_f, frf, right);
 
   // mirror peer into local frame (delta about home)
   Vec7 f_in_l{}, fd_in_l{}, l_in_f{}, ld_in_f{};
