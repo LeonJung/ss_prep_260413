@@ -125,9 +125,12 @@ gravity:
   tip_link_right:  "openarmx_link7"
   root_link_left:  "openarmx_link0"
   tip_link_left:   "openarmx_link7"
-  # Gravity in each arm's link0 frame. HW result: Z(+9.81) was nearly right
-  # (gentle, holdable, scale~0.95); Y made ALL arms slam up. So link0 Z is
-  # effectively up for this mounting -> use (0,0,9.81). (Effective +9.81 because
-  # the motor command goes through the dir=-1 flip in write_mit.)
-  vec_right: [0.0, 0.0, 9.81]
+  # Gravity in each arm's link0 frame. LEFT validated on HW as (0,0,+9.81).
+  # The two arms mount with OPPOSITE base X-rotations (description: left
+  # rpy=-1.5708, right rpy=+1.5708 about X), so world gravity maps to link0
+  # as exact negatives left<->right. Our single-arm URDF convention is the
+  # same linear map for both arms, hence vec_right = -vec_left.
+  #   -> RIGHT must be (0,0,-9.81), NOT a copy of left. (Derived from the
+  #      bimanual URDF mounting, not trial-and-error.)
+  vec_right: [0.0, 0.0, -9.81]
   vec_left:  [0.0, 0.0, 9.81]
