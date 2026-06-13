@@ -47,11 +47,12 @@ Kd: [2.0,   2.0,   2.0,   2.0,   0.2,  0.2,  0.2]
 # Identified (x0.75 already): Fc [0.659,0.577,0.230,0,0.152,0.156,0.085]
 #                             Fv [0,0,0.086,0.878,0.005,0.023,0]
 friction:
-  # q1 ~x0.97 of identified. q2 'gargle' shake = tanh too steep at k=8
-  # (near-bang-bang at low speed) -> k 8->3 softens it, Fc nudged up for feel.
-  # q4 viscous comp reverted to 0 (operator: was fine before, keep it off).
-  Fc: [0.64, 0.55, 0.20, 0.0, 0.13, 0.156, 0.085]
-  k:  [8.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  # q1 at full identified Fc 0.659 (ceiling — past this, comp > real friction
+  # = net negative damping, runaway risk even with the gate). q2 softer still
+  # (k 3->2 less chatter) and lighter (Fc ~ identified 0.577).
+  # q4 viscous comp 0 (operator: was fine before).
+  Fc: [0.659, 0.575, 0.20, 0.0, 0.13, 0.156, 0.085]
+  k:  [8.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
   Fv: [0.0, 0.0, 0.073, 0.0, 0.004, 0.023, 0.0]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: 0.03
