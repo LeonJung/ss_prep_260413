@@ -65,7 +65,7 @@ def load(path):
     return J
 
 
-def joint_points(J, q):
+def joint_points(J, q, tip_len=0.12):
     """World positions of joint origins j1..j7 plus an EE tip point."""
     linkT = {'openarmx_link0': np.eye(4)}
     pts = []
@@ -79,7 +79,7 @@ def joint_points(J, q):
         Tr = np.eye(4)
         Tr[:3, :3] = axis_R(j['axis'], q[i])
         linkT[j['child']] = Tj @ Tr
-    tip = linkT['openarmx_link7'] @ np.array([0, 0, 0.12, 1.0])  # EE/gripper tip
+    tip = linkT['openarmx_link7'] @ np.array([0, 0, tip_len, 1.0])  # EE/gripper tip
     pts.append(tip[:3])
     return pts  # 8 points -> 7 segments
 
@@ -98,8 +98,8 @@ def seg_dist(p1, p2, p3, p4):
     return np.linalg.norm(c1 - c2)
 
 
-def pose_ok(J, q, clearance=0.09, torso_y=0.08, keepout=0.16, z_top=-0.06):
-    pts = joint_points(J, q)
+def pose_ok(J, q, clearance=0.09, torso_y=0.08, keepout=0.16, z_top=-0.06, tip_len=0.12):
+    pts = joint_points(J, q, tip_len)
     segs = [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
     # (b) self-collision: non-adjacent segment pairs.
     #  - segments 4..6 are the wrist cluster (joints centimetres apart by
@@ -132,6 +132,9 @@ def main():
     ap.add_argument('--n', type=int, default=40)
     ap.add_argument('--seed', type=int, default=7)
     ap.add_argument('--margin', type=float, default=0.15)
+    ap.add_argument('--tip-len', type=float, default=0.12,
+                    help='EE tip length past link7 for collision check '
+                         '(handle ~0.12; gripper/follower ~0.16)')
     ap.add_argument('--side', default='left', choices=['left', 'right'],
                     help='right: write the spatial-mirror of each validated '
                          'left pose (m=[-1,-1,-1,1,-1,1,-1]); collision/torso/'
@@ -149,14 +152,14 @@ def main():
     poses, tried = [], 0
     # always include a gentle baseline pose first
     base = np.array([0, 0, 0, 0.3, 0, 0, 0])
-    if pose_ok(J, base):
+    if pose_ok(J, base, tip_len=args.tip_len):
         poses.append(base)
     while len(poses) < args.n and tried < 20000:
         tried += 1
         q = rng.uniform(lo, hi)
         # bias toward moderate wrist usage but full coverage of j1/j2/j4
         q[4:] *= rng.uniform(0.4, 1.0, 3)
-        if pose_ok(J, q):
+        if pose_ok(J, q, tip_len=args.tip_len):
             # reject near-duplicates for spread
             if all(np.linalg.norm(q - p) > 0.5 for p in poses):
                 poses.append(q)
