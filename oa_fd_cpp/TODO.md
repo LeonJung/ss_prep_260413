@@ -36,6 +36,18 @@ Options for the left q2 specifically:
       repeatability),
   (c) inspect / swap the left q2 motor.
 
+## Per-arm config split (4 self-contained yaml) — PLANNED, after follower cali
+Operator wants EVERY parameter file separated per arm: leader_left/leader_right/
+follower_left/follower_right, each fully self-contained (duplicate common values
+for now, merge later). Today it is ONE oa_fd.yaml with partial per-side blocks
+and NO leader/follower split. Plan: ArmParams struct (all per-arm: friction,
+gravity{urdf,vec,scale,mirror}, Kp/Kd/home/torque, couple_mirror, freedrive
+shaping, joint_limits), node loads 4 files (config/oa_fd_<role>_<side>.yaml),
+each Pair's leader/follower use their own ArmParams. Derive the 4 files from
+current working values so leaders don't regress. Sequence (operator pick):
+do the LEFT FOLLOWER cali first, THEN this refactor with all real values.
+Also folds in Task #5 (per-role URDF) and per-role friction.
+
 ## Per-role URDF (Task #5)
 leader tip = light handle, follower tip = gripper -> separate gravity models.
 First attempt (77b2033) caused a runaway and was reverted; reintroduce only
