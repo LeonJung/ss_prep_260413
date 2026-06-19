@@ -133,10 +133,12 @@ def main():
     ap.add_argument('--seed', type=int, default=7)
     ap.add_argument('--margin', type=float, default=0.15)
     ap.add_argument('--q4-min', type=float, default=0.15,
-                    help='j4 lower bound [rad] for sampling (default 0.15 like '
-                         'other joints; follower can go lower since the leader '
-                         'side enforces the q4 stop in bilateral). Stays >0 to '
-                         'avoid the q4=0 hard-stop contact contaminating data.')
+                    help='j4 lower bound [rad]. Leader 0.15; follower can go to '
+                         '~0.05 (off the q4=0 stop) — full operating range.')
+    ap.add_argument('--q4-max', type=float, default=1.65,
+                    help='j4 upper bound [rad]. Leader 1.65 (=1.8-margin); '
+                         'follower ~1.75 (off the q4=1.8 stop). Stay off both '
+                         'stops so contact torque does not contaminate cali.')
     ap.add_argument('--tip-len', type=float, default=0.12,
                     help='EE tip length past link7 for collision check '
                          '(handle ~0.12; gripper/follower ~0.16)')
@@ -201,7 +203,8 @@ def main():
     rng = np.random.default_rng(args.seed)
     lo = LIM[:, 0] + args.margin
     hi = LIM[:, 1] - args.margin
-    lo[3] = args.q4_min   # j4 lower override (follower covers low-q4 region)
+    lo[3] = args.q4_min   # j4 bounds override (follower covers full operating
+    hi[3] = args.q4_max   # range; only kept off the stops for clean measurement)
 
     poses, tried = [], 0
     # always include a gentle baseline pose first
