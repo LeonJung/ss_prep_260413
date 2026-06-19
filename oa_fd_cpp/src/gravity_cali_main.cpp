@@ -169,7 +169,10 @@ int main(int argc, char** argv) {
   // Stiffer than v1: Kp=60 stick-slipped against joint friction (arm lagged
   // the trajectory, error built up, then jerked forward in bursts).
   const Vec7 KP = {110, 110, 100, 100, 16, 16, 12};
-  const Vec7 KD = {2.0, 2.0, 1.8, 1.8, 0.3, 0.3, 0.25};
+  // KD matched to oa_friction_cali (3.5/3.0/0.4): the lower 2.0/1.8 here left
+  // the pose->pose moves underdamped -> overshoot/"popping". Higher damping
+  // (+ slower big move below) makes gravity-cali moves as smooth as friction.
+  const Vec7 KD = {3.5, 3.5, 3.0, 3.0, 0.4, 0.4, 0.3};
   const Vec7 TAU_FF_MAX = {40, 40, 25, 25, 8, 8, 8};
 
   OaxArm arm(can, fd, 500);
@@ -244,7 +247,7 @@ int main(int argc, char** argv) {
     target[3] = 0.3;
     if (pi < poses.size()) target = poses[pi];
 
-    move_to(from, target, 4.0);
+    move_to(from, target, 6.0);   // slower big reconfiguration -> smoother
     from = target;
     if (pi == poses.size()) break;  // returned home — done
 

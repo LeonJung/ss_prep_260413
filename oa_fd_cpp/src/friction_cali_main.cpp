@@ -50,6 +50,7 @@ const double SPEEDS[] = {0.2, 0.5, 0.9};   // rad/s, each run both directions
 
 int main(int argc, char** argv) {
   std::string can = "can1", urdf, out = "/tmp/friction_cali.csv", side = "left";
+  std::string sweep_file;
   int only_joint = 0;  // 0 = all
   double gz = 9.81;
   bool fd = false;
@@ -63,6 +64,7 @@ int main(int argc, char** argv) {
     else if (a == "--side") side = next();
     else if (a == "--joint") only_joint = std::stoi(next());
     else if (a == "--gz") gz = std::stod(next());
+    else if (a == "--sweep-file") sweep_file = next();  // per-joint "lo hi" (collision-safe, gen_cali_poses --emit-sweep). AS-IS, no mirror.
     else if (a == "--fd") fd = true;
   }
   if (urdf.empty()) { std::fprintf(stderr, "need --urdf\n"); return 1; }
@@ -88,6 +90,22 @@ int main(int argc, char** argv) {
       base[i] *= MIR[i];
       if (MIR[i] < 0) { double l = lo[i], h = hi[i]; lo[i] = -h; hi[i] = -l; }
     }
+  }
+  // Collision-safe sweep ranges (gen_cali_poses --emit-sweep): per-joint
+  // "lo hi", already in the target arm's frame -> taken AS-IS (overrides the
+  // built-in ranges, no extra mirror). Needed for the FOLLOWER's gripper,
+  // whose longer reach hits the torso on the wide q3/q6 sweeps.
+  if (!sweep_file.empty()) {
+    std::ifstream sf(sweep_file);
+    if (!sf.good()) { std::fprintf(stderr, "cannot read --sweep-file %s\n", sweep_file.c_str()); return 1; }
+    std::string line; int j = 0;
+    while (std::getline(sf, line) && j < DOF) {
+      if (line.empty() || line[0] == '#') continue;
+      double l, h;
+      if (std::sscanf(line.c_str(), "%lf %lf", &l, &h) == 2 ||
+          std::sscanf(line.c_str(), "%lf,%lf", &l, &h) == 2) { lo[j] = l; hi[j] = h; ++j; }
+    }
+    std::printf("loaded %d collision-safe sweep ranges from %s\n", j, sweep_file.c_str());
   }
 
   const Vec7 KP = {110, 110, 100, 100, 16, 16, 12};

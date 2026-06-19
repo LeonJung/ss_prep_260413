@@ -139,12 +139,58 @@ def main():
                     help='right: write the spatial-mirror of each validated '
                          'left pose (m=[-1,-1,-1,1,-1,1,-1]); collision/torso/'
                          'reach are guaranteed by mirror symmetry')
+    ap.add_argument('--emit-sweep', default='',
+                    help='instead of poses, write collision-safe per-joint '
+                         'friction sweep ranges (lo hi) around the friction '
+                         'BASE — for oa_friction_cali --sweep-file')
     args = ap.parse_args()
     # kinematic mirror map L->R (q1,q2,q3,q5,q7 flip; q4,q6 same) — matches
     # the gravity.mirror_right pattern that behaved correctly on HW.
     MIRROR = np.array([-1, -1, -1, 1, -1, 1, -1.0])
 
     J = load(args.urdf)
+
+    # ---- collision-safe friction sweep ranges (single-joint moves) ----
+    if args.emit_sweep:
+        lim = LIM.astype(float).copy()
+        if args.side == 'right':                      # mirror limits per joint
+            for i in range(7):
+                if MIRROR[i] < 0:
+                    lim[i] = [-LIM[i, 1], -LIM[i, 0]]
+        BASE = np.array([0, 0, 0, 0.3, 0, 0, 0.0])
+        if args.side == 'right':
+            BASE = BASE * MIRROR
+        ranges = []
+        for j in range(7):
+            q = BASE.copy()
+            # scan up / down from BASE[j] until a single-joint pose collides
+            h = BASE[j]
+            while h + 0.02 <= lim[j, 1] - args.margin:
+                q[j] = h + 0.02
+                if not pose_ok(J, q, tip_len=args.tip_len):
+                    break
+                h += 0.02
+            h = max(BASE[j], h - 0.06)                # back off the boundary
+            q[j] = BASE[j]
+            l = BASE[j]
+            while l - 0.02 >= lim[j, 0] + args.margin:
+                q[j] = l - 0.02
+                if not pose_ok(J, q, tip_len=args.tip_len):
+                    break
+                l -= 0.02
+            l = min(BASE[j], l + 0.06)
+            if j == 3:
+                l = max(l, 0.2)                        # keep elbow off q4=0 stop
+            ranges.append((l, h))
+        with open(args.emit_sweep, 'w') as f:
+            f.write(f'# collision-safe friction sweep ranges ({args.side}-arm), '
+                    f'lo hi per joint, tip_len={args.tip_len}\n')
+            for (l, h) in ranges:
+                f.write(f'{l:.4f} {h:.4f}\n')
+        for j, (l, h) in enumerate(ranges):
+            print(f'  j{j+1}: [{l:+.2f}, {h:+.2f}]  span {h-l:.2f}')
+        print('wrote', args.emit_sweep)
+        return
     rng = np.random.default_rng(args.seed)
     lo = LIM[:, 0] + args.margin
     hi = LIM[:, 1] - args.margin
