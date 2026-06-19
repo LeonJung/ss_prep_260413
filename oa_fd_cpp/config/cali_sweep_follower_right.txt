@@ -1,7 +1,7 @@
-# collision-safe friction sweep ranges (right-arm), lo hi per joint, tip_len=0.16
--0.6800 1.8400
--0.0000 0.0600
--1.3400 0.6400
+# collision-safe friction sweep ranges (right-arm), lo hi per joint, tip_len=0.16 (left-validated, mirrored for right)
+-0.6800 1.5000
+-0.0000 1.8200
+-0.6400 1.3400
 0.2200 1.5800
 -1.2800 1.2800
 -0.4600 0.5200

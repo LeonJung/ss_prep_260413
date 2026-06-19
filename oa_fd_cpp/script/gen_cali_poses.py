@@ -151,21 +151,17 @@ def main():
     J = load(args.urdf)
 
     # ---- collision-safe friction sweep ranges (single-joint moves) ----
+    # ALWAYS compute in the LEFT frame (pose_ok's torso half-space is +y =
+    # left), then MIRROR the ranges for the right side — same left-validate->
+    # mirror approach as the poses. (Scanning directly in the right frame
+    # checked the wrong torso half-space and wrongly clipped right j2.)
     if args.emit_sweep:
-        lim = LIM.astype(float).copy()
-        if args.side == 'right':                      # mirror limits per joint
-            for i in range(7):
-                if MIRROR[i] < 0:
-                    lim[i] = [-LIM[i, 1], -LIM[i, 0]]
-        BASE = np.array([0, 0, 0, 0.3, 0, 0, 0.0])
-        if args.side == 'right':
-            BASE = BASE * MIRROR
+        BASE = np.array([0, 0, 0, 0.3, 0, 0, 0.0])   # left-frame friction base
         ranges = []
         for j in range(7):
             q = BASE.copy()
-            # scan up / down from BASE[j] until a single-joint pose collides
             h = BASE[j]
-            while h + 0.02 <= lim[j, 1] - args.margin:
+            while h + 0.02 <= LIM[j, 1] - args.margin:
                 q[j] = h + 0.02
                 if not pose_ok(J, q, tip_len=args.tip_len):
                     break
@@ -173,7 +169,7 @@ def main():
             h = max(BASE[j], h - 0.06)                # back off the boundary
             q[j] = BASE[j]
             l = BASE[j]
-            while l - 0.02 >= lim[j, 0] + args.margin:
+            while l - 0.02 >= LIM[j, 0] + args.margin:
                 q[j] = l - 0.02
                 if not pose_ok(J, q, tip_len=args.tip_len):
                     break
@@ -181,10 +177,16 @@ def main():
             l = min(BASE[j], l + 0.06)
             if j == 3:
                 l = max(l, 0.2)                        # keep elbow off q4=0 stop
-            ranges.append((l, h))
+            ranges.append([l, h])
+        if args.side == 'right':                      # mirror ranges per joint
+            for j in range(7):
+                if MIRROR[j] < 0:
+                    lo_, hi_ = ranges[j]
+                    ranges[j] = [-hi_, -lo_]
         with open(args.emit_sweep, 'w') as f:
             f.write(f'# collision-safe friction sweep ranges ({args.side}-arm), '
-                    f'lo hi per joint, tip_len={args.tip_len}\n')
+                    f'lo hi per joint, tip_len={args.tip_len} '
+                    '(left-validated, mirrored for right)\n')
             for (l, h) in ranges:
                 f.write(f'{l:.4f} {h:.4f}\n')
         for j, (l, h) in enumerate(ranges):
