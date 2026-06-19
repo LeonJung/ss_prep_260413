@@ -1,5 +1,7 @@
 # follower-right arm — self-contained config (one of 4 per-arm files).
-# Loop globals (timestep/filter/homing) are identical across the 4 files.
+# ALL control params transplanted verbatim from oa_fd_leader_right.yaml
+# (grav comp, fric comp, Kp/Kd, posture, limits) per operator request.
+# ONLY difference vs leader-right: `can` (hardware address — follower=can2).
 can: can2
 fd: false
 recv_timeout_us: 500
@@ -14,13 +16,10 @@ home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]
 couple_mirror: [1, 1, 1, 1, 1, 1, 1]
 
-friction:   # follower-right (identified from friction_follower_right.csv, x0.75)
-            # SAFE treatment (same as leaders): Fo->0; q4 Fc&Fv->0 (viscous off,
-            # Fv=0.824 would re-trigger the q4 8 rad/s runaway); q2 k->2 (anti-
-            # chatter); q2 gate wide (v_full 0.40). Gravity verified OK first.
-  Fc: [1.090, 0.641, 0.272, 0.0,   0.051, 0.223, 0.120]
-  k:  [4.0,   2.0,   4.0,   4.0,   4.0,   4.0,   4.0]
-  Fv: [0.0,   0.0,   0.010, 0.0,   0.008, 0.0,   0.077]
+friction:   # transplanted from leader-right (identified)
+  Fc: [0.79, 0.60, 0.27, 0.0, 0.06, 0.07, 0.0]
+  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  Fv: [0.0, 0.0, 0.055, 0.0, 0.018, 0.058, 0.062]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
   v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
@@ -35,14 +34,9 @@ gravity:
 
 freedrive:
   posture_kp: [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
-  # posture_kd: motor-side velocity damping (kp=0 -> pure damper, no spring, no
-  # effect on gravity). q1/q2 added: in single-role/gravity-only the arm is
-  # weightless w/ near-zero natural friction, so a push coasts ("쭉 간다") with
-  # nothing to stop it. This is delay-free motor-side Kd (passivity-safe, the
-  # D-principle) — NOT PC-side velocity FB. Real bilateral already has Kd=2.
-  posture_kd: [2.0, 2.0, 0.18, 0.0, 0.08, 0.0, 0.0]
+  posture_kd: [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  limit_kp:   [40.0, 40.0, 5.0, 0.0, 5.0, 0.0, 0.0]
+  limit_kp:   [40.0, 40.0, 5.0, 5.0, 5.0, 0.0, 0.0]
   limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
   limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
   limit_push: [0.07, 0.07, 0.05, 0.05, 0.05, 0.0, 0.0]
