@@ -98,7 +98,16 @@
 
 ## per-arm 분리 (진행중)
 
-### D19. 4팔 파라미터 완전 분리 (leader/follower × L/R 각 자체완결)
+### D19. 4팔 파라미터 완전 분리 (leader/follower × L/R 각 자체완결) — ★구현됨 48f79a9★
+- **구현**: config를 ArmCfg(arm 1개 전체 파라미터)+GlobalCfg(루프 전역)로 재구성.
+  노드가 4개 yaml(`config/oa_fd_{leader,follower}_{left,right}.yaml`)을 각 arm에 로드.
+  Pair가 lead_cfg/foll_cfg 포인터 보유, compute_pair/friction/zone/gravity 전부 per-arm.
+  oa_fd.yaml 폐기. 한 yaml에 friction 블록 쌓던 것(운영자 지적 "말이 안 됨") 해소.
+- 각 파일 자체완결: can, gravity{urdf·vec·mirror·scale}, friction, Kp/Kd/home/torque,
+  couple_mirror, freedrive shaping, joint_limits. 공통(timestep 등)은 중복.
+- follower 파일: friction OFF로 시작(중력 먼저 검증→점진추가), q4 펜스 off(기구 스토퍼).
+
+### D19-old. (배경) 4팔 분리 결정
 - **왜**: 운영자 요청. follower=그리퍼(무거움), leader=핸들 → 모델 다름. enactic도 dynamics_l_/dynamics_f_ 분리.
 - **방식**: follower 캘리 먼저 → 점진 리팩터(①per-role URDF ②per-role friction ③4-파일). 이전 per-role URDF(77b2033) 실기 폭주 이력 → 단계별 실기검증 필수("leader처럼 실로봇 검증").
 - **현황**: ①per-role URDF 완료(a3de2f6). CSV는 git 미포함(로컬 cali_data/, gitignore).
