@@ -138,7 +138,25 @@ int main(int argc, char** argv) {
   Vec7 q{}, dq{}, tau{};
   arm.read(q, dq, tau);
 
+  // --- TEMP loop-rate diagnostic: cmd() is the single command point for every
+  // segment (moves + sweeps), so this measures the actual control-loop period.
+  // ~250 Hz steady + ~4-5 ms max gap = healthy. Low Hz / big gaps = the loop is
+  // stuttering (non-RT sleep_for or slow CAN read) -> that's the "팡팡" cause.
+  auto t_prev = std::chrono::steady_clock::now();
+  double win_sum = 0.0, win_max = 0.0; long win_cnt = 0; bool first_tick = true;
   auto cmd = [&](const Vec7& ref) {
+    auto tnow = std::chrono::steady_clock::now();
+    double d = std::chrono::duration<double>(tnow - t_prev).count();
+    t_prev = tnow;
+    if (!first_tick) {
+      win_sum += d; if (d > win_max) win_max = d;
+      if (++win_cnt == 500) {
+        std::printf("[loop] %.0f Hz avg, max gap %.1f ms (last 500 cmds)\n",
+                    500.0 / win_sum, win_max * 1000.0);
+        win_sum = 0.0; win_max = 0.0; win_cnt = 0;
+      }
+    }
+    first_tick = false;
     Vec7 g{};
     arm.read(q, dq, tau);
     grav.gravity(q, g);
@@ -157,45 +175,6 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
   };
-  // Single-joint sweep with a TRAPEZOIDAL velocity profile: accel 0->sp,
-  // cruise at sp (the recorded window), decel sp->0. Each pass starts AND ends
-  // at rest, so a->b then b->a has no instant velocity reversal (the old linear
-  // position ramp stepped velocity 0->sp at the start and +sp->-sp at the
-  // reversal -> torque "pops", worse on the heavier follower end). Velocity FF
-  // is fed so Kd damps only tracking error, not the intended motion. The cruise
-  // is constant-velocity, so the friction measurement is unchanged.
-  auto sweep_pass = [&](int j, double from, double to, double sp) {
-    double D = std::abs(to - from);
-    if (D < 1e-6 || sp < 1e-6) return;
-    double sgn = (to > from) ? 1.0 : -1.0;
-    double tmove = D / sp;
-    double t_ramp = std::min(0.30, 0.35 * tmove);  // accel == decel
-    double t_cru = tmove - t_ramp;                 // > 0; disp = sp*(t_cru+t_ramp) = D
-    double Ttot = 2 * t_ramp + t_cru;
-    int n = static_cast<int>(Ttot / dt);
-    double pos = from;
-    for (int s = 0; s < n; ++s) {
-      double t = s * dt, v;
-      if (t < t_ramp)               v = sp * (t / t_ramp);
-      else if (t < t_ramp + t_cru)  v = sp;
-      else                          v = sp * std::max(0.0, 1.0 - (t - t_ramp - t_cru) / t_ramp);
-      pos += sgn * v * dt;
-      Vec7 ref = base;  ref[j] = pos;
-      Vec7 refv{};      refv[j] = sgn * v;
-      Vec7 g{};
-      arm.read(q, dq, tau);
-      grav.gravity(q, g);
-      for (int i = 0; i < DOF; ++i) g[i] = std::clamp(g[i], -TAU_FF_MAX[i], TAU_FF_MAX[i]);
-      arm.write_mit(KP, KD, ref, refv, g);
-      // record only the constant-velocity cruise (small margins off the ramps)
-      if (t > t_ramp + 0.02 && t < t_ramp + t_cru - 0.02) {
-        csv << (j + 1) << ',' << q[j] << ',' << dq[j] << ','
-            << tau[j] << ',' << g[j] << "\n";
-      }
-      std::this_thread::sleep_for(std::chrono::duration<double>(dt));
-    }
-  };
-
   // go to base
   Vec7 cur = q;
   move_quintic(cur, base, 4.0);
@@ -216,11 +195,28 @@ int main(int argc, char** argv) {
       Vec7 here = base; here[j] = q[j];
       move_quintic(here, p0, 2.5);
 
-      // + direction only this run (operator request). NOTE: without the -v
-      // pass, +v/-v averaging can't cancel friction -> extracted torque is
-      // gravity + (+dir friction). Fine for a smoothness check / +-only ratio;
-      // add the b->a pass back for clean friction-cancelled gravity.
-      sweep_pass(j, a, b, sp);
+      // + direction only this run (operator request). Original linear-ramp
+      // sweep via cmd() (= the smooth-era motion, also loop-rate instrumented).
+      // NOTE: without the -v pass, +v/-v averaging can't cancel friction ->
+      // extracted torque = gravity + (+dir friction); add b->a back for clean
+      // friction-cancelled gravity.
+      {
+        double from = a, to = b;
+        double Tpass = std::abs(to - from) / sp;
+        int n = static_cast<int>(Tpass / dt);
+        for (int s = 0; s < n; ++s) {
+          Vec7 ref = base;
+          ref[j] = from + (to - from) * (static_cast<double>(s) / n);
+          cmd(ref);
+          if (s > n * 0.15 && s < n * 0.85) {
+            Vec7 g{};
+            grav.gravity(q, g);
+            csv << (j + 1) << ',' << q[j] << ',' << dq[j] << ','
+                << tau[j] << ',' << g[j] << "\n";
+          }
+          std::this_thread::sleep_for(std::chrono::duration<double>(dt));
+        }
+      }
       std::printf("  v=%.2f + done\n", sp);
       csv.flush();
       // back to base joint value
