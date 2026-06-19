@@ -38,10 +38,11 @@ double quintic(double a) {
   return 10 * a * a * a - 15 * a * a * a * a + 6 * a * a * a * a * a;
 }
 
-// hang-ish base pose (elbow off its stop) and per-joint safe sweep ranges
-// (LEFT arm; j1/j2 mirrored for right). Conservative subsets of the limits,
-// collision-safe for single-joint motion from the base pose.
-const Vec7 BASE_LEFT = {0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0};
+// Base = arm STRAIGHT (q4=0, elbow fully extended): a bent elbow (q4=0.3)
+// swings the forearm forward so q3/q6 sweeps hit the torso; straight, the
+// distal sweeps rotate ~in place and stay clear. (q4's OWN sweep still starts
+// >=0.2 to keep that measurement off the q4=0 hard stop — see emit-sweep.)
+const Vec7 BASE_LEFT = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 const double SWEEP_LO_L[DOF] = {-1.8, -2.0, -1.2, 0.20, -1.2, -0.55, -1.2};
 const double SWEEP_HI_L[DOF] = {0.55, 0.00, 1.2, 1.50, 1.2, 0.55, 1.2};
 const double SPEEDS[] = {0.2, 0.5, 0.9};   // rad/s, each run both directions
@@ -117,10 +118,18 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "arm init/enable failed on %s\n", can.c_str());
     return 1;
   }
-  // SAFETY: clamp commands to the sweep ranges (a bad position would fault the
-  // motor and drop torque -> limp arm). The cali never commands beyond [lo,hi].
-  arm.set_pos_limits({lo[0],lo[1],lo[2],lo[3],lo[4],lo[5],lo[6]},
-                     {hi[0],hi[1],hi[2],hi[3],hi[4],hi[5],hi[6]});
+  // SAFETY clamp = MECHANICAL limits (NOT the sweep ranges). The straight base
+  // holds q4=0, which is below the q4 sweep lower (0.2) — clamping to the sweep
+  // range would force q4 up to 0.2 and bend the arm. Mechanical bounds (q4
+  // [0,1.8]) allow the straight base while still blocking impossible targets.
+  const double ML_L[DOF] = {-3.34, -3.27, -1.57, 0.0, -1.5, -0.75, -1.4};
+  const double MH_L[DOF] = { 0.91,  0.13,  1.57, 1.8,  1.5,  0.75,  1.4};
+  Vec7 mlo, mhi;
+  for (int i = 0; i < DOF; ++i) {
+    if (side == "right" && MIR[i] < 0) { mlo[i] = -MH_L[i]; mhi[i] = -ML_L[i]; }
+    else { mlo[i] = ML_L[i]; mhi[i] = MH_L[i]; }
+  }
+  arm.set_pos_limits(mlo, mhi);
 
   std::ofstream csv(out);
   csv << "joint,q,dq,tau_meas,tau_gravity_model\n";

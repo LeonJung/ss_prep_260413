@@ -156,7 +156,7 @@ def main():
     # mirror approach as the poses. (Scanning directly in the right frame
     # checked the wrong torso half-space and wrongly clipped right j2.)
     if args.emit_sweep:
-        BASE = np.array([0, 0, 0, 0.3, 0, 0, 0.0])   # left-frame friction base
+        BASE = np.array([0, 0, 0, 0.0, 0, 0, 0.0])   # left-frame friction base: arm STRAIGHT (q4=0)
         ranges = []
         for j in range(7):
             q = BASE.copy()
