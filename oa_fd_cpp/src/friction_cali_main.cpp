@@ -117,6 +117,10 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "arm init/enable failed on %s\n", can.c_str());
     return 1;
   }
+  // SAFETY: clamp commands to the sweep ranges (a bad position would fault the
+  // motor and drop torque -> limp arm). The cali never commands beyond [lo,hi].
+  arm.set_pos_limits({lo[0],lo[1],lo[2],lo[3],lo[4],lo[5],lo[6]},
+                     {hi[0],hi[1],hi[2],hi[3],hi[4],hi[5],hi[6]});
 
   std::ofstream csv(out);
   csv << "joint,q,dq,tau_meas,tau_gravity_model\n";

@@ -64,6 +64,11 @@ public:
   // (Position-position bilateral computes the full torque on the PC side.)
   void write_torque(const Vec7& tau);
 
+  // Hard mechanical position limits [rad]. Once set, write_mit clamps every
+  // position command into [lo,hi] so an out-of-range target can never make a
+  // motor fault and drop torque (limp arm = injury risk).
+  void set_pos_limits(const Vec7& lo, const Vec7& hi);
+
   // Full MIT command (used if you want motor-side impedance; unused by oa_fd).
   void write_mit(const Vec7& kp, const Vec7& kd,
                  const Vec7& pos, const Vec7& vel, const Vec7& tau);
@@ -75,6 +80,9 @@ private:
   std::unique_ptr<openarmx::can::socket::OpenArmX> dev_;
   std::array<double, DOF> dir_;   // direction multiplier per joint (-1)
   bool inited_ = false;
+  bool have_limits_ = false;
+  Vec7 q_lo_{}, q_hi_{};          // hard mechanical position clamp (set_pos_limits)
+  unsigned clamp_warn_ = 0;       // throttle out-of-range warnings
 };
 
 }  // namespace oa_fd

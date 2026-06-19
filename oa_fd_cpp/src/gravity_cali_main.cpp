@@ -175,11 +175,30 @@ int main(int argc, char** argv) {
   const Vec7 KD = {3.5, 3.5, 3.0, 3.0, 0.4, 0.4, 0.3};
   const Vec7 TAU_FF_MAX = {40, 40, 25, 25, 8, 8, 8};
 
+  // SAFETY pre-flight: refuse to run if any pose is outside the mechanical
+  // range (a bad pose would make the motor fault and drop torque -> limp arm).
+  // Done BEFORE enabling the motors so nothing moves on a bad config.
+  int bad = 0;
+  for (size_t pi = 0; pi < poses.size(); ++pi)
+    for (int i = 0; i < DOF; ++i)
+      if (poses[pi][i] < lim_lo[i] - 1e-6 || poses[pi][i] > lim_hi[i] + 1e-6) {
+        std::fprintf(stderr, "[oa_gravity_cali] pose %zu j%d = %.3f OUT OF RANGE "
+                     "[%.3f,%.3f]\n", pi, i + 1, poses[pi][i], lim_lo[i], lim_hi[i]);
+        ++bad;
+      }
+  if (bad) {
+    std::fprintf(stderr, "REFUSING to run: %d out-of-range pose value(s). "
+                 "Check --poses / --side.\n", bad);
+    return 1;
+  }
+
   OaxArm arm(can, fd, 500);
   if (!arm.init() || !arm.enable()) {
     std::fprintf(stderr, "arm init/enable failed on %s\n", can.c_str());
     return 1;
   }
+  arm.set_pos_limits({lim_lo[0],lim_lo[1],lim_lo[2],lim_lo[3],lim_lo[4],lim_lo[5],lim_lo[6]},
+                     {lim_hi[0],lim_hi[1],lim_hi[2],lim_hi[3],lim_hi[4],lim_hi[5],lim_hi[6]});
 
   std::ofstream csv(out);
   csv << "pose";

@@ -106,13 +106,28 @@ bool TeleopNode::connect() {
   right_.grav_mirror = cfg_.grav_mirror_right;
   left_.grav_mirror  = cfg_.grav_mirror_left;
 
+  // Hard mechanical position limits (safety clamp in the driver so no command
+  // can fault a motor into dropping torque). Left = mechanical ranges; right =
+  // y-mirror (q1,q2,q3,q5,q7 flip). These are WIDER than the operator fences
+  // (joint_limits), so normal operation is unaffected — this only catches the
+  // impossible.
+  const Vec7 MECH_LO_L = {-3.34, -3.27, -1.57, 0.0, -1.5, -0.75, -1.4};
+  const Vec7 MECH_HI_L = { 0.91,  0.13,  1.57, 1.8,  1.5,  0.75,  1.4};
+  const double MMIR[DOF] = {-1, -1, -1, 1, -1, 1, -1};
+
   for (Pair* p : pairs_) {
+    Vec7 mlo = MECH_LO_L, mhi = MECH_HI_L;
+    if (p->name == "right")
+      for (int i = 0; i < DOF; ++i)
+        if (MMIR[i] < 0) { mlo[i] = -MECH_HI_L[i]; mhi[i] = -MECH_LO_L[i]; }
+
     std::vector<OaxArm*> arms;
     if (drive_leader_)   arms.push_back(p->leader.get());
     if (drive_follower_) arms.push_back(p->follower.get());
     for (OaxArm* a : arms) {
       if (!a->init())   { RCLCPP_ERROR(get_logger(), "init failed %s", a->iface().c_str()); return false; }
       if (!a->enable()) { RCLCPP_ERROR(get_logger(), "enable failed %s", a->iface().c_str()); return false; }
+      a->set_pos_limits(mlo, mhi);
       // GATE: no torque until every motor proves live telemetry. Without this
       // a cold first launch can run with q=0 -> gravity comp silently dead
       // on q1/q2 ("first launch no torque, relaunch fixes it").

@@ -2,7 +2,9 @@
 
 #include "oa_fd_cpp/oax_driver.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <thread>
 #include <vector>
@@ -121,15 +123,33 @@ void OaxArm::write_torque(const Vec7& tau) {
   write_mit(zero, zero, zero, zero, tau);
 }
 
+void OaxArm::set_pos_limits(const Vec7& lo, const Vec7& hi) {
+  q_lo_ = lo; q_hi_ = hi; have_limits_ = true;
+}
+
 void OaxArm::write_mit(const Vec7& kp, const Vec7& kd,
                        const Vec7& pos, const Vec7& vel, const Vec7& tau) {
   if (!dev_) return;
   std::vector<rm::MotionControlParam> params(DOF);
   for (int i = 0; i < DOF; ++i) {
+    // SAFETY: never command a position outside the mechanical range. An
+    // out-of-range target makes the Robstride fault and DROP TORQUE (arm goes
+    // limp -> injury risk). Clamp here so no impossible position ever reaches
+    // a motor, regardless of the caller (teleop, cali, or a bug).
+    double pcmd = pos[i];
+    if (have_limits_) {
+      const double c = std::clamp(pcmd, q_lo_[i], q_hi_[i]);
+      if (std::abs(c - pcmd) > 1e-6 && (clamp_warn_++ % 500) == 0)
+        std::fprintf(stderr,
+            "[oax_driver:%s] j%d position cmd %.3f out of range [%.3f,%.3f] "
+            "-> CLAMPED (check caller)\n", iface_.c_str(), i + 1, pcmd,
+            q_lo_[i], q_hi_[i]);
+      pcmd = c;
+    }
     rm::MotionControlParam p;
     p.kp       = kp[i];
     p.kd       = kd[i];
-    p.position = pos[i] * dir_[i];
+    p.position = pcmd * dir_[i];
     p.velocity = vel[i] * dir_[i];
     p.torque   = tau[i] * dir_[i];
     params[i] = p;
