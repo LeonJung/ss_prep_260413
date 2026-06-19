@@ -1,0 +1,47 @@
+# follower-left arm — self-contained config (one of 4 per-arm files).
+# Loop globals (timestep/filter/homing) are identical across the 4 files.
+can: can3
+fd: false
+recv_timeout_us: 500
+timestep: 0.001
+vel_filter_alpha: 0.05
+auto_home_on_start: false
+homing_duration: 5.0
+
+Kp: [120.0, 120.0, 120.0, 120.0, 18.0, 20.0, 16.0]
+Kd: [2.0, 2.0, 2.0, 2.0, 0.2, 0.2, 0.2]
+home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]
+couple_mirror: [1, 1, 1, 1, 1, 1, 1]
+
+friction:   # follower: OFF to start (verify gravity, then add gradually).
+            # fit values in cali_data/follower_friction_fit.txt.
+  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
+  v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
+
+gravity:
+  enabled: true
+  urdf: ""          # launch passes the per-arm cali URDF (--urdf-*)
+  vec: [0.0, 0.0, 9.81]
+  scale: 1.0
+  scale_joints: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  mirror: [1, 1, 1, 1, 1, 1, 1]  # joint-axis mirror (right = sagittal mirror)
+
+freedrive:
+  posture_kp: [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
+  posture_kd: [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
+  posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  limit_kp:   [40.0, 40.0, 5.0, 0.0, 5.0, 0.0, 0.0]
+  limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
+  limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
+  limit_push: [0.07, 0.07, 0.05, 0.05, 0.05, 0.0, 0.0]
+  limit_exit_kd: 0.10
+  limit_margin: [0.15, 0.05, 0.15, 0.15, 0.15, 0.15, 0.15]
+
+joint_limits:
+  lower: [-2.094, -3.27, -1.57, 0.0, -1.5, -0.75, -1.4]
+  upper: [ 0.785,  0.13,  1.57, 1.8,  1.5,  0.75,  1.4]

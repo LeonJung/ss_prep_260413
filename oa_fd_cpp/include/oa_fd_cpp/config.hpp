@@ -1,10 +1,13 @@
 // config.hpp — configuration schema + YAML loader for oa_fd_cpp.
 //
-// Enactic-style bilateral (force feedback) on OpenArm A2 (openarmx CAN):
-//   per joint MIT command  tau = Kp(q_ref-q) + Kd(dq_ref-dq) + g(q) + friction(q̇)
-//   cross-coupled references: leader_ref = follower state, follower_ref = leader.
-// Single control PC, 4 USB2CAN:
-//   leader_right(can0) <-> follower_right(can2);  leader_left(can1) <-> follower_left(can3)
+// PER-ARM config: each of the 4 arms (leader/follower x left/right) has its
+// OWN self-contained yaml file (config/oa_fd_<role>_<side>.yaml) loaded into
+// one ArmCfg. Friction, gravity model, gains, limits, freedrive shaping all
+// differ per arm, so nothing is shared between arms except a few loop-level
+// globals (GlobalCfg: timestep, filter, homing, CAN fd/timeout).
+//
+// Per joint MIT command  tau = Kp(q_ref-q) + Kd(dq_ref-dq) + g(q) + friction(q̇)
+//   bilateral: leader_ref = follower state, follower_ref = leader state.
 
 #pragma once
 #include <array>
@@ -15,154 +18,77 @@ namespace oa_fd {
 constexpr int DOF = 7;                 // OpenArm A2 arm joints (gripper excluded)
 using Vec7 = std::array<double, DOF>;
 
+// ---- gravity-model build params (interface to GravityModel::load) --------
 struct GravityCfg {
   bool        enabled  = true;
   std::string urdf;
   std::string root_link = "openarmx_link0";
   std::string tip_link  = "openarmx_link7";
-  std::array<double, 3> vec = {0.0, 0.0, -9.81};
-  double      scale    = 1.0;                       // global trim
-  // per-joint trim, multiplied with `scale` (model error differs per joint —
-  // e.g. j2 perfect at 0.95 global while j1 over-compensates).
+  std::array<double, 3> vec = {0.0, 0.0, 9.81};
+  double      scale    = 1.0;
   std::array<double, DOF> scale_joints = {1, 1, 1, 1, 1, 1, 1};
 };
 
-struct OaFdConfig {
-  // ---- CAN role -> interface ----
-  std::string can_leader_right   = "can0";
-  std::string can_leader_left    = "can1";
-  std::string can_follower_right = "can2";
-  std::string can_follower_left  = "can3";
-  bool        can_fd             = false;
-  int         recv_timeout_us    = 500;
+// ---- one arm's complete parameter set (one yaml file) --------------------
+struct ArmCfg {
+  std::string can = "can0";            // CAN interface for this arm
 
-  // ---- loop ----
-  double timestep = 0.001;             // enactic runs 1 kHz
-  // EMA coefficient for the filtered velocity used by friction gate and
-  // zone repulsion (1.0 = raw). 0.05 @1kHz ~= 8 Hz cutoff; raw telemetry
-  // shows +-0.15 rad/s noise at standstill which chattered the zone spring.
-  double vel_filter_alpha = 1.0;
+  // gravity model (KDL JntToGravity on `urdf`). vec/mirror per this arm's
+  // mounting; mirror flips the joint axes for the right arm (sagittal mirror).
+  bool        grav_enabled = true;
+  std::string grav_urdf;               // path; launch passes it
+  std::string root_link = "openarmx_link0";
+  std::string tip_link  = "openarmx_link7";
+  std::array<double, 3> grav_vec = {0.0, 0.0, 9.81};
+  double      grav_scale = 1.0;
+  Vec7        grav_scale_joints = {1, 1, 1, 1, 1, 1, 1};
+  Vec7        grav_mirror = {1, 1, 1, 1, 1, 1, 1};
 
-  // ---- homing ----
-  bool   auto_home_on_start = false;   // safety: no stiff pull-to-home on launch
-  double homing_duration    = 5.0;
-
-  // ---- per-joint ----
-  Vec7 torque_limit = {40, 40, 25, 25, 8, 8, 8};
-  Vec7 home         = {0, 0, 0, 0, 0, 0, 0};
-
-  // ---- MIT impedance gains (motor-side) ----
-  // Placeholders. enactic (Damiao) leader values: Kp[240,240,240,240,24,31,25],
-  // Kd[3,3,3,3,0.2,0.2,0.2]. Robstride differs — RE-TUNE on hardware.
+  // MIT impedance + motion
   Vec7 Kp = {120, 120, 120, 120, 18, 20, 16};
   Vec7 Kd = {2.0, 2.0, 2.0, 2.0, 0.2, 0.2, 0.2};
+  Vec7 home = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 torque_limit = {40, 40, 25, 25, 8, 8, 8};
 
-  // ---- tanh friction model: f = gate(|v|) * (Fc*tanh(k*v) + Fv*v + Fo) ----
-  // Default OFF (zeros). Identify per joint on hardware before enabling.
+  // leader<->follower joint-correspondence mirror (this arm's pair)
+  Vec7 couple_mirror = {1, 1, 1, 1, 1, 1, 1};
+
+  // tanh friction: f = gate(|v|) * (Fc*tanh(k*v) + Fv*v + Fo)
   Vec7 fric_Fc = {0, 0, 0, 0, 0, 0, 0};
-  Vec7 fric_k  = {30, 30, 30, 30, 30, 30, 30};
+  Vec7 fric_k  = {8, 8, 4, 4, 4, 4, 4};
   Vec7 fric_Fv = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fric_Fo = {0, 0, 0, 0, 0, 0, 0};
-  // Velocity gate: 0 below v_start, ramps to 1 at v_full. Kills the
-  // negative-damping slope at standstill that made FREEDRIVE (Kp=Kd=0)
-  // run away when nudged. v_full <= v_start disables the gate (old behavior).
-  Vec7 fric_v_start = {0,0,0,0,0,0,0};   // [rad/s] per joint
-  Vec7 fric_v_full  = {0,0,0,0,0,0,0};   // [rad/s] per joint
+  Vec7 fric_v_start = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 fric_v_full  = {0, 0, 0, 0, 0, 0, 0};
 
-  // Per-SIDE friction (arms differ — identified separately). Default = copy
-  // of the shared block above; a `friction_right:` yaml block overrides the
-  // RIGHT pair only. Friction is motor-local so NO mirror is applied to it.
-  Vec7 fric_Fc_right = {0,0,0,0,0,0,0};
-  Vec7 fric_k_right  = {30,30,30,30,30,30,30};
-  Vec7 fric_Fv_right = {0,0,0,0,0,0,0};
-  Vec7 fric_Fo_right = {0,0,0,0,0,0,0};
-  Vec7 fric_v_start_right = {0,0,0,0,0,0,0};
-  Vec7 fric_v_full_right  = {0,0,0,0,0,0,0};
-
-  // Per-ROLE FOLLOWER friction (the follower is a different physical arm + a
-  // gripper). Default 0 = OFF, so the follower starts with NO friction comp:
-  // verify gravity alone first, then add gradually (the proven leader method).
-  // yaml: friction_left_follower / friction_right_follower.
-  Vec7 fric_Fc_lf = {0,0,0,0,0,0,0}, fric_k_lf = {30,30,30,30,30,30,30};
-  Vec7 fric_Fv_lf = {0,0,0,0,0,0,0}, fric_Fo_lf = {0,0,0,0,0,0,0};
-  Vec7 fric_v_start_lf = {0,0,0,0,0,0,0}, fric_v_full_lf = {0,0,0,0,0,0,0};
-  Vec7 fric_Fc_rf = {0,0,0,0,0,0,0}, fric_k_rf = {30,30,30,30,30,30,30};
-  Vec7 fric_Fv_rf = {0,0,0,0,0,0,0}, fric_Fo_rf = {0,0,0,0,0,0,0};
-  Vec7 fric_v_start_rf = {0,0,0,0,0,0,0}, fric_v_full_rf = {0,0,0,0,0,0,0};
-
-  // ---- leader<->follower joint mirror, per side ----
-  Vec7 mirror_right = {1, 1, 1, 1, 1, 1, 1};
-  Vec7 mirror_left  = {1, 1, 1, 1, 1, 1, 1};
-
-  // ---- FREEDRIVE shaping: weak posture spring + joint-limit repulsion ----
-  // Spring (motor-side impedance toward posture_q) tames the 7-DOF q3<->q5
-  // self-motion; repulsion (PC-side torque inside `limit_margin` of a
-  // boundary) keeps joints off hard stops / out of forbidden ranges.
-  // All zeros = the old pure gravity-only FREEDRIVE.
+  // FREEDRIVE shaping: posture spring + motor-side joint-limit repulsion
   Vec7 fd_posture_kp = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fd_posture_kd = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fd_posture_q  = {0, 0, 0, 0, 0, 0, 0};
-  Vec7 fd_limit_kp   = {0, 0, 0, 0, 0, 0, 0};  // Nm/rad inside the zone
-  // damping applied ONLY inside the zone — absorbs the spring rebound
-  // (acts in BOTH directions: hardens approach, slows the exit)
-  Vec7 fd_limit_kd   = {0, 0, 0, 0, 0, 0, 0};  // Nm/(rad/s) inside the zone
-  // spring fraction kept while exiting (1.0 = symmetric spring = catapult)
-  double fd_limit_exit_scale = 0.25;
-  // cap on the spring force [Nm] — keeps a DEEP zone violation (e.g. parking
-  // inside a relocated fence) from commanding huge torque
+  Vec7 fd_limit_kp   = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 fd_limit_kd   = {0, 0, 0, 0, 0, 0, 0};
   Vec7 fd_limit_fmax = {1e9, 1e9, 1e9, 1e9, 1e9, 1e9, 1e9};
-  // a gentle steady inward nudge: motor-side target is set this far INSIDE
-  // the valid range from the edge, so even resting at the edge gets a small
-  // k*push force back into range (operator: 'slight push-back at the limit')
-  Vec7 fd_limit_push = {0, 0, 0, 0, 0, 0, 0};   // [rad] inward target offset
-  // damping scale while EXITING the zone (moving back into range): 1.0 = same
-  // as approach (stiff/draggy on the way out), 0.0 = free exit
+  Vec7 fd_limit_push = {0, 0, 0, 0, 0, 0, 0};
+  Vec7 fd_limit_margin = {0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15};
   double fd_limit_exit_kd = 1.0;
-  Vec7 fd_limit_margin = {0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15};  // zone width [rad], per joint
-  // Repulsion boundaries per side (defaults: effectively disabled).
-  Vec7 limit_lower_left  = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
-  Vec7 limit_upper_left  = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};
-  Vec7 limit_lower_right = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
-  Vec7 limit_upper_right = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};
-
-  GravityCfg gravity;
-  // Gravity vector in each arm's link0 frame. BOTH arms use (0,0,+9.81) —
-  // the left/right difference is handled by grav_mirror_* (joint-axis mirror),
-  // NOT by flipping this vector (flipping it made the arm fly up / sag).
-  std::array<double, 3> grav_vec_right = {0.0, 0.0, 9.81};
-  std::array<double, 3> grav_vec_left  = {0.0, 0.0, 9.81};
-  // Per-side KDL chain endpoints. The bundled single-arm URDF
-  // (urdf/openarmx_arm.urdf) uses generic names for both sides; only the
-  // gravity vector differs left/right (set by mounting).
-  std::string root_link_right = "openarmx_link0";
-  std::string tip_link_right  = "openarmx_link7";
-  std::string root_link_left  = "openarmx_link0";
-  std::string tip_link_left   = "openarmx_link7";
-
-  // Per-SIDE gravity URDF (mass/COM differ slightly L vs R). Empty -> fall
-  // back to gravity.urdf (the single shared model). The axis mirror is still
-  // handled by grav_mirror_*; these only carry the per-arm inertial fit.
-  // LEADER per-side gravity URDFs (handle tip).
-  std::string gravity_urdf_left;
-  std::string gravity_urdf_right;
-  // FOLLOWER per-side gravity URDFs (gripper tip — heavier, different model).
-  // Empty -> fall back to the leader URDF of that side. enactic likewise uses
-  // a separate dynamics model for the follower (dynamics_f_).
-  std::string gravity_urdf_left_follower;
-  std::string gravity_urdf_right_follower;
-
-  // Per-joint MIRROR sign for the gravity model. The two arms are sagittal-
-  // plane mirror images; some joint AXES spin opposite (gravity is in that
-  // vertical plane, so it's invariant -> g_right = m * gravity(m * q_right)
-  // using the SAME left-arm URDF and vec). Friction/posture are motor-local
-  // (odd in their own qd / symmetric about 0) so they get NO mirror — that's
-  // why q3/q5 posture already worked on the right arm.
-  // Measured motor view (R vs L): q1,q7 MIRROR; q2,q4,q6 SAME; q3,q5 are roll
-  // joints -> inferred MIRROR (verify; near 0 in use so low impact).
-  Vec7 grav_mirror_right = {1, 1, 1, 1, 1, 1, 1};
-  Vec7 grav_mirror_left  = {1, 1, 1, 1, 1, 1, 1};
+  // joint-limit boundaries [rad] (defaults effectively disabled)
+  Vec7 limit_lower = {-1e9, -1e9, -1e9, -1e9, -1e9, -1e9, -1e9};
+  Vec7 limit_upper = { 1e9,  1e9,  1e9,  1e9,  1e9,  1e9,  1e9};
 };
 
-bool load_config(const std::string& path, OaFdConfig& out);
+// ---- loop-level globals (one per process; read from any arm file) --------
+struct GlobalCfg {
+  bool   can_fd = false;
+  int    recv_timeout_us = 500;
+  double timestep = 0.001;
+  double vel_filter_alpha = 1.0;
+  bool   auto_home_on_start = false;
+  double homing_duration = 5.0;
+};
+
+// Load one arm's yaml file into `arm` (and refresh loop globals `g` from it;
+// every file carries the same global block, last-loaded wins). Returns false
+// on read failure.
+bool load_arm_config(const std::string& path, ArmCfg& arm, GlobalCfg& g);
 
 }  // namespace oa_fd

@@ -45,7 +45,8 @@ struct Pair {
   Vec7 l_hold{}, f_hold{};               // captured at PAUSED entry (hold-in-place)
   GravityModel* grav_lead = nullptr;  // leader gravity model (handle tip)
   GravityModel* grav_foll = nullptr;  // follower gravity model (gripper tip)
-  Vec7 grav_mirror{1,1,1,1,1,1,1};  // per-joint axis-mirror sign for gravity
+  const ArmCfg* lead_cfg = nullptr;   // this pair's leader arm params
+  const ArmCfg* foll_cfg = nullptr;   // this pair's follower arm params
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr leader_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr follower_pub;
 };
@@ -53,12 +54,12 @@ struct Pair {
 class TeleopNode : public rclcpp::Node {
 public:
   struct Options {
-    std::string config_path;
-    std::string urdf_override;   // --urdf : overrides gravity.urdf (both sides)
-    std::string urdf_left_override;   // --urdf-left  : leader-left gravity URDF
-    std::string urdf_right_override;  // --urdf-right : leader-right gravity URDF
-    std::string urdf_left_follower_override;   // --urdf-left-follower
-    std::string urdf_right_follower_override;  // --urdf-right-follower
+    // one self-contained yaml per arm
+    std::string cfg_leader_left, cfg_leader_right;
+    std::string cfg_follower_left, cfg_follower_right;
+    // optional gravity-URDF overrides per arm (else taken from the arm's yaml)
+    std::string urdf_leader_left, urdf_leader_right;
+    std::string urdf_follower_left, urdf_follower_right;
     std::string arms = "both";   // --arms right|left|both : which pair(s) to drive
     std::string role = "both";   // --role leader|follower|both : which side of each pair
     bool use_rt = false;
@@ -82,13 +83,16 @@ private:
   void compute_pair(Pair& p, int mode, double now_sec,
                     double h_t_start, double h_duration,
                     MitCmd& leader_cmd, MitCmd& follower_cmd);
-  void friction(const Vec7& qd, Vec7& f, bool right = false, bool follower = false) const;
+  // friction for one arm (its own ArmCfg).
+  void friction(const ArmCfg& a, const Vec7& qd, Vec7& f) const;
   void publish_pair(Pair& p);
 
   Options opts_;
-  OaFdConfig cfg_;
+  GlobalCfg g_;                         // loop-level globals
+  // 4 per-arm configs (each from its own yaml).
+  ArmCfg cfg_lead_left_, cfg_lead_right_, cfg_foll_left_, cfg_foll_right_;
   RTConfig rt_cfg_;
-  // 4 gravity models: leader/follower x left/right (follower = gripper tip).
+  // 4 gravity models, one per arm.
   GravityModel grav_lead_left_, grav_lead_right_;
   GravityModel grav_foll_left_, grav_foll_right_;
 

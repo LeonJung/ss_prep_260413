@@ -108,9 +108,10 @@ int main(int argc, char** argv) {
   // friction so the impedance doesn't have to drag through it (stick-slip,
   // "struggling" moves). Excluded during the static measurement windows —
   // velocity noise through tanh would contaminate them (and v=0 anyway).
-  OaFdConfig fcfg;   // zeros if no --config
+  ArmCfg fcfg;       // friction block only; zeros if no --config
+  GlobalCfg gdummy;
   if (!config_path.empty()) {
-    if (load_config(config_path, fcfg))
+    if (load_arm_config(config_path, fcfg, gdummy))
       std::printf("friction FF from %s (Fc1=%.2f ...)\n",
                   config_path.c_str(), fcfg.fric_Fc[0]);
     else

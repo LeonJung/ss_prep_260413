@@ -1,4 +1,4 @@
-// config.cpp — yaml-cpp loader for OaFdConfig.
+// config.cpp — yaml-cpp loader for one ArmCfg + loop globals.
 
 #include "oa_fd_cpp/config.hpp"
 
@@ -22,9 +22,19 @@ void try_scalar(const YAML::Node& parent, const std::string& key, T& out) {
   if (parent[key]) { try { out = parent[key].as<T>(); } catch (...) {
     std::fprintf(stderr, "[config] could not parse '%s'\n", key.c_str()); } }
 }
+// 7-vec OR scalar-applied-to-all (for the velocity gate keys)
+void try_vec7_or_scalar(const YAML::Node& parent, const std::string& key, Vec7& out) {
+  if (!parent[key]) return;
+  if (parent[key].IsSequence()) { try_vec7(parent, key, out); }
+  else { double v = out[0]; try_scalar(parent, key, v); out.fill(v); }
+}
+void read3(const YAML::Node& n, std::array<double, 3>& o) {
+  if (n && n.IsSequence() && n.size() == 3)
+    for (int i = 0; i < 3; ++i) o[i] = n[i].as<double>();
+}
 }  // namespace
 
-bool load_config(const std::string& path, OaFdConfig& c) {
+bool load_arm_config(const std::string& path, ArmCfg& a, GlobalCfg& g) {
   YAML::Node root;
   try { root = YAML::LoadFile(path); }
   catch (const std::exception& e) {
@@ -32,125 +42,61 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     return false;
   }
 
-  if (const auto& can = root["can"]) {
-    try_scalar(can, "leader_right",   c.can_leader_right);
-    try_scalar(can, "leader_left",    c.can_leader_left);
-    try_scalar(can, "follower_right", c.can_follower_right);
-    try_scalar(can, "follower_left",  c.can_follower_left);
-    try_scalar(can, "fd",             c.can_fd);
-    try_scalar(can, "recv_timeout_us", c.recv_timeout_us);
-  }
+  // ---- loop globals (every arm file carries these; identical across files) ----
+  try_scalar(root, "can",                a.can);
+  try_scalar(root, "fd",                 g.can_fd);
+  try_scalar(root, "recv_timeout_us",    g.recv_timeout_us);
+  try_scalar(root, "timestep",           g.timestep);
+  try_scalar(root, "vel_filter_alpha",   g.vel_filter_alpha);
+  try_scalar(root, "auto_home_on_start", g.auto_home_on_start);
+  try_scalar(root, "homing_duration",    g.homing_duration);
 
-  try_scalar(root, "timestep",           c.timestep);
-  try_scalar(root, "vel_filter_alpha",   c.vel_filter_alpha);
-  try_scalar(root, "auto_home_on_start", c.auto_home_on_start);
-  try_scalar(root, "homing_duration",    c.homing_duration);
+  // ---- per-arm motion / impedance ----
+  try_vec7(root, "Kp", a.Kp);
+  try_vec7(root, "Kd", a.Kd);
+  try_vec7(root, "home", a.home);
+  try_vec7(root, "torque_limit", a.torque_limit);
+  try_vec7(root, "couple_mirror", a.couple_mirror);
 
-  try_vec7(root, "torque_limit", c.torque_limit);
-  try_vec7(root, "home",         c.home);
-  try_vec7(root, "Kp",           c.Kp);
-  try_vec7(root, "Kd",           c.Kd);
-
+  // ---- friction ----
   if (const auto& fr = root["friction"]) {
-    try_vec7(fr, "Fc", c.fric_Fc);
-    try_vec7(fr, "k",  c.fric_k);
-    try_vec7(fr, "Fv", c.fric_Fv);
-    try_vec7(fr, "Fo", c.fric_Fo);
-    auto load_gate = [&](const char* key, Vec7& out){
-      if (!fr[key]) return;
-      if (fr[key].IsSequence()) { try_vec7(fr, key, out); }
-      else { double v=out[0]; try_scalar(fr, key, v); out.fill(v); }
-    };
-    load_gate("v_start", c.fric_v_start);
-    load_gate("v_full",  c.fric_v_full);
+    try_vec7(fr, "Fc", a.fric_Fc);
+    try_vec7(fr, "k",  a.fric_k);
+    try_vec7(fr, "Fv", a.fric_Fv);
+    try_vec7(fr, "Fo", a.fric_Fo);
+    try_vec7_or_scalar(fr, "v_start", a.fric_v_start);
+    try_vec7_or_scalar(fr, "v_full",  a.fric_v_full);
   }
-  // right side defaults to a copy of the shared block...
-  c.fric_Fc_right = c.fric_Fc; c.fric_k_right = c.fric_k;
-  c.fric_Fv_right = c.fric_Fv; c.fric_Fo_right = c.fric_Fo;
-  c.fric_v_start_right = c.fric_v_start; c.fric_v_full_right = c.fric_v_full;
-  // ...overridden by an optional friction_right block (right pair only)
-  auto load_fric = [&](const char* blk, Vec7& Fc, Vec7& k, Vec7& Fv, Vec7& Fo,
-                       Vec7& vs, Vec7& vf){
-    const auto& fr = root[blk];
-    if (!fr) return;
-    try_vec7(fr, "Fc", Fc); try_vec7(fr, "k", k);
-    try_vec7(fr, "Fv", Fv); try_vec7(fr, "Fo", Fo);
-    auto g = [&](const char* key, Vec7& out){
-      if (!fr[key]) return;
-      if (fr[key].IsSequence()) try_vec7(fr, key, out);
-      else { double v=out[0]; try_scalar(fr, key, v); out.fill(v); }
-    };
-    g("v_start", vs); g("v_full", vf);
-  };
-  load_fric("friction_right",          c.fric_Fc_right, c.fric_k_right, c.fric_Fv_right, c.fric_Fo_right, c.fric_v_start_right, c.fric_v_full_right);
-  load_fric("friction_left_follower",  c.fric_Fc_lf, c.fric_k_lf, c.fric_Fv_lf, c.fric_Fo_lf, c.fric_v_start_lf, c.fric_v_full_lf);
-  load_fric("friction_right_follower", c.fric_Fc_rf, c.fric_k_rf, c.fric_Fv_rf, c.fric_Fo_rf, c.fric_v_start_rf, c.fric_v_full_rf);
-  if (const auto& mr = root["mirror"]) {
-    try_vec7(mr, "right", c.mirror_right);
-    try_vec7(mr, "left",  c.mirror_left);
-  }
-  if (const auto& fd = root["freedrive"]) {
-    try_vec7(fd, "posture_kp", c.fd_posture_kp);
-    try_vec7(fd, "posture_kd", c.fd_posture_kd);
-    try_vec7(fd, "posture_q",  c.fd_posture_q);
-    try_vec7(fd, "limit_kp",   c.fd_limit_kp);
-    try_vec7(fd, "limit_kd",   c.fd_limit_kd);
-    try_scalar(fd, "limit_exit_scale", c.fd_limit_exit_scale);
-    try_vec7(fd, "limit_fmax", c.fd_limit_fmax);
-    try_vec7(fd, "limit_push", c.fd_limit_push);
-    try_scalar(fd, "limit_exit_kd", c.fd_limit_exit_kd);
-    // limit_margin: per-joint 7-vec, or a scalar applied to all joints
-    if (fd["limit_margin"]) {
-      if (fd["limit_margin"].IsSequence()) {
-        try_vec7(fd, "limit_margin", c.fd_limit_margin);
-      } else {
-        double m = c.fd_limit_margin[0];
-        try_scalar(fd, "limit_margin", m);
-        c.fd_limit_margin.fill(m);
-      }
-    }
-  }
-  if (const auto& jl = root["joint_limits"]) {
-    try_vec7(jl, "lower_left",  c.limit_lower_left);
-    try_vec7(jl, "upper_left",  c.limit_upper_left);
-    try_vec7(jl, "lower_right", c.limit_lower_right);
-    try_vec7(jl, "upper_right", c.limit_upper_right);
-  }
-  if (const auto& g = root["gravity"]) {
-    try_scalar(g, "enabled",   c.gravity.enabled);
-    try_scalar(g, "urdf",      c.gravity.urdf);
-    try_scalar(g, "root_link", c.gravity.root_link);
-    try_scalar(g, "tip_link",  c.gravity.tip_link);
-    try_scalar(g, "scale",     c.gravity.scale);
-    if (g["scale_joints"] && g["scale_joints"].IsSequence() &&
-        g["scale_joints"].size() == DOF)
-      for (int i = 0; i < DOF; ++i)
-        c.gravity.scale_joints[i] = g["scale_joints"][i].as<double>();
-    auto read3 = [](const YAML::Node& n, std::array<double, 3>& o) {
-      if (n && n.IsSequence() && n.size() == 3)
-        for (int i = 0; i < 3; ++i) o[i] = n[i].as<double>();
-    };
-    // global 'vec' is the fallback for both sides
-    read3(g["vec"], c.gravity.vec);
-    c.grav_vec_right = c.gravity.vec;
-    c.grav_vec_left  = c.gravity.vec;
-    read3(g["vec_right"], c.grav_vec_right);
-    read3(g["vec_left"],  c.grav_vec_left);
 
-    // per-side chain endpoints: a single 'root_link'/'tip_link' applies to both;
-    // per-side keys override.
-    if (g["root_link"]) { c.root_link_right = c.root_link_left = c.gravity.root_link; }
-    if (g["tip_link"])  { c.tip_link_right  = c.tip_link_left  = c.gravity.tip_link; }
-    try_scalar(g, "root_link_right", c.root_link_right);
-    try_scalar(g, "tip_link_right",  c.tip_link_right);
-    try_scalar(g, "root_link_left",  c.root_link_left);
-    try_scalar(g, "tip_link_left",   c.tip_link_left);
-    try_vec7(g, "mirror_right", c.grav_mirror_right);
-    try_vec7(g, "mirror_left",  c.grav_mirror_left);
-    try_scalar(g, "urdf_left",  c.gravity_urdf_left);
-    try_scalar(g, "urdf_right", c.gravity_urdf_right);
-    try_scalar(g, "urdf_left_follower",  c.gravity_urdf_left_follower);
-    try_scalar(g, "urdf_right_follower", c.gravity_urdf_right_follower);
+  // ---- gravity ----
+  if (const auto& gr = root["gravity"]) {
+    try_scalar(gr, "enabled",   a.grav_enabled);
+    try_scalar(gr, "urdf",      a.grav_urdf);
+    try_scalar(gr, "root_link", a.root_link);
+    try_scalar(gr, "tip_link",  a.tip_link);
+    try_scalar(gr, "scale",     a.grav_scale);
+    try_vec7(gr, "scale_joints", a.grav_scale_joints);
+    try_vec7(gr, "mirror",       a.grav_mirror);
+    read3(gr["vec"], a.grav_vec);
+  }
+
+  // ---- FREEDRIVE shaping ----
+  if (const auto& fd = root["freedrive"]) {
+    try_vec7(fd, "posture_kp", a.fd_posture_kp);
+    try_vec7(fd, "posture_kd", a.fd_posture_kd);
+    try_vec7(fd, "posture_q",  a.fd_posture_q);
+    try_vec7(fd, "limit_kp",   a.fd_limit_kp);
+    try_vec7(fd, "limit_kd",   a.fd_limit_kd);
+    try_vec7(fd, "limit_fmax", a.fd_limit_fmax);
+    try_vec7(fd, "limit_push", a.fd_limit_push);
+    try_vec7_or_scalar(fd, "limit_margin", a.fd_limit_margin);
+    try_scalar(fd, "limit_exit_kd", a.fd_limit_exit_kd);
+  }
+
+  // ---- joint limits ----
+  if (const auto& jl = root["joint_limits"]) {
+    try_vec7(jl, "lower", a.limit_lower);
+    try_vec7(jl, "upper", a.limit_upper);
   }
   return true;
 }

@@ -18,12 +18,16 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     auto next = [&]() -> std::string { return (i + 1 < argc) ? argv[++i] : ""; };
-    if (a == "--config")            opts.config_path = next();
-    else if (a == "--urdf")         opts.urdf_override = next();
-    else if (a == "--urdf-left")    opts.urdf_left_override = next();
-    else if (a == "--urdf-right")   opts.urdf_right_override = next();
-    else if (a == "--urdf-left-follower")  opts.urdf_left_follower_override = next();
-    else if (a == "--urdf-right-follower") opts.urdf_right_follower_override = next();
+    // one self-contained yaml per arm
+    if (a == "--config-leader-left")        opts.cfg_leader_left = next();
+    else if (a == "--config-leader-right")  opts.cfg_leader_right = next();
+    else if (a == "--config-follower-left") opts.cfg_follower_left = next();
+    else if (a == "--config-follower-right")opts.cfg_follower_right = next();
+    // per-arm gravity URDF overrides
+    else if (a == "--urdf-leader-left")     opts.urdf_leader_left = next();
+    else if (a == "--urdf-leader-right")    opts.urdf_leader_right = next();
+    else if (a == "--urdf-follower-left")   opts.urdf_follower_left = next();
+    else if (a == "--urdf-follower-right")  opts.urdf_follower_right = next();
     else if (a == "--arms")         opts.arms = next();   // right|left|both
     else if (a == "--role")         opts.role = next();   // leader|follower|both
     else if (a == "--rt-mode")      opts.use_rt = (next() == "true");

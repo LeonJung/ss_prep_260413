@@ -1,7 +1,14 @@
 """oa_fd.launch.py — single-PC bimanual enactic-style force-feedback bilateral.
 
+Per-arm config: one self-contained yaml per arm
+  config/oa_fd_leader_left.yaml   config/oa_fd_leader_right.yaml
+  config/oa_fd_follower_left.yaml config/oa_fd_follower_right.yaml
+Each carries that arm's CAN iface, gravity (urdf/vec/mirror/scale), friction,
+Kp/Kd, home, torque_limit, freedrive shaping, joint_limits. The gravity URDF
+defaults to the per-arm cali file (overridable via urdf_* args).
+
   ros2 launch oa_fd_cpp oa_fd.launch.py
-  ros2 launch oa_fd_cpp oa_fd.launch.py rt:=true rt_cpu:=2
+  ros2 launch oa_fd_cpp oa_fd.launch.py arms:=left role:=both rt:=true rt_cpu:=2
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -11,44 +18,37 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('oa_fd_cpp')
-    default_config = f'{pkg_share}/config/oa_fd.yaml'
-    default_urdf = f'{pkg_share}/urdf/openarmx_arm_v2com.urdf'  # shared fallback
-    # per-side calibrated gravity models (mass/COM differ slightly L vs R)
-    default_urdf_left  = f'{pkg_share}/urdf/openarmx_arm_cali_left_leader.urdf'
-    default_urdf_right = f'{pkg_share}/urdf/openarmx_arm_cali_right_leader.urdf'
-    default_urdf_left_foll  = f'{pkg_share}/urdf/openarmx_arm_cali_left_follower.urdf'
-    default_urdf_right_foll = f'{pkg_share}/urdf/openarmx_arm_cali_right_follower.urdf'
+    s = get_package_share_directory('oa_fd_cpp')
 
-    config_arg = DeclareLaunchArgument('config', default_value=default_config)
-    urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)
-    urdf_left_arg  = DeclareLaunchArgument('urdf_left',  default_value=default_urdf_left)
-    urdf_right_arg = DeclareLaunchArgument('urdf_right', default_value=default_urdf_right)
-    urdf_left_foll_arg  = DeclareLaunchArgument('urdf_left_follower',  default_value=default_urdf_left_foll)
-    urdf_right_foll_arg = DeclareLaunchArgument('urdf_right_follower', default_value=default_urdf_right_foll)
-    arms_arg = DeclareLaunchArgument(
-        'arms', default_value='both',
-        description='which pair(s) to drive: right | left | both')
-    role_arg = DeclareLaunchArgument(
-        'role', default_value='both',
-        description='which side of each pair: leader | follower | both '
-                    '(single role disables ACTIVE coupling -> gravity-only)')
-    rt_arg = DeclareLaunchArgument('rt', default_value='false')
-    rt_prio_arg = DeclareLaunchArgument('rt_priority', default_value='80')
-    rt_cpu_arg = DeclareLaunchArgument('rt_cpu', default_value='-1')
+    args = [
+        DeclareLaunchArgument('config_leader_left',    default_value=f'{s}/config/oa_fd_leader_left.yaml'),
+        DeclareLaunchArgument('config_leader_right',   default_value=f'{s}/config/oa_fd_leader_right.yaml'),
+        DeclareLaunchArgument('config_follower_left',  default_value=f'{s}/config/oa_fd_follower_left.yaml'),
+        DeclareLaunchArgument('config_follower_right', default_value=f'{s}/config/oa_fd_follower_right.yaml'),
+        DeclareLaunchArgument('urdf_leader_left',    default_value=f'{s}/urdf/openarmx_arm_cali_left_leader.urdf'),
+        DeclareLaunchArgument('urdf_leader_right',   default_value=f'{s}/urdf/openarmx_arm_cali_right_leader.urdf'),
+        DeclareLaunchArgument('urdf_follower_left',  default_value=f'{s}/urdf/openarmx_arm_cali_left_follower.urdf'),
+        DeclareLaunchArgument('urdf_follower_right', default_value=f'{s}/urdf/openarmx_arm_cali_right_follower.urdf'),
+        DeclareLaunchArgument('arms', default_value='both',
+                              description='which pair(s) to drive: right | left | both'),
+        DeclareLaunchArgument('role', default_value='both',
+                              description='leader | follower | both (single role -> gravity-only)'),
+        DeclareLaunchArgument('rt', default_value='false'),
+        DeclareLaunchArgument('rt_priority', default_value='80'),
+        DeclareLaunchArgument('rt_cpu', default_value='-1'),
+    ]
 
     node = Node(
-        package='oa_fd_cpp',
-        executable='oa_fd_node',
-        name='oa_fd_node',
-        output='screen',
+        package='oa_fd_cpp', executable='oa_fd_node', name='oa_fd_node', output='screen',
         arguments=[
-            '--config', LaunchConfiguration('config'),
-            '--urdf', LaunchConfiguration('urdf'),
-            '--urdf-left', LaunchConfiguration('urdf_left'),
-            '--urdf-right', LaunchConfiguration('urdf_right'),
-            '--urdf-left-follower', LaunchConfiguration('urdf_left_follower'),
-            '--urdf-right-follower', LaunchConfiguration('urdf_right_follower'),
+            '--config-leader-left',    LaunchConfiguration('config_leader_left'),
+            '--config-leader-right',   LaunchConfiguration('config_leader_right'),
+            '--config-follower-left',  LaunchConfiguration('config_follower_left'),
+            '--config-follower-right', LaunchConfiguration('config_follower_right'),
+            '--urdf-leader-left',      LaunchConfiguration('urdf_leader_left'),
+            '--urdf-leader-right',     LaunchConfiguration('urdf_leader_right'),
+            '--urdf-follower-left',    LaunchConfiguration('urdf_follower_left'),
+            '--urdf-follower-right',   LaunchConfiguration('urdf_follower_right'),
             '--arms', LaunchConfiguration('arms'),
             '--role', LaunchConfiguration('role'),
             '--rt-mode', LaunchConfiguration('rt'),
@@ -56,8 +56,4 @@ def generate_launch_description():
             '--rt-cpu', LaunchConfiguration('rt_cpu'),
         ],
     )
-
-    return LaunchDescription([config_arg, urdf_arg, urdf_left_arg, urdf_right_arg,
-                              urdf_left_foll_arg, urdf_right_foll_arg,
-                              arms_arg, role_arg, rt_arg,
-                              rt_prio_arg, rt_cpu_arg, node])
+    return LaunchDescription(args + [node])
