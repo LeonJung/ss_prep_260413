@@ -113,3 +113,6 @@
 - **확정 (2026-06-19)**: cali 절차는 leader와 **이미 동일**(감사: q1/q2/q4 커버리지·도구·플래그 동일, 잔차 0.22 동일). 문제는 절차가 아니라 **full --fit-links 1-7 fit이 미결정**이라 같은 팔(link0-6)인데 leader/follower COM이 비물리적으로 다르게(q4/q5 COM-z 부호반전) 나온 것. 무거운 그리퍼가 follower 외삽을 q1 폭주로 증폭.
   → **수정**: "end tool만 다르다"는 물리 그대로 — follower URDF = **leader link0-6 동결 + link7만 fit**(그리퍼 m1.047). link0-6 동일(<0.001), link7만 다름. 6a76eaa. 실기검증 대기(수평 시작서 leader처럼 멈추는지).
   - 교훈: 같은 팔은 같은 파라미터여야. 재캘리 전에 **leader와 파라미터 직접 비교**로 비물리 차이부터 찾을 것.
+- **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
+- **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
+- **확정 fix 방향 (0a85f99)**: 과보상이 사는 곳 = **저 q4(곧은 팔)/수평 작동영역인데 cali 미측정(q4≥0.2)**. 운영자: follower q4 하한 제거 OK(bilateral서 leader가 q4 스톱 강제). → gen_cali_poses `--q4-min`(leader 기본 0.15 불변), follower 자세 q4 0.10까지 재생성. **follower gravity 재cali→재fit 예정** (실기 데이터 대기). 기존 cali 방식 그대로, 측정 영역만 작동영역으로 확장.
