@@ -214,7 +214,10 @@ int main(int argc, char** argv) {
   Vec7 from = q;
 
   bool friction_ff_on = true;   // moves: ON, static measurement windows: OFF
-  auto hold_cmd = [&](const Vec7& target) {
+  // vref = reference velocity feedforward (matches friction_cali): during a
+  // move Kd then damps only TRACKING error, not the intended motion, so the
+  // pose->pose moves don't "pop". Static windows pass zero.
+  auto hold_cmd = [&](const Vec7& target, const Vec7& vref) {
     Vec7 g{};
     arm.read(q, dq, tau);
     grav.gravity(q, g);
@@ -226,8 +229,7 @@ int main(int argc, char** argv) {
       }
       g[i] = std::clamp(g[i], -TAU_FF_MAX[i], TAU_FF_MAX[i]);
     }
-    Vec7 zero{};
-    arm.write_mit(KP, KD, target, zero, g);
+    arm.write_mit(KP, KD, target, vref, g);
   };
 
   std::printf("oa_gravity_cali: %zu poses on %s (%s arm), dwell %.1fs\n",
@@ -235,25 +237,31 @@ int main(int argc, char** argv) {
 
   auto move_to = [&](const Vec7& a, const Vec7& bgt, double T) {
     int nmove = static_cast<int>(T / dt);
+    Vec7 prev = a;
     for (int s = 0; s < nmove; ++s) {
       double al = trapezoid(static_cast<double>(s) / nmove);
-      Vec7 ref;
-      for (int i = 0; i < DOF; ++i) ref[i] = a[i] + al * (bgt[i] - a[i]);
-      hold_cmd(ref);
+      Vec7 ref, vref;
+      for (int i = 0; i < DOF; ++i) {
+        ref[i] = a[i] + al * (bgt[i] - a[i]);
+        vref[i] = (ref[i] - prev[i]) / dt;   // trapezoid velocity FF
+      }
+      hold_cmd(ref, vref);
+      prev = ref;
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
   };
   auto settle_and_measure = [&](const Vec7& target, Vec7& qa, Vec7& ta) {
     friction_ff_on = false;   // static window: no FF noise via tanh(v_noise)
+    const Vec7 zero{};        // static hold: zero velocity reference
     int nsettle = static_cast<int>(dwell / dt);
     for (int s = 0; s < nsettle; ++s) {
-      hold_cmd(target);
+      hold_cmd(target, zero);
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
     qa.fill(0); ta.fill(0);
     int nmeas = static_cast<int>(1.0 / dt);
     for (int s = 0; s < nmeas; ++s) {
-      hold_cmd(target);
+      hold_cmd(target, zero);
       for (int i = 0; i < DOF; ++i) { qa[i] += q[i]; ta[i] += tau[i]; }
       std::this_thread::sleep_for(std::chrono::duration<double>(dt));
     }
