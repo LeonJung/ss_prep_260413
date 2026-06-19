@@ -125,4 +125,11 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D22. ★follower-right: 중력 검증 통과 → 마찰 투입 (2026-06-19, 922f771)
+- **friccomp OFF 상태 실기데이터(q1/q2/q4/q6/q7 CSV) 분석**: 저속(|v|<0.05) 구간 정적 hold 토크가 위치별 매끈+저분산(q1 −0.62→−8.3 / +1.2→+13.1, std 0.03~0.4; q2 0→0 / +1.35→+13.2). 운영자 "손 놓으면 버팀"과 일치 → **중력모델 정확(D21 결론 실측 재확인)**.
+- **잔여증상 전부 마찰부재**: q1/q2 밀면폭주=댐핑0 coast, q2≈0 진동=가파른구간 댐핑부재, q4/q6/q7 "미는 반대힘"=미보상 모터마찰(comp 대상 그 자체), q6/q7 처짐=이 자세 중력≈0이라 마찰. → 절차대로 **마찰 점진투입** 단계 진입.
+- **결정**: `friction_follower_right.csv`를 leader와 동일 `fit_friction.py`(x0.75)로 fit → leader와 **동일 SAFE 처리**: Fo→0; q4 Fc&Fv→0(점성off, Fv=0.824는 q4 8rad/s 폭주 재발); q2 k→2(anti-chatter); q2 게이트 v_full 0.40. yaml 반영(922f771).
+- **q4 미결(의도적)**: SAFE 처리로 q4 comp=0 유지 → q4는 여전히 약간 끌림(leader와 동일, 설계상). 점성(Fv) 폭주위험과 무관한 **q4 Coulomb-only(Fc=0.076, Fv=0)** 는 게이트로 유계라 안전 → 운영자가 q4 더 가볍길 원하면 후속 추가 가능(rejected 아님, 보류).
+
+### D20. follower 중력모델 = leader 모델 (상세)
 - **★확정 (84bad14): follower 중력모델 = leader 모델.** 데이터 직접검증: 실제 그리퍼 중력기여(follower측정−leader모델)가 노이즈 수준(j1 +0.05±0.63, j4 +0.14±0.27Nm)이고, **leader 모델이 follower 측정을 잔차 0.237로 설명**(follower 자체fit 0.218과 거의 동일). 즉 그리퍼는 중력에 거의 영향 없음 → follower 실제중력≈leader. follower **gripper-fit이 외삽서 없는 토크를 만들어 과보상→q1/q4 폭주**. leader 모델은 follower도 잘 맞추면서 안정. → follower URDF=leader URDF 복사. 재cali 불필요. (per-role URDF 기능[D19]은 유지하되, 현재 follower URDF는 leader와 동일 내용.)
