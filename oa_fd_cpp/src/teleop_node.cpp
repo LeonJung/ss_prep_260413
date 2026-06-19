@@ -183,13 +183,14 @@ void TeleopNode::publish_mode(int mode, double t_start, double duration) {
   mode_pub_->publish(msg);
 }
 
-void TeleopNode::friction(const Vec7& qd, Vec7& f, bool right) const {
-  const Vec7& Fc = right ? cfg_.fric_Fc_right : cfg_.fric_Fc;
-  const Vec7& k  = right ? cfg_.fric_k_right  : cfg_.fric_k;
-  const Vec7& Fv = right ? cfg_.fric_Fv_right : cfg_.fric_Fv;
-  const Vec7& Fo = right ? cfg_.fric_Fo_right : cfg_.fric_Fo;
-  const Vec7& vs = right ? cfg_.fric_v_start_right : cfg_.fric_v_start;
-  const Vec7& vf = right ? cfg_.fric_v_full_right  : cfg_.fric_v_full;
+void TeleopNode::friction(const Vec7& qd, Vec7& f, bool right, bool follower) const {
+  // 4-way: leader-left (shared block), leader-right, follower-left, follower-right.
+  const Vec7& Fc = follower ? (right ? cfg_.fric_Fc_rf : cfg_.fric_Fc_lf) : (right ? cfg_.fric_Fc_right : cfg_.fric_Fc);
+  const Vec7& k  = follower ? (right ? cfg_.fric_k_rf  : cfg_.fric_k_lf ) : (right ? cfg_.fric_k_right  : cfg_.fric_k);
+  const Vec7& Fv = follower ? (right ? cfg_.fric_Fv_rf : cfg_.fric_Fv_lf) : (right ? cfg_.fric_Fv_right : cfg_.fric_Fv);
+  const Vec7& Fo = follower ? (right ? cfg_.fric_Fo_rf : cfg_.fric_Fo_lf) : (right ? cfg_.fric_Fo_right : cfg_.fric_Fo);
+  const Vec7& vs = follower ? (right ? cfg_.fric_v_start_rf : cfg_.fric_v_start_lf) : (right ? cfg_.fric_v_start_right : cfg_.fric_v_start);
+  const Vec7& vf = follower ? (right ? cfg_.fric_v_full_rf  : cfg_.fric_v_full_lf ) : (right ? cfg_.fric_v_full_right  : cfg_.fric_v_full);
   for (int i = 0; i < DOF; ++i) {
     double raw = Fc[i] * std::tanh(k[i] * qd[i]) + Fv[i] * qd[i] + Fo[i];
     // velocity gate: no comp at standstill (kills the negative-damping
@@ -220,8 +221,8 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
                        for (int i = 0; i < DOF; ++i) gf[i] *= p.grav_mirror[i]; }
   }
   const bool right = (p.name == "right");
-  friction(p.lqd_f, frl, right);   // filtered: raw qd noise chatters the gate
-  friction(p.fqd_f, frf, right);
+  friction(p.lqd_f, frl, right, false);  // leader (filtered: raw qd noise chatters gate)
+  friction(p.fqd_f, frf, right, true);   // follower (own friction block; 0=off to start)
 
   // mirror peer into local frame (delta about home)
   Vec7 f_in_l{}, fd_in_l{}, l_in_f{}, ld_in_f{};

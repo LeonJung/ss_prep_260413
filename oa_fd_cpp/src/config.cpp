@@ -69,19 +69,22 @@ bool load_config(const std::string& path, OaFdConfig& c) {
   c.fric_Fv_right = c.fric_Fv; c.fric_Fo_right = c.fric_Fo;
   c.fric_v_start_right = c.fric_v_start; c.fric_v_full_right = c.fric_v_full;
   // ...overridden by an optional friction_right block (right pair only)
-  if (const auto& fr = root["friction_right"]) {
-    try_vec7(fr, "Fc", c.fric_Fc_right);
-    try_vec7(fr, "k",  c.fric_k_right);
-    try_vec7(fr, "Fv", c.fric_Fv_right);
-    try_vec7(fr, "Fo", c.fric_Fo_right);
-    auto load_gate_r = [&](const char* key, Vec7& out){
+  auto load_fric = [&](const char* blk, Vec7& Fc, Vec7& k, Vec7& Fv, Vec7& Fo,
+                       Vec7& vs, Vec7& vf){
+    const auto& fr = root[blk];
+    if (!fr) return;
+    try_vec7(fr, "Fc", Fc); try_vec7(fr, "k", k);
+    try_vec7(fr, "Fv", Fv); try_vec7(fr, "Fo", Fo);
+    auto g = [&](const char* key, Vec7& out){
       if (!fr[key]) return;
-      if (fr[key].IsSequence()) { try_vec7(fr, key, out); }
+      if (fr[key].IsSequence()) try_vec7(fr, key, out);
       else { double v=out[0]; try_scalar(fr, key, v); out.fill(v); }
     };
-    load_gate_r("v_start", c.fric_v_start_right);
-    load_gate_r("v_full",  c.fric_v_full_right);
-  }
+    g("v_start", vs); g("v_full", vf);
+  };
+  load_fric("friction_right",          c.fric_Fc_right, c.fric_k_right, c.fric_Fv_right, c.fric_Fo_right, c.fric_v_start_right, c.fric_v_full_right);
+  load_fric("friction_left_follower",  c.fric_Fc_lf, c.fric_k_lf, c.fric_Fv_lf, c.fric_Fo_lf, c.fric_v_start_lf, c.fric_v_full_lf);
+  load_fric("friction_right_follower", c.fric_Fc_rf, c.fric_k_rf, c.fric_Fv_rf, c.fric_Fo_rf, c.fric_v_start_rf, c.fric_v_full_rf);
   if (const auto& mr = root["mirror"]) {
     try_vec7(mr, "right", c.mirror_right);
     try_vec7(mr, "left",  c.mirror_left);

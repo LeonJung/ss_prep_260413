@@ -79,6 +79,17 @@ struct OaFdConfig {
   Vec7 fric_v_start_right = {0,0,0,0,0,0,0};
   Vec7 fric_v_full_right  = {0,0,0,0,0,0,0};
 
+  // Per-ROLE FOLLOWER friction (the follower is a different physical arm + a
+  // gripper). Default 0 = OFF, so the follower starts with NO friction comp:
+  // verify gravity alone first, then add gradually (the proven leader method).
+  // yaml: friction_left_follower / friction_right_follower.
+  Vec7 fric_Fc_lf = {0,0,0,0,0,0,0}, fric_k_lf = {30,30,30,30,30,30,30};
+  Vec7 fric_Fv_lf = {0,0,0,0,0,0,0}, fric_Fo_lf = {0,0,0,0,0,0,0};
+  Vec7 fric_v_start_lf = {0,0,0,0,0,0,0}, fric_v_full_lf = {0,0,0,0,0,0,0};
+  Vec7 fric_Fc_rf = {0,0,0,0,0,0,0}, fric_k_rf = {30,30,30,30,30,30,30};
+  Vec7 fric_Fv_rf = {0,0,0,0,0,0,0}, fric_Fo_rf = {0,0,0,0,0,0,0};
+  Vec7 fric_v_start_rf = {0,0,0,0,0,0,0}, fric_v_full_rf = {0,0,0,0,0,0,0};
+
   // ---- leader<->follower joint mirror, per side ----
   Vec7 mirror_right = {1, 1, 1, 1, 1, 1, 1};
   Vec7 mirror_left  = {1, 1, 1, 1, 1, 1, 1};

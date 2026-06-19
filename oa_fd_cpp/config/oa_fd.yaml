@@ -80,6 +80,25 @@ friction_right:
   v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
   v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
 
+# FOLLOWER friction (per-role). Starts OFF (all 0): verify the follower's
+# GRAVITY comp alone first, then add friction gradually (proven leader method).
+# Fit starting values are in cali_data/follower_friction_fit.txt for when you
+# add them. Leader friction (above) is untouched.
+friction_left_follower:
+  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
+  v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
+friction_right_follower:
+  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
+  v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
+
 mirror:
   right: [1, 1, 1, 1, 1, 1, 1]
   left:  [1, 1, 1, 1, 1, 1, 1]
