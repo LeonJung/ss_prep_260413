@@ -154,3 +154,8 @@ gravity:
   # joints -> inferred MIRROR (verify; ~0 in use so low impact). Left = all 1.
   mirror_right: [-1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
   mirror_left:  [ 1.0, 1.0,  1.0, 1.0,  1.0, 1.0,  1.0]
+  # Per-ROLE gravity URDF. urdf_left/right = LEADER (handle). The follower has
+  # a GRIPPER (heavier tip) -> its own fit model. Empty follower -> use leader.
+  # Launch passes these automatically (cali_{left,right}_{leader,follower}.urdf).
+  #   urdf_left_follower:  ".../openarmx_arm_cali_left_follower.urdf"
+  #   urdf_right_follower: ".../openarmx_arm_cali_right_follower.urdf"

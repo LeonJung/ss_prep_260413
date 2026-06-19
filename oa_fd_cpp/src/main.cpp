@@ -22,6 +22,8 @@ int main(int argc, char** argv) {
     else if (a == "--urdf")         opts.urdf_override = next();
     else if (a == "--urdf-left")    opts.urdf_left_override = next();
     else if (a == "--urdf-right")   opts.urdf_right_override = next();
+    else if (a == "--urdf-left-follower")  opts.urdf_left_follower_override = next();
+    else if (a == "--urdf-right-follower") opts.urdf_right_follower_override = next();
     else if (a == "--arms")         opts.arms = next();   // right|left|both
     else if (a == "--role")         opts.role = next();   // leader|follower|both
     else if (a == "--rt-mode")      opts.use_rt = (next() == "true");

@@ -43,7 +43,8 @@ struct Pair {
                            // raw qd is ±0.15 rad/s noisy at standstill)
   Vec7 l_home_start{}, f_home_start{};   // captured at HOMING entry
   Vec7 l_hold{}, f_hold{};               // captured at PAUSED entry (hold-in-place)
-  GravityModel* grav = nullptr;     // this side's gravity model (right/left)
+  GravityModel* grav_lead = nullptr;  // leader gravity model (handle tip)
+  GravityModel* grav_foll = nullptr;  // follower gravity model (gripper tip)
   Vec7 grav_mirror{1,1,1,1,1,1,1};  // per-joint axis-mirror sign for gravity
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr leader_pub;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr follower_pub;
@@ -54,8 +55,10 @@ public:
   struct Options {
     std::string config_path;
     std::string urdf_override;   // --urdf : overrides gravity.urdf (both sides)
-    std::string urdf_left_override;   // --urdf-left  : per-side gravity URDF
-    std::string urdf_right_override;  // --urdf-right : per-side gravity URDF
+    std::string urdf_left_override;   // --urdf-left  : leader-left gravity URDF
+    std::string urdf_right_override;  // --urdf-right : leader-right gravity URDF
+    std::string urdf_left_follower_override;   // --urdf-left-follower
+    std::string urdf_right_follower_override;  // --urdf-right-follower
     std::string arms = "both";   // --arms right|left|both : which pair(s) to drive
     std::string role = "both";   // --role leader|follower|both : which side of each pair
     bool use_rt = false;
@@ -85,7 +88,9 @@ private:
   Options opts_;
   OaFdConfig cfg_;
   RTConfig rt_cfg_;
-  GravityModel grav_right_, grav_left_;
+  // 4 gravity models: leader/follower x left/right (follower = gripper tip).
+  GravityModel grav_lead_left_, grav_lead_right_;
+  GravityModel grav_foll_left_, grav_foll_right_;
 
   Pair right_, left_;
   std::vector<Pair*> pairs_;   // active pairs per Options::arms (right/left/both)

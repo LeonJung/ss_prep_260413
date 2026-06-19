@@ -17,11 +17,15 @@ def generate_launch_description():
     # per-side calibrated gravity models (mass/COM differ slightly L vs R)
     default_urdf_left  = f'{pkg_share}/urdf/openarmx_arm_cali_left_leader.urdf'
     default_urdf_right = f'{pkg_share}/urdf/openarmx_arm_cali_right_leader.urdf'
+    default_urdf_left_foll  = f'{pkg_share}/urdf/openarmx_arm_cali_left_follower.urdf'
+    default_urdf_right_foll = f'{pkg_share}/urdf/openarmx_arm_cali_right_follower.urdf'
 
     config_arg = DeclareLaunchArgument('config', default_value=default_config)
     urdf_arg = DeclareLaunchArgument('urdf', default_value=default_urdf)
     urdf_left_arg  = DeclareLaunchArgument('urdf_left',  default_value=default_urdf_left)
     urdf_right_arg = DeclareLaunchArgument('urdf_right', default_value=default_urdf_right)
+    urdf_left_foll_arg  = DeclareLaunchArgument('urdf_left_follower',  default_value=default_urdf_left_foll)
+    urdf_right_foll_arg = DeclareLaunchArgument('urdf_right_follower', default_value=default_urdf_right_foll)
     arms_arg = DeclareLaunchArgument(
         'arms', default_value='both',
         description='which pair(s) to drive: right | left | both')
@@ -43,6 +47,8 @@ def generate_launch_description():
             '--urdf', LaunchConfiguration('urdf'),
             '--urdf-left', LaunchConfiguration('urdf_left'),
             '--urdf-right', LaunchConfiguration('urdf_right'),
+            '--urdf-left-follower', LaunchConfiguration('urdf_left_follower'),
+            '--urdf-right-follower', LaunchConfiguration('urdf_right_follower'),
             '--arms', LaunchConfiguration('arms'),
             '--role', LaunchConfiguration('role'),
             '--rt-mode', LaunchConfiguration('rt'),
@@ -52,5 +58,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([config_arg, urdf_arg, urdf_left_arg, urdf_right_arg,
+                              urdf_left_foll_arg, urdf_right_foll_arg,
                               arms_arg, role_arg, rt_arg,
                               rt_prio_arg, rt_cpu_arg, node])

@@ -131,8 +131,14 @@ struct OaFdConfig {
   // Per-SIDE gravity URDF (mass/COM differ slightly L vs R). Empty -> fall
   // back to gravity.urdf (the single shared model). The axis mirror is still
   // handled by grav_mirror_*; these only carry the per-arm inertial fit.
+  // LEADER per-side gravity URDFs (handle tip).
   std::string gravity_urdf_left;
   std::string gravity_urdf_right;
+  // FOLLOWER per-side gravity URDFs (gripper tip — heavier, different model).
+  // Empty -> fall back to the leader URDF of that side. enactic likewise uses
+  // a separate dynamics model for the follower (dynamics_f_).
+  std::string gravity_urdf_left_follower;
+  std::string gravity_urdf_right_follower;
 
   // Per-joint MIRROR sign for the gravity model. The two arms are sagittal-
   // plane mirror images; some joint AXES spin opposite (gravity is in that

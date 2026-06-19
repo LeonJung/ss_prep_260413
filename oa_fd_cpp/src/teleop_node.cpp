@@ -41,6 +41,8 @@ TeleopNode::TeleopNode(const Options& opts)
   }
   if (!opts.urdf_left_override.empty())  cfg_.gravity_urdf_left  = opts.urdf_left_override;
   if (!opts.urdf_right_override.empty()) cfg_.gravity_urdf_right = opts.urdf_right_override;
+  if (!opts.urdf_left_follower_override.empty())  cfg_.gravity_urdf_left_follower  = opts.urdf_left_follower_override;
+  if (!opts.urdf_right_follower_override.empty()) cfg_.gravity_urdf_right_follower = opts.urdf_right_follower_override;
 
   rclcpp::QoS state_qos{10};
   rclcpp::QoS latched{1};
@@ -88,21 +90,30 @@ TeleopNode::~TeleopNode() { stop(); }
 
 bool TeleopNode::connect() {
   if (cfg_.gravity.enabled) {
-    GravityCfg gr = cfg_.gravity;
-    gr.vec = cfg_.grav_vec_right; gr.root_link = cfg_.root_link_right; gr.tip_link = cfg_.tip_link_right;
-    if (!cfg_.gravity_urdf_right.empty()) gr.urdf = cfg_.gravity_urdf_right;
-    GravityCfg gl = cfg_.gravity;
-    gl.vec = cfg_.grav_vec_left;  gl.root_link = cfg_.root_link_left;  gl.tip_link = cfg_.tip_link_left;
-    if (!cfg_.gravity_urdf_left.empty()) gl.urdf = cfg_.gravity_urdf_left;
-    RCLCPP_INFO(get_logger(), "gravity urdf  left:%s  right:%s",
-                gl.urdf.c_str(), gr.urdf.c_str());
-    bool okr = grav_right_.load(gr);
-    bool okl = grav_left_.load(gl);
-    if (!okr || !okl)
+    // Build one GravityCfg per (role,side). Follower URDF falls back to the
+    // leader URDF of that side if not given. Mirror/vec/links are per-SIDE
+    // (the follower shares its side's mounting).
+    auto mk = [&](const std::array<double,3>& vec, const std::string& root,
+                  const std::string& tip, const std::string& urdf) {
+      GravityCfg c = cfg_.gravity; c.vec = vec; c.root_link = root;
+      c.tip_link = tip; if (!urdf.empty()) c.urdf = urdf; return c;
+    };
+    const std::string& uL  = cfg_.gravity_urdf_left;
+    const std::string& uR  = cfg_.gravity_urdf_right;
+    const std::string  uLf = cfg_.gravity_urdf_left_follower.empty()  ? uL : cfg_.gravity_urdf_left_follower;
+    const std::string  uRf = cfg_.gravity_urdf_right_follower.empty() ? uR : cfg_.gravity_urdf_right_follower;
+    bool ok = true;
+    ok &= grav_lead_left_.load (mk(cfg_.grav_vec_left,  cfg_.root_link_left,  cfg_.tip_link_left,  uL));
+    ok &= grav_foll_left_.load (mk(cfg_.grav_vec_left,  cfg_.root_link_left,  cfg_.tip_link_left,  uLf));
+    ok &= grav_lead_right_.load(mk(cfg_.grav_vec_right, cfg_.root_link_right, cfg_.tip_link_right, uR));
+    ok &= grav_foll_right_.load(mk(cfg_.grav_vec_right, cfg_.root_link_right, cfg_.tip_link_right, uRf));
+    RCLCPP_INFO(get_logger(), "gravity urdf  L lead:%s foll:%s | R lead:%s foll:%s",
+                uL.c_str(), uLf.c_str(), uR.c_str(), uRf.c_str());
+    if (!ok)
       RCLCPP_WARN(get_logger(), "gravity comp OFF (URDF missing/invalid) — arm will sag!");
   }
-  right_.grav = &grav_right_;
-  left_.grav  = &grav_left_;
+  left_.grav_lead  = &grav_lead_left_;   left_.grav_foll  = &grav_foll_left_;
+  right_.grav_lead = &grav_lead_right_;  right_.grav_foll = &grav_foll_right_;
   right_.grav_mirror = cfg_.grav_mirror_right;
   left_.grav_mirror  = cfg_.grav_mirror_left;
 
@@ -199,14 +210,14 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
   // (Right arm is the left arm's mirror; m flips the mirrored joints' angle
   //  on the way in and their torque on the way out. m=all-1 on the left.)
   Vec7 gl{}, gf{}, frl{}, frf{};
-  if (p.grav) {
+  {
     Vec7 lqm, fqm;
     for (int i = 0; i < DOF; ++i) { lqm[i] = p.grav_mirror[i] * p.lq[i];
                                     fqm[i] = p.grav_mirror[i] * p.fq[i]; }
-    p.grav->gravity(lqm, gl);
-    p.grav->gravity(fqm, gf);
-    for (int i = 0; i < DOF; ++i) { gl[i] *= p.grav_mirror[i];
-                                    gf[i] *= p.grav_mirror[i]; }
+    if (p.grav_lead) { p.grav_lead->gravity(lqm, gl);
+                       for (int i = 0; i < DOF; ++i) gl[i] *= p.grav_mirror[i]; }
+    if (p.grav_foll) { p.grav_foll->gravity(fqm, gf);
+                       for (int i = 0; i < DOF; ++i) gf[i] *= p.grav_mirror[i]; }
   }
   const bool right = (p.name == "right");
   friction(p.lqd_f, frl, right);   // filtered: raw qd noise chatters the gate
@@ -424,13 +435,15 @@ void TeleopNode::control_loop() {
       // gravity sanity: print leader q and computed g(q) for each ACTIVE pair.
       // ~0 at a near-vertical pose is normal; horizontal poses load j1/j2/j4.
       for (Pair* p : pairs_) {
-        // show the driven side (leader if active, else follower)
+        // show the driven side (leader if active, else follower) with ITS model
         const Vec7& q = drive_leader_ ? p->lq : p->fq;
         const char* side = drive_leader_ ? "leader" : "follower";
+        GravityModel* gm = drive_leader_ ? p->grav_lead : p->grav_foll;
         Vec7 g{};
-        const bool gon = (p->grav && p->grav->ok());
-        if (p->grav) p->grav->gravity(q, g);
-        const int rc = p->grav ? p->grav->last_rc() : -1;
+        Vec7 qm; for (int i = 0; i < DOF; ++i) qm[i] = p->grav_mirror[i] * q[i];
+        const bool gon = (gm && gm->ok());
+        if (gm) { gm->gravity(qm, g); for (int i = 0; i < DOF; ++i) g[i] *= p->grav_mirror[i]; }
+        const int rc = gm ? gm->last_rc() : -1;
         RCLCPP_INFO(get_logger(),
           "[DIAG] mode=%d %s/%s grav=%s rc=%d | q=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f] "
           "g=[%.2f %.2f %.2f %.2f %.2f %.2f %.2f]",

@@ -146,6 +146,8 @@ bool load_config(const std::string& path, OaFdConfig& c) {
     try_vec7(g, "mirror_left",  c.grav_mirror_left);
     try_scalar(g, "urdf_left",  c.gravity_urdf_left);
     try_scalar(g, "urdf_right", c.gravity_urdf_right);
+    try_scalar(g, "urdf_left_follower",  c.gravity_urdf_left_follower);
+    try_scalar(g, "urdf_right_follower", c.gravity_urdf_right_follower);
   }
   return true;
 }
