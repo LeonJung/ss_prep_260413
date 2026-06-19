@@ -1,5 +1,7 @@
 # follower-left arm — self-contained config (one of 4 per-arm files).
-# Loop globals (timestep/filter/homing) are identical across the 4 files.
+# ALL control params transplanted verbatim from oa_fd_leader_left.yaml
+# (grav comp, fric comp, Kp/Kd, posture, limits) per operator request.
+# ONLY difference vs leader-left: `can` (hardware address — follower=can3).
 can: can3
 fd: false
 recv_timeout_us: 500
@@ -14,11 +16,10 @@ home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]
 couple_mirror: [1, 1, 1, 1, 1, 1, 1]
 
-friction:   # follower: OFF to start (verify gravity, then add gradually).
-            # fit values in cali_data/follower_friction_fit.txt.
-  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+friction:   # transplanted from leader-left (identified)
+  Fc: [0.659, 0.575, 0.20, 0.0, 0.13, 0.156, 0.085]
+  k:  [8.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
+  Fv: [0.0, 0.0, 0.073, 0.0, 0.004, 0.023, 0.0]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
   v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
@@ -29,13 +30,13 @@ gravity:
   vec: [0.0, 0.0, 9.81]
   scale: 1.0
   scale_joints: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  mirror: [1, 1, 1, 1, 1, 1, 1]  # joint-axis mirror (right = sagittal mirror)
+  mirror: [1, 1, 1, 1, 1, 1, 1]  # joint-axis mirror (left = identity)
 
 freedrive:
   posture_kp: [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
   posture_kd: [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  limit_kp:   [40.0, 40.0, 5.0, 0.0, 5.0, 0.0, 0.0]
+  limit_kp:   [40.0, 40.0, 5.0, 5.0, 5.0, 0.0, 0.0]
   limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
   limit_fmax: [12.0, 10.0, 4.0, 4.0, 3.0, 0.0, 0.0]
   limit_push: [0.07, 0.07, 0.05, 0.05, 0.05, 0.0, 0.0]
