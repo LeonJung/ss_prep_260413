@@ -212,8 +212,8 @@
     </collision>
     <inertial>
       <origin rpy="0.0 0.0 0.0" xyz="-0.007965 0.003617 0.089669" />
-      <mass value="0.312486" />  <!-- follower end = 0.5x leader handle (0.624972); COM unchanged => link7 gravity x0.5 (1.5x gave overcomp) -->
-      <inertia ixx="0.000799" ixy="-2.5e-05" ixz="0.0" iyy="0.0005335" iyz="-4.35e-05" izz="0.000392" />
+      <mass value="0.687469" />  <!-- follower end = 1.1x leader handle (0.624972); COM unchanged => link7 gravity x1.1 (1.5x over, 0.5x probe) -->
+      <inertia ixx="0.0017578" ixy="-5.5e-05" ixz="0.0" iyy="0.0011737" iyz="-9.57e-05" izz="0.0008624" />
     </inertial>
   </link>
   <joint name="openarmx_joint7" type="revolute">
