@@ -35,7 +35,12 @@ gravity:
 
 freedrive:
   posture_kp: [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
-  posture_kd: [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
+  # posture_kd: motor-side velocity damping (kp=0 -> pure damper, no spring, no
+  # effect on gravity). q1/q2 added: in single-role/gravity-only the arm is
+  # weightless w/ near-zero natural friction, so a push coasts ("쭉 간다") with
+  # nothing to stop it. This is delay-free motor-side Kd (passivity-safe, the
+  # D-principle) — NOT PC-side velocity FB. Real bilateral already has Kd=2.
+  posture_kd: [2.0, 2.0, 0.18, 0.0, 0.08, 0.0, 0.0]
   posture_q:  [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   limit_kp:   [40.0, 40.0, 5.0, 0.0, 5.0, 0.0, 0.0]
   limit_kd:   [3.0, 3.0, 1.5, 3.0, 0.8, 0.0, 0.0]
