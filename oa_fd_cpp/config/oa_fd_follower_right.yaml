@@ -14,11 +14,13 @@ home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 torque_limit: [40.0, 40.0, 25.0, 25.0, 8.0, 8.0, 8.0]
 couple_mirror: [1, 1, 1, 1, 1, 1, 1]
 
-friction:   # follower: OFF to start (verify gravity, then add gradually).
-            # fit values in cali_data/follower_friction_fit.txt.
-  Fc: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  k:  [4.0, 2.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-  Fv: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+friction:   # follower-right (identified from friction_follower_right.csv, x0.75)
+            # SAFE treatment (same as leaders): Fo->0; q4 Fc&Fv->0 (viscous off,
+            # Fv=0.824 would re-trigger the q4 8 rad/s runaway); q2 k->2 (anti-
+            # chatter); q2 gate wide (v_full 0.40). Gravity verified OK first.
+  Fc: [1.090, 0.641, 0.272, 0.0,   0.051, 0.223, 0.120]
+  k:  [4.0,   2.0,   4.0,   4.0,   4.0,   4.0,   4.0]
+  Fv: [0.0,   0.0,   0.010, 0.0,   0.008, 0.0,   0.077]
   Fo: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   v_start: [0.03, 0.05, 0.03, 0.03, 0.03, 0.03, 0.03]
   v_full:  [0.12, 0.40, 0.12, 0.12, 0.12, 0.12, 0.12]
