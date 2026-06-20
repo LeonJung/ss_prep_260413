@@ -85,7 +85,11 @@ private:
                     double h_t_start, double h_duration,
                     MitCmd& leader_cmd, MitCmd& follower_cmd);
   // friction for one arm (its own ArmCfg).
-  void friction(const ArmCfg& a, const Vec7& qd, Vec7& f) const;
+  // apply_gate: zero friction comp near standstill (needed only in FREEDRIVE to
+  // kill the negative-damping runaway). In Kp-coupled modes (ACTIVE/PAUSED/
+  // HOMING) the spring stabilizes, so full friction comp is used (no gate) —
+  // matches enactic, removes the slow-motion drag/heaviness.
+  void friction(const ArmCfg& a, const Vec7& qd, Vec7& f, bool apply_gate) const;
   void publish_pair(Pair& p);
 
   Options opts_;

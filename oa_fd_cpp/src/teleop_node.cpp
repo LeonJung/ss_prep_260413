@@ -176,15 +176,17 @@ void TeleopNode::publish_mode(int mode, double t_start, double duration) {
   mode_pub_->publish(msg);
 }
 
-void TeleopNode::friction(const ArmCfg& a, const Vec7& qd, Vec7& f) const {
+void TeleopNode::friction(const ArmCfg& a, const Vec7& qd, Vec7& f, bool apply_gate) const {
   const Vec7& Fc = a.fric_Fc; const Vec7& k  = a.fric_k;
   const Vec7& Fv = a.fric_Fv; const Vec7& Fo = a.fric_Fo;
   const Vec7& vs = a.fric_v_start; const Vec7& vf = a.fric_v_full;
   for (int i = 0; i < DOF; ++i) {
     double raw = Fc[i] * std::tanh(k[i] * qd[i]) + Fv[i] * qd[i] + Fo[i];
-    // velocity gate: no comp at standstill (kills the negative-damping
-    // runaway in FREEDRIVE), full comp once clearly moving.
-    if (vf[i] > vs[i]) {
+    // velocity gate: no comp at standstill (kills the negative-damping runaway)
+    // — ONLY in FREEDRIVE. In Kp-coupled modes the spring stabilizes, so full
+    // friction comp is applied (no gate) to remove slow-motion drag (enactic
+    // runs full friction comp + Kp coupling).
+    if (apply_gate && vf[i] > vs[i]) {
       const double g = std::clamp(
           (std::abs(qd[i]) - vs[i]) / (vf[i] - vs[i]), 0.0, 1.0);
       raw *= g;
@@ -215,8 +217,12 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
     if (p.grav_foll) { p.grav_foll->gravity(fqm, gf);
                        for (int i = 0; i < DOF; ++i) gf[i] *= F.grav_mirror[i]; }
   }
-  friction(L, p.lqd_f, frl);   // leader (filtered: raw qd noise chatters gate)
-  friction(F, p.fqd_f, frf);   // follower (own friction block; 0=off to start)
+  // gate friction comp ONLY when freedrive-like (no Kp coupling to stabilize).
+  // ACTIVE(both)/PAUSED/HOMING -> full friction comp (no gate) like enactic.
+  const bool fric_gate = (mode == MODE_FREEDRIVE) ||
+      (mode == MODE_ACTIVE && !(drive_leader_ && drive_follower_));
+  friction(L, p.lqd_f, frl, fric_gate);   // leader (filtered: raw qd noise chatters gate)
+  friction(F, p.fqd_f, frf, fric_gate);   // follower (own friction block; 0=off to start)
 
   // mirror peer into local frame (delta about home). couple_mirror relates the
   // two arms of THIS pair (leader's coupling map).
