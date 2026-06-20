@@ -125,6 +125,15 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D26. ★공식 openarmx ros2_control unilateral = 같은 HW서 완벽히 부드러움 → 문제는 우리 코드/접근 (2026-06-20)
+- **운영자 실측**: 공식 패키지로 unilateral teleop 실행 — `openarmx_bringup/openarmx.bimanual.launch.py robot_controller:=forward_position_controller` + `openarmx_teleop_bimanual/teleop_bimanual.launch.py`.
+  - **엄청 부드러움**(bilateral 아니라 그럴 수 있으나 그 이상으로 부드러움).
+  - **follower q3~7 팡팡 튀는 관절 없음** (우리 cali/teleop선 q7 stick-slip 있었음).
+  - **leader/follower×L/R 4팔 전부 동시 사용해도 이상 없음** (우리는 leader L/R grav+fric comp만 해도 이상현상 → 지금 leader 1개만 씀).
+  - **하드웨어 완전 동일**(제어PC·로봇·USB2CAN 다 같음).
+- **함의**: "4-CAN/USB 대역", "q7 모터 특성", "팡팡은 어쩔 수 없다" 같은 HW 핑계가 **전부 반증됨**. 공식 ros2_control 스택은 같은 HW서 4팔 멀쩡. → 우리 단일프로세스 raw-CAN + MIT 직접제어 접근에 문제가 있다는 뜻. **다음: openarmx_ros2 / openarmx_description ros2_control 내부 정독·논의**(왜 부드러운지: 컨트롤러 종류·업데이트율·CAN 읽기방식·MIT 파라미터·하드웨어 인터페이스 구조). 채택/차용 검토.
+- **마찰게이트 해제(806bc15) 결과**: 느낌 "비슷"(로그 미수집). 즉 게이트 해제만으론 뻑뻑/부드러움 격차 해소 안 됨 → enactic 동일법으로도 부족 → ros2_control 스택과의 구조적 차이(아래 논의)가 본질일 가능성.
+
 ### D25. ★enactic bilateral엔 DOB 없음 — 우리와 동일 제어법, 차이는 마찰게이트 (2026-06-20, 806bc15)
 - **실측(enactic/openarm_teleop 소스 직독)**: `control/control.cpp bilateral_step()` = `τ=Kp(peer−q)+Kd(peer_dq−dq)+gravity+friction(tanh)`. 교차결합도 우리와 동일(leader_ref=follower_resp, 반대도). **DOB·반력관측기·가속도제어 전부 없음**(DetectVibration()까지 있음=그쪽도 진동과 싸움). → "enactic이 DOB로 투명하다"는 가설 **기각**.
 - **제어 관련 유일한 핵심차이**: enactic 마찰보상 = **amp1.0 항상 full, 속도게이트 없음**. 우리는 저속 차단 게이트(FREEDRIVE 폭주방지용). ACTIVE 결합에선 Kp 스프링이 안정화 → 게이트 불필요한데 **저속 teleop서 마찰보상 꺼져 follower 끌림 = 뻑뻑함**.
