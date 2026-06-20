@@ -125,6 +125,12 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D24. cali "팡팡" = q7 stick-slip(코드/무게 무관), 끝단 무게는 q6로 (2026-06-20)
+- friction_cali 팡팡 = **q7 stick-slip**. v0(eab5a3d)·현재·historical friction_right.csv **전부 동일**(q7 stick 59~70%, q2 0.2%) → 코드 회귀 아님. 원인: cali는 마찰보상 OFF + q7 Kp=12(약함) → 정지마찰 못 뚫고 멈췄다 튐. teleop은 마찰보상+결합으로 매끈(=cali 전용 아티팩트).
+- **무게 문제 아님**: q7 중력≈0(COM이 롤축 위, 토크 ~0.05Nm)이라 g_ff(무게) 기여 ~0 → 무게 알아도 q7 구동 안 변함. leader(무게 앎)도 동일하게 팡팡 = 증명.
+- **끝단(link7) 무게는 q7로 측정 불가**(COM이 축 위, stick-slip은 부차적). **q6로 측정**(link7을 레버로 휘둘러 신호 ~10×). leader/follower 비는 **q1/q2/q4**(매끈)로, q7 제외.
+- rejected: cali 루프에 vel FF(=MIT kd·vel 킥→lurch, 되돌림). 상세: [CALI_NOTES.md](CALI_NOTES.md). 임시도구: oa_friction_cali_v0, cmd() 루프출력(~195Hz 정상).
+
 ### D23. ★follower-right "쭉 간다" = 댐핑 부재(과보상도 마찰도 아님) (2026-06-19, bcbf803)
 - **두 번의 오진 정정**: (a) "마찰 추가하면 됨"(922f771) — 틀림, 마찰보상은 드래그를 줄여 오히려 미끄러짐↑. (b) "중력 과보상"(운영자 가설에 동조) — 틀림, 데이터상 과보상 아님.
 - **결정적 증거 1 (q1 teleop 시계열)**: q1이 놓는 위치마다 정지·유지(+1.21/+1.07/−0.63/+0.48/+1.22). 과보상(negative stiffness)이면 중간서 발산해야 함 → 전구간 버팀 = 중력 정확. "쭉 가는" 구간 속도 −0.7~−1.0로 거의 일정·완만감속(↑성장 아님), **위로도(중력 거슬러) 동일하게 미끄러짐** → 무게 양방향 상쇄 = 정확.
