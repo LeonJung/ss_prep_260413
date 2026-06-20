@@ -50,6 +50,7 @@ bool load_arm_config(const std::string& path, ArmCfg& a, GlobalCfg& g) {
   try_scalar(root, "vel_filter_alpha",   g.vel_filter_alpha);
   try_scalar(root, "auto_home_on_start", g.auto_home_on_start);
   try_scalar(root, "homing_duration",    g.homing_duration);
+  try_scalar(root, "couple_vel_ff",      g.couple_vel_ff);
 
   // ---- per-arm motion / impedance ----
   try_vec7(root, "Kp", a.Kp);

@@ -84,6 +84,13 @@ struct GlobalCfg {
   double vel_filter_alpha = 1.0;
   bool   auto_home_on_start = false;
   double homing_duration = 5.0;
+  // ACTIVE coupling: scale on the PEER-velocity feedforward (dq_ref) put into
+  // the MIT vel field. dq_ref is the peer velocity through the CAN delay, so
+  // kd*(dq_ref-dq) is DELAYED velocity feedback -> non-passive -> vibration
+  // (the same D2 trap we avoid elsewhere). 0.0 => vel_ref=0 => kd is pure
+  // delay-free LOCAL damping (passivity-safe, default). 1.0 => full peer-vel FF
+  // (sharper tracking, may vibrate). Tune in [0,1].
+  double couple_vel_ff = 0.0;
 };
 
 // Load one arm's yaml file into `arm` (and refresh loop globals `g` from it;
