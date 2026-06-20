@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace oa_fd {
 
@@ -375,6 +377,17 @@ void TeleopNode::control_loop() {
   int prev_mode = MODE_PAUSED;
   int log_counter = 0;
 
+  // TEMP per-cycle CSV diagnostic (long format). Enable: OA_FD_LOG=/tmp/x.csv
+  if (const char* lp = std::getenv("OA_FD_LOG")) {
+    dbg_log_.open(lp);
+    if (dbg_log_.is_open()) {
+      dbg_log_ << "t,pair,mode,engage,joint,"
+                  "Lq,Ldq,Ltau,Lpos,Lvel,Lkp,Lkd,Ltauff,"
+                  "Fq,Fdq,Ftau,Fpos,Fvel,Fkp,Fkd,Ftauff\n";
+      RCLCPP_WARN(get_logger(), "OA_FD_LOG -> logging per-cycle CSV to %s", lp);
+    }
+  }
+
   if (g_.auto_home_on_start) {
     publish_mode(MODE_HOMING, this->now().seconds(), g_.homing_duration);
     RCLCPP_INFO(get_logger(), "auto_home_on_start -> HOMING %.1fs", g_.homing_duration);
@@ -424,6 +437,22 @@ void TeleopNode::control_loop() {
           if (drive_follower_)
             worst_err = std::max(worst_err, std::abs(p->fq[i] - p->foll_cfg->home[i]));
         }
+      if (dbg_log_.is_open()) {
+        const double engage = (mode == MODE_ACTIVE && active_engage_s_ > 0.0)
+            ? quintic_ease(std::clamp((now_sec - active_t_start_) / active_engage_s_, 0.0, 1.0))
+            : 1.0;
+        for (int i = 0; i < DOF; ++i) {
+          char buf[320];
+          std::snprintf(buf, sizeof(buf),
+            "%.6f,%s,%d,%.4f,%d,"
+            "%.5f,%.5f,%.5f,%.5f,%.5f,%.3f,%.3f,%.5f,"
+            "%.5f,%.5f,%.5f,%.5f,%.5f,%.3f,%.3f,%.5f\n",
+            now_sec, p->name.c_str(), mode, engage, i + 1,
+            p->lq[i], p->lqd[i], p->ltau[i], lc.pos[i], lc.vel[i], lc.kp[i], lc.kd[i], lc.tau[i],
+            p->fq[i], p->fqd[i], p->ftau[i], fc.pos[i], fc.vel[i], fc.kp[i], fc.kd[i], fc.tau[i]);
+          dbg_log_ << buf;
+        }
+      }
       publish_pair(*p);
     }
 

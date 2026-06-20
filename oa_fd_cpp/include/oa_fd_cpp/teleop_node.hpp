@@ -10,6 +10,7 @@
 
 #pragma once
 #include <atomic>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -118,6 +119,10 @@ private:
 
   std::atomic<bool> running_{false};
   std::thread control_thread_;
+
+  // TEMP diagnostic: per-cycle CSV log (long format, one row per joint). Opened
+  // only if env OA_FD_LOG is set to a path; off otherwise (zero overhead).
+  std::ofstream dbg_log_;
 };
 
 }  // namespace oa_fd
