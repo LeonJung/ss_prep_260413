@@ -125,6 +125,13 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D25. ★enactic bilateral엔 DOB 없음 — 우리와 동일 제어법, 차이는 마찰게이트 (2026-06-20, 806bc15)
+- **실측(enactic/openarm_teleop 소스 직독)**: `control/control.cpp bilateral_step()` = `τ=Kp(peer−q)+Kd(peer_dq−dq)+gravity+friction(tanh)`. 교차결합도 우리와 동일(leader_ref=follower_resp, 반대도). **DOB·반력관측기·가속도제어 전부 없음**(DetectVibration()까지 있음=그쪽도 진동과 싸움). → "enactic이 DOB로 투명하다"는 가설 **기각**.
+- **제어 관련 유일한 핵심차이**: enactic 마찰보상 = **amp1.0 항상 full, 속도게이트 없음**. 우리는 저속 차단 게이트(FREEDRIVE 폭주방지용). ACTIVE 결합에선 Kp 스프링이 안정화 → 게이트 불필요한데 **저속 teleop서 마찰보상 꺼져 follower 끌림 = 뻑뻑함**.
+- **결정**: 게이트는 freedrive-like에서만, ACTIVE(both)/PAUSED/HOMING은 full 마찰보상(806bc15). 부차차이(기록만): enactic tanh `Fc·tanh(0.1·k·v)`, 500Hz×2스레드, Fo 유지.
+- **CSV 진단(bi_a~d)**: 정지 comp 정확(tau≈FF), 떨림=Kp=120 결합 4Hz 한계진동(couple_kp_scale 노브 추가), 무게=follower 관성+마찰 끌림(레버 부족한 손목이 특히). [[project-openarm-a2-bilateral]]
+- 다음: 게이트해제 + couple_kp_scale 스윕 실기 재시험. 그래도 부족하면 enactic Kp/Kd 값 확인 or DOB는 정공법이나 enactic도 안 쓰므로 우선순위 낮음.
+
 ### D24. cali "팡팡" = q7 stick-slip(코드/무게 무관), 끝단 무게는 q6로 (2026-06-20)
 - friction_cali 팡팡 = **q7 stick-slip**. v0(eab5a3d)·현재·historical friction_right.csv **전부 동일**(q7 stick 59~70%, q2 0.2%) → 코드 회귀 아님. 원인: cali는 마찰보상 OFF + q7 Kp=12(약함) → 정지마찰 못 뚫고 멈췄다 튐. teleop은 마찰보상+결합으로 매끈(=cali 전용 아티팩트).
 - **무게 문제 아님**: q7 중력≈0(COM이 롤축 위, 토크 ~0.05Nm)이라 g_ff(무게) 기여 ~0 → 무게 알아도 q7 구동 안 변함. leader(무게 앎)도 동일하게 팡팡 = 증명.
