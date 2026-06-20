@@ -8,6 +8,7 @@ vel_filter_alpha: 0.05
 auto_home_on_start: false
 homing_duration: 5.0
 couple_vel_ff: 0.0   # ACTIVE peer-vel FF scale [0..1]; 0=pure local damping (passivity-safe), >0=sharper tracking but may vibrate
+couple_kp_scale: 1.0  # ACTIVE coupling Kp/Kd scale (hold modes keep full); lower vs 4Hz tremor/heavy drag
 
 Kp: [120.0, 120.0, 120.0, 120.0, 18.0, 20.0, 16.0]
 Kd: [2.0, 2.0, 2.0, 2.0, 0.2, 0.2, 0.2]

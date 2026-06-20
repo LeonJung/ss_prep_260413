@@ -91,6 +91,12 @@ struct GlobalCfg {
   // delay-free LOCAL damping (passivity-safe, default). 1.0 => full peer-vel FF
   // (sharper tracking, may vibrate). Tune in [0,1].
   double couple_vel_ff = 0.0;
+  // ACTIVE coupling stiffness scale: multiplies Kp/Kd used for the leader<->
+  // follower coupling ONLY (PAUSED/HOMING hold keep full Kp). Kp=120 across a
+  // CAN-delayed coupling caused a ~4 Hz limit-cycle tremor at hold and a heavy
+  // spring-drag feel; lower this to trade tracking/force-fidelity for a lighter,
+  // calmer feel. 1.0 = full. Tune e.g. 1.0 -> 0.5 -> 0.3.
+  double couple_kp_scale = 1.0;
 };
 
 // Load one arm's yaml file into `arm` (and refresh loop globals `g` from it;

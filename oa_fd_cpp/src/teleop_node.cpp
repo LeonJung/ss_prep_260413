@@ -305,10 +305,13 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
           // Peer-velocity FF scaled by couple_vel_ff: 0 => vel_ref=0 => kd is
           // pure delay-free local damping (passivity-safe, no vibration); >0 =>
           // inject delayed peer velocity for sharper tracking (may vibrate).
+          // couple_kp_scale lowers the coupling stiffness (vs the 4Hz tremor /
+          // heavy drag from Kp=120 over a delayed channel); hold modes keep full Kp.
           const double vff = engage * g_.couple_vel_ff;
-          lc.kp[i] = engage * L.Kp[i]; lc.kd[i] = engage * L.Kd[i];
+          const double ks  = engage * g_.couple_kp_scale;
+          lc.kp[i] = ks * L.Kp[i]; lc.kd[i] = ks * L.Kd[i];
           lc.pos[i] = f_in_l[i];  lc.vel[i] = vff * fd_in_l[i];
-          fc.kp[i] = engage * F.Kp[i]; fc.kd[i] = engage * F.Kd[i];
+          fc.kp[i] = ks * F.Kp[i]; fc.kd[i] = ks * F.Kd[i];
           fc.pos[i] = l_in_f[i];  fc.vel[i] = vff * ld_in_f[i];
         } else {
           // single-role fallback = freedrive-like -> same posture shaping
