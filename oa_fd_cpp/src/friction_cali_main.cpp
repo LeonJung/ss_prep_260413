@@ -195,13 +195,12 @@ int main(int argc, char** argv) {
       Vec7 here = base; here[j] = q[j];
       move_quintic(here, p0, 2.5);
 
-      // + direction only this run (operator request). Original linear-ramp
-      // sweep via cmd() (= the smooth-era motion, also loop-rate instrumented).
-      // NOTE: without the -v pass, +v/-v averaging can't cancel friction ->
-      // extracted torque = gravity + (+dir friction); add b->a back for clean
-      // friction-cancelled gravity.
-      {
-        double from = a, to = b;
+      // BOTH directions (a->b then b->a): +v/-v averaging cancels symmetric
+      // friction -> pure gravity torque (needed for the leader/follower mass &
+      // output-ratio measurement). Original linear-ramp sweep via cmd() (the
+      // smooth-era motion, also loop-rate instrumented).
+      for (int dir = 0; dir < 2; ++dir) {
+        double from = dir == 0 ? a : b, to = dir == 0 ? b : a;
         double Tpass = std::abs(to - from) / sp;
         int n = static_cast<int>(Tpass / dt);
         for (int s = 0; s < n; ++s) {
@@ -216,8 +215,8 @@ int main(int argc, char** argv) {
           }
           std::this_thread::sleep_for(std::chrono::duration<double>(dt));
         }
+        std::printf("  v=%.2f dir=%s done\n", sp, dir == 0 ? "+" : "-");
       }
-      std::printf("  v=%.2f + done\n", sp);
       csv.flush();
       // back to base joint value
       Vec7 pb = base; pb[j] = a;
