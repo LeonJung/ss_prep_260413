@@ -125,6 +125,14 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D27. ★공식 openarmx에 "weightless leader(놓으면 멈춤)"가 이미 있음 = Mode 2 (2026-06-20)
+- 운영자가 쓴 `openarmx_teleop_bimanual/teleop_bimanual.launch.py` = **Mode 1(중력보상 없음)**: README 명시 "leader motors DISABLED, manual dragging" → leader 모터 꺼서 limp로 끌고 follower만 추종(그래서 초부드러움, 제어루프 없음). 놓으면 처짐.
+- bringup의 `enable_forward_effort`(gravity_comp_node)는 **bringup=follower에만** 발행(노드가 절대토픽/조인트명 하드코딩, 로봇1대 전용) → "g_scale이 follower만 효과" 정확히 설명.
+- **운영자가 원하는 "손으로 옮기고 놓으면 그 자리 유지" = README Mode 2** `teleop_bimanual_with_gravitycomp.launch.py` (이미 존재). 전용 per-arm 노드가 **leader를 raw-CAN으로 직접 구동**: MIT **kp=0, kd=0, torque=g_scale·gravity**(+옵션 damp/hold) → weightless float, leader 위치를 follower forward_position_controller로 릴레이.
+  - 파라미터: g_scale 0.9/0.8(우/좌, **<1.0이 기본 — 약간 가볍게**), gdir Y축 (0,∓9.81,0), kp_hold=0(순수 중력 float, "멈춤"은 중력정확도+settle로), tau_limits{10,10,5,5,2,2,2}, 300Hz.
+  - 필수: `/tmp/v10_bimanual.urdf` 존재(없으면 노드 죽음=무효과 함정). follower bringup(can2/3, forward_position_controller) 별도.
+- **함의**: 기능 추가 불필요 — 공식에 있음. 우리 oa_fd FREEDRIVE(kp=0+중력) 레시피가 옳았음을 공식이 재확인. raw-CAN도 **kp=kd=0+중력토크만**이면 매끈(우리 떨림은 stiff 결합+마찰FF+속도FF 탓). → 다음: 운영자가 Mode 2 실행해 leader weightless 확인 → 이후 bilateral은 이 위에 힘반사만 얹기.
+
 ### D26. ★공식 openarmx ros2_control unilateral = 같은 HW서 완벽히 부드러움 → 문제는 우리 코드/접근 (2026-06-20)
 - **운영자 실측**: 공식 패키지로 unilateral teleop 실행 — `openarmx_bringup/openarmx.bimanual.launch.py robot_controller:=forward_position_controller` + `openarmx_teleop_bimanual/teleop_bimanual.launch.py`.
   - **엄청 부드러움**(bilateral 아니라 그럴 수 있으나 그 이상으로 부드러움).
