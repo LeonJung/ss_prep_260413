@@ -125,6 +125,12 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D29. ★최종목표=2-PC 원격 → 지연채널 전제 설계, 단일프로세스 폐기, oa_mit 구조 채택 (2026-06-20)
+- **새 정보(운영자)**: 두 양팔로봇을 나중에 **PC 2대로 분리, 원격제어**. + couple_kp=0이 공식 Mode2와 동성능(=oa_mit 토대 OK).
+- **함의**: leader/follower가 물리적 다른 PC → 단일프로세스 양팔 CAN 불가 → **D28의 (B) 단일프로세스/enactic in-memory 방식 폐기**. leader↔follower는 **영구적 지연 네트워크 채널**(지금 100Hz 토픽=네트워크지연 예고편). **oa_mit 토픽 구조가 정답**(토픽→DDS 확장).
+- **올바른 구조**: 양쪽 다 자기팔 로컬 고속루프(지연0)+상대정보만 지연. oa_mit가 이미 이 모양. 문제는 지연된 상대상태에 건 결합게인뿐.
+- **재계획**: ①follower→leader 상태레이트↑(JSB 100Hz가 stale→진동 주범; 전용 고속 publisher) ②상대속도 댐핑+follower위치 LPF ③effort 반력(leader kp=0 유지=자유공간 투명, follower 접촉토크만 반사) ④네트워크 passivity(wave variable/scattering) — [[project-comm-benchmark-topology]] 지연축과 직결. 1번부터.
+
 ### D28. oa_mit FF 실기결과 = 토픽지연 한계, bilateral은 신선한 양팔상태 필요 (2026-06-20, cceca85)
 - 실기: couple_kp=8 → 심한 진동. kp4/kd0.2 → unilateral보다 뻑뻑, 반력 약함, 막힌자리로 leader 되돌아오나 애매.
 - 진단: oa_mit는 follower 상태를 **100Hz /joint_states 토픽(지연)** 으로 받아 결합 → ①지연 폐루프(왕복~20-30ms) 高게인서 진동, ②position 결합이 **자유공간 추종지연까지 반사** → 접촉 아닌데 뻑뻑, ③안전게인 낮아 반력 약함.
