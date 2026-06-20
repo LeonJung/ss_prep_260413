@@ -57,7 +57,13 @@ add_executable(oa_friction_cali
 ament_target_dependencies(oa_friction_cali orocos_kdl_vendor kdl_parser urdf)
 target_link_libraries(oa_friction_cali openarmx_can::openarmx_can yaml-cpp pthread)
 
-install(TARGETS oa_fd_node oa_diag oa_gravity_cali oa_friction_cali
+# ---- oa_friction_cali_v0: pre-follower (eab5a3d) baseline for A/B "팡팡" test ----
+add_executable(oa_friction_cali_v0
+  src/friction_cali_v0_main.cpp src/oax_driver.cpp src/gravity.cpp src/config.cpp)
+ament_target_dependencies(oa_friction_cali_v0 orocos_kdl_vendor kdl_parser urdf)
+target_link_libraries(oa_friction_cali_v0 openarmx_can::openarmx_can yaml-cpp pthread)
+
+install(TARGETS oa_fd_node oa_diag oa_gravity_cali oa_friction_cali oa_friction_cali_v0
         DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS script/fit_gravity.py script/fit_friction.py script/gen_cali_poses.py
         DESTINATION lib/${PROJECT_NAME})
