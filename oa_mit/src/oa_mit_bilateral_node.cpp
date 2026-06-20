@@ -70,6 +70,10 @@ public:
         this->declare_parameter<double>("couple_kp", 0.0);
         this->declare_parameter<double>("couple_kd", 0.0);
         this->declare_parameter<double>("couple_tau_limit", 8.0);  // per-joint |Nm| on the coupling term
+        // EMA on the (slow, ~74Hz, stale) follower position before coupling, to
+        // smooth its stair-steps that excite the delayed-loop vibration. 1.0 =
+        // no filter; lower = smoother but laggier FF. e.g. 0.3-0.5.
+        this->declare_parameter<double>("couple_lpf", 1.0);
 
         arm_side_       = this->get_parameter("arm_side").as_string();
         std::string can = this->get_parameter("leader_can").as_string();
@@ -90,6 +94,7 @@ public:
         couple_kp_        = this->get_parameter("couple_kp").as_double();
         couple_kd_        = this->get_parameter("couple_kd").as_double();
         couple_tau_limit_ = this->get_parameter("couple_tau_limit").as_double();
+        couple_lpf_       = std::clamp(this->get_parameter("couple_lpf").as_double(), 0.0, 1.0);
 
         RCLCPP_INFO(get_logger(), "=== Teleop Leader Single + GravityComp 初始化 ===");
         RCLCPP_INFO(get_logger(), "arm_side=%s, can=%s, urdf=%s", arm_side_.c_str(), can.c_str(), urdf_path.c_str());
@@ -431,7 +436,13 @@ private:
         for (size_t j = 0; j < follower_joint_names_.size() && j < q_follower_.size(); ++j) {
             for (size_t k = 0; k < msg->name.size(); ++k) {
                 if (msg->name[k] == follower_joint_names_[j]) {
-                    if (k < msg->position.size()) q_follower_[j] = msg->position[k];
+                    if (k < msg->position.size()) {
+                        double v = msg->position[k];
+                        // EMA to smooth the ~74Hz stale steps (anti-vibration)
+                        q_follower_[j] = follower_have_
+                            ? (couple_lpf_ * v + (1.0 - couple_lpf_) * q_follower_[j])
+                            : v;
+                    }
                     break;
                 }
             }
@@ -471,6 +482,7 @@ private:
     double couple_kp_ = 0.0;
     double couple_kd_ = 0.0;
     double couple_tau_limit_ = 8.0;
+    double couple_lpf_ = 1.0;
     std::vector<double> tau_couple_;
     std::vector<double> q_follower_;
     std::vector<std::string> follower_joint_names_;
