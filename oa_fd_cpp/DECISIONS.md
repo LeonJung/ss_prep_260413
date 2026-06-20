@@ -125,6 +125,12 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D28. oa_mit FF 실기결과 = 토픽지연 한계, bilateral은 신선한 양팔상태 필요 (2026-06-20, cceca85)
+- 실기: couple_kp=8 → 심한 진동. kp4/kd0.2 → unilateral보다 뻑뻑, 반력 약함, 막힌자리로 leader 되돌아오나 애매.
+- 진단: oa_mit는 follower 상태를 **100Hz /joint_states 토픽(지연)** 으로 받아 결합 → ①지연 폐루프(왕복~20-30ms) 高게인서 진동, ②position 결합이 **자유공간 추종지연까지 반사** → 접촉 아닌데 뻑뻑, ③안전게인 낮아 반력 약함.
+- **핵심**: enactic bilateral이 부드러운 건 **단일 프로세스서 양팔 상태를 in-memory로 신선하게** 읽기 때문(AdminThread가 leader/follower state 교환, 토픽 아님). oa_mit의 토픽 홉이 병목. unilateral(couple_kp 0)이 완벽했던 건 follower→leader 피드백 불필요해서.
+- 함의: 좋은 bilateral FF엔 **신선한 follower 상태**가 필수. (A) oa_mit position-FF 튜닝(필터+상대댐핑, 한계 낮음, 토픽지연 잔존) vs (B) **단일프로세스 bilateral(양팔 CAN 직접, enactic 레시피: kp~50, kd/kp~0.05, 중력만, 교차결합, 마찰FF·속도FF 없음)**. oa_fd 아키텍처(단일프로세스 양팔)는 옳았고 레시피(kp120+마찰FF+속도FF+게이트)가 틀렸던 것 — B는 oa_fd 레시피 교정 or enactic bilateral_step 포팅.
+
 ### D27. ★공식 openarmx에 "weightless leader(놓으면 멈춤)"가 이미 있음 = Mode 2 (2026-06-20)
 - 운영자가 쓴 `openarmx_teleop_bimanual/teleop_bimanual.launch.py` = **Mode 1(중력보상 없음)**: README 명시 "leader motors DISABLED, manual dragging" → leader 모터 꺼서 limp로 끌고 follower만 추종(그래서 초부드러움, 제어루프 없음). 놓으면 처짐.
 - bringup의 `enable_forward_effort`(gravity_comp_node)는 **bringup=follower에만** 발행(노드가 절대토픽/조인트명 하드코딩, 로봇1대 전용) → "g_scale이 follower만 효과" 정확히 설명.
