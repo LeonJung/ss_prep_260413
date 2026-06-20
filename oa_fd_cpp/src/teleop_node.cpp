@@ -231,6 +231,12 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
       ? std::clamp((now_sec - h_t_start) / h_duration, 0.0, 1.0) : 1.0;
   const double s = quintic_ease(alpha);
 
+  // ACTIVE soft-engage ramp: coupling stiffness scales 0->1 over active_engage_s_
+  // from ACTIVE entry. Slamless engagement from any leader/follower mismatch.
+  const double engage = (mode == MODE_ACTIVE && active_engage_s_ > 0.0)
+      ? quintic_ease(std::clamp((now_sec - active_t_start_) / active_engage_s_, 0.0, 1.0))
+      : 1.0;
+
   // FREEDRIVE shaping: joint-limit repulsion, MOTOR-SIDE, per ARM (each arm's
   // own joint_limits + fd_limit_* — leader and follower may differ).
   // Zone repulsion: executed MOTOR-SIDE as MIT impedance toward the zone
@@ -292,10 +298,12 @@ void TeleopNode::compute_pair(Pair& p, int mode, double now_sec,
         // follower the peer state is stale -> coupling would slam; fall back
         // to gravity-only (freedrive-like) for the driven arm.
         if (drive_leader_ && drive_follower_) {
-          lc.kp[i] = L.Kp[i]; lc.kd[i] = L.Kd[i];
-          lc.pos[i] = f_in_l[i];  lc.vel[i] = fd_in_l[i];
-          fc.kp[i] = F.Kp[i]; fc.kd[i] = F.Kd[i];
-          fc.pos[i] = l_in_f[i];  fc.vel[i] = ld_in_f[i];
+          // coupling stiffness + velocity FF ramp 0->full on engage (no slam);
+          // gravity/friction FF (lc.tau/fc.tau, set above) stay full throughout.
+          lc.kp[i] = engage * L.Kp[i]; lc.kd[i] = engage * L.Kd[i];
+          lc.pos[i] = f_in_l[i];  lc.vel[i] = engage * fd_in_l[i];
+          fc.kp[i] = engage * F.Kp[i]; fc.kd[i] = engage * F.Kd[i];
+          fc.pos[i] = l_in_f[i];  fc.vel[i] = engage * ld_in_f[i];
         } else {
           // single-role fallback = freedrive-like -> same posture shaping
           lc.kp[i] = L.fd_posture_kp[i]; lc.kd[i] = L.fd_posture_kd[i];
@@ -395,6 +403,8 @@ void TeleopNode::control_loop() {
         for (Pair* p : pairs_) { p->l_home_start = p->lq; p->f_home_start = p->fq; }
       else if (mode == MODE_PAUSED)   // capture current pose -> hold in place (no slam)
         for (Pair* p : pairs_) { p->l_hold = p->lq; p->f_hold = p->fq; }
+      else if (mode == MODE_ACTIVE)   // start the coupling-stiffness ramp (no slam)
+        active_t_start_ = now_sec;
     }
 
     double worst_err = 0.0;

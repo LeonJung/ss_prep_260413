@@ -109,6 +109,13 @@ private:
   double mode_t_start_ = 0.0;
   double mode_duration_ = 0.0;
 
+  // ACTIVE soft-engage: on entry the leader/follower may be far apart; ramping
+  // the COUPLING stiffness (Kp/Kd + velocity FF) 0->full over this window means
+  // no slam regardless of the initial mismatch. Gravity/friction FF stay full
+  // the whole time (always safe). Captured at the FREEDRIVE/PAUSED->ACTIVE edge.
+  double active_t_start_   = 0.0;
+  double active_engage_s_  = 1.5;   // ramp duration [s]
+
   std::atomic<bool> running_{false};
   std::thread control_thread_;
 };
