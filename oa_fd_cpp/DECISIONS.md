@@ -125,6 +125,16 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D34. ★자가검증: M1은 단일프로세스 in-memory(검증된 길), 2-토픽 루프 아님 (2026-06-22)
+- 3라운드 자문자답으로 D33 첫스텝(oa_mit leader를 모터측 MIT 결합) 재검토:
+  - 모터측 MIT 딜리버리·부호·FF로직은 OK. 자유공간 뻑뻑함은 대칭 pos-pos 본질(트레이드오프 잔존). 부호 한곳만 틀려도 폭주 → 첫 비영게인 극소(3)로 검증.
+  - **핵심 결함 발견**: oa_mit는 follower=ros2_control(릴레이 토픽), leader=raw MIT(/joint_states 토픽) → **양방향 bilateral 루프가 2개 토픽홉(왕복~20-30ms)으로 닫힘**. unilateral이 매끈했던 건 단방향 체인(루프 아님). bilateral은 루프를 닫아 **로컬수동 servo라도 지연루프 진동** 가능(시지연 bilateral 안정성). "follower가 지연 setpoint로 매끈"은 open-loop 얘기, closed-loop는 다른 문제.
+  - **검증된 3성공작(enactic, 된-UR10e) 전부 단일프로세스 in-memory 상태교환**(~µs, 무지연루프). 토픽으로 bilateral 루프 닫은 사례 없음. M1은 지금 단일PC라 in-memory 방식 사용 가능. oa_mit 2-토픽 루프는 실은 M2(원격) 구조.
+- **수정 계획**: 모터측 MIT 법칙(D33) 유지하되 아키텍처 분리.
+  - **M1(단일PC, 지금)**: 단일프로세스 양팔 노드 — leader+follower CAN 직접(can0-3), in-memory 대칭 `MIT{kp,kd,pos=peer,vel=peer,tau=gravity+friction}`. = `ur10e_teleop/bilateral_control`(Leader/Follower/Admin+g_state) 구조를 openarmx_can MIT+중력으로 포팅(=enactic 구조). 루프지연 ~2-3ms → 매끈+실제FF 기대. follower bringup 대신 우리가 양팔 직접제어.
+  - **M2(2-PC 원격)**: 토픽/네트워크. 그때 지연루프 안정성 정면(wave-variable 등 passivity가 정당한 유일 케이스; tank는 실패였으니 wave 우선). oa_mit 토픽구조 여기 사용.
+- oa_mit 모터측 MIT 변경(71ef3b8)은 폐기 아님 — **M2 원격 실험 vehicle**로 보존. M1은 새 단일프로세스 노드.
+
 ### D33. ★정정: 된 UR10e bilateral엔 DOB/tank 없음 — 단순 법칙이 정답(D30 전제 오류) (2026-06-21)
 - 운영자: hybrid(DOB+EnergyTank)·ff는 **안 됐다**. 된 건 `ur10e_teleop`(exe `bilateral_control`, src control.cpp+bilateral_control_main.cpp).
 - 된 UR10e 법칙(정독): **`tau = Kp(q_L−q_F) + Kd(dq_L−dq_F) − friction(dq_F)`**, pure torque, **DOB·energy tank·gravity항 없음**(UR 내부중력보상). 주석 "openarm_teleop에서 EXACTLY 이식" = **enactic 법칙과 동일**. 단일프로세스 3스레드(Leader/Follower/Admin) in-memory g_state mutex, 500Hz. real모드=follower에 pure torque, leader read-only(수동); sim모드=양팔 대칭구동(드래그 양방향). friction은 보상(Fc·tanh+Fv+Fo).
