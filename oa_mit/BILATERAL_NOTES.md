@@ -121,6 +121,76 @@ Latent-but-UNUSED code (present, never called in bilateral_step — grep-verifie
 - **2-PC remote bilateral (the goal)**: port the UR10e DOB + EnergyTank stack
   (delay-passive + transparent). Harder, but the only one that survives the link.
 
+## Dead-code verification (rigorous, 2026-06-21)
+Traced the call path, not just grep. `openarm_bilateral_control.cpp`: leader &
+follower threads call ONLY `bilateral_step()` in `while(keep_running)`
+(AdjustPosition once at startup). Across all enactic source on hand:
+`oblique_coordinates_*` = declared only, 0 assigns/reads; `Differentiate_w_obs`
+= defined only, 0 calls; `DetectVibration` = defined only, 0 calls;
+`differentiator_` = constructed/destructed but `Differentiate()`/`_w_obs()`
+never called → the object is unused; velocity = `motor.get_velocity()` direct.
+**Confirmed: enactic's active bilateral is plain symmetric pos-pos + gravity +
+tanh-friction over MIT; every "advanced" piece is dead code.**
+
+## OUR direction — exploit the MIT motor loop (don't blindly copy UR10e)
+
+### The asset UR10e did NOT have: a motor-side MIT impedance loop
+- UR10e takes torque (or servoJ); the team ran the ENTIRE controller (incl. the
+  Kp·e+Kd·ė position/velocity stiffness) **PC-side at 500 Hz** → all feedback is
+  PC-side, so it had to add an **energy tank** to make that PC-side, delayed
+  feedback passive. They had no choice — no usable motor-side loop.
+- OpenArm/Robstride **has** a delay-free, locally-passive MIT loop (kp/kd on the
+  motor, closed on the fresh local encoder). This changes the whole calculus.
+
+### Key reframe: delayed SETPOINT ≠ delayed FEEDBACK
+- Our oa_mit FF vibrated because it added a **PC-side torque spring**
+  `couple_kp·(q_follower−q_leader)` (MIT kp=0) — a torque computed PC-side from
+  fresh-q_leader + stale-q_follower, injected straight into the actuator,
+  bypassing the motor's passive servo → non-passive → vibration.
+- The FOLLOWER already does the *right* thing and is **smooth**: MIT{kp=50,
+  pos=q_leader(delayed)} — it tracks a **delayed setpoint** with its **motor-side
+  loop on fresh local q**. A delayed *reference* into a passive local servo is
+  benign (worst case: small lag), unlike a delayed-data *torque*.
+- ⇒ **Make the LEADER do the same**: MIT{kp=Kf, kd=Kfd, pos=q_follower(delayed),
+  tau=gravity}. Symmetric with the follower; both are motor-side position
+  coupling toward the peer's (delayed) position. This is enactic's actual law,
+  but delivered via MIT with delayed setpoints — and the follower already proves
+  delayed-setpoint MIT is smooth. Force feedback still emerges (follower blocked
+  → q_follower lags → leader's motor pulls back).
+
+### Layered plan (each layer added only if the previous isn't enough)
+0. **Backbone — motor-side MIT symmetric position coupling.** Change oa_mit
+   leader from PC-side torque spring → MIT kp toward delayed follower pos +
+   gravity FF. Expected: kills the vibration (passive local servo), keeps
+   emergent force feedback. Tune **asymmetric** (follower stiff kp~50, leader
+   soft Kf~10–20 for a lighter/transparent leader; raise Kf for stronger FF).
+1. **Transparency** — gravity (have it) + optional **motor-local** friction comp
+   per arm (fresh, never through the delayed channel). Addresses any residual
+   free-space drag (뻑뻑) without cross-channel risk.
+2. **Explicit force reflection — ONLY if needed** (drag still high, or want crisp
+   contact feel). Reflect the peer's *contact* torque. Here, borrow UR10e ideas
+   **surgically**: a DOB to estimate peer τ̂_ext, and a small passivity wrapper
+   (energy tank / wave variable) on **that delayed force channel only** — not the
+   whole controller. The local servo stays motor-side/passive.
+3. **2-PC network delay** — pure position coupling is fairly delay-tolerant
+   (delayed setpoint = lag, not instability), so the network leg may need little.
+   Add passivity (tank/wave) only to any explicit force channel from layer 2.
+   Characterize the actual link with comm_benchmark first.
+
+### Why this beats "port UR10e wholesale"
+Porting UR10e's PC-side full-torque 4CH+DOB+tank would **throw away our motor-side
+passive servo**, force M(q)/C(q,q̇)+DOB+tank to run PC-side at rate, and
+re-create the very PC-side delayed-feedback the tank then has to fight. We'd be
+manufacturing a problem the MIT loop already solves. Use UR10e's concepts only
+for the one thing the MIT loop can't give us — clean, passive **explicit force
+reflection over the delayed link** — and only if layers 0–1 fall short.
+
+### First concrete step
+Modify oa_mit leader: MIT{kp=Kf, kd=Kfd, pos=mapped delayed q_follower,
+tau=gravity} (was kp=0 + PC torque spring). Keep couple_lpf available. Test:
+does the vibration vanish (it should, like the follower)? Then tune Kf for FF
+strength vs free-space lightness.
+
 ## Conclusion / recommended path
 The naive position-position oa_mit was always going to be stiff + vibrate: it
 lacks **DOB (transparency)** and an **energy tank (delay-passivity)** — the two

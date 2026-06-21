@@ -125,6 +125,13 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D32. ★우리 bilateral 방향 = 모터측 MIT 대칭 position 결합(UR10e 통째 포팅 X) (2026-06-21)
+- enactic 데드코드 호출경로까지 검증 확정(oblique/Differentiate_w_obs/DetectVibration/differentiator 전부 0회 호출; 속도=motor.get_velocity).
+- **핵심 자산**: Robstride는 **모터측 MIT 루프(kp/kd, 로컬 인코더, 지연0·수동)** 보유. UR10e는 없어서 전부 PC측 토크+energy tank로 처리한 것. 우리는 그걸 흉내낼 필요 없음.
+- **재프레임 — 지연 SETPOINT ≠ 지연 FEEDBACK**: oa_mit 진동은 **PC측 토크스프링**(couple_kp·(q_f−q_l), MIT kp=0)을 액추에이터에 직접 주입(모터 수동서보 우회)→비수동. 반면 **follower는 MIT{kp=50, pos=q_leader(지연)}로 지연 setpoint를 모터서보(fresh q)로 추종→매끈**(unilateral 입증). 지연 reference는 수동 로컬서보엔 양성.
+- **방향(레이어)**: ⓪백본=**leader도 MIT{kp=Kf, pos=q_follower(지연), tau=중력}** = follower와 대칭(모터측 position 결합). 진동 제거 기대+힘반사 emergent. 비대칭 튜닝(follower stiff~50, leader soft~10-20). ①투명도=중력+**모터로컬** 마찰보상(지연채널 안 거침). ②명시적 힘반사는 **필요시에만** + 그때 UR10e DOB/tank를 **그 지연 force 채널에만 수술적으로**(전체 PC측 재현 금지). ③2-PC: position 결합은 지연내성 큼(지연=lag지 불안정 아님), force 채널 생기면 거기에만 passivity. comm_benchmark로 링크 먼저 측정.
+- **첫 스텝**: oa_mit leader를 PC토크스프링 → MIT kp(지연 follower pos)+중력 으로 변경. 진동 사라지는지(follower처럼) 확인 후 Kf 튜닝. 상세: [oa_mit/BILATERAL_NOTES.md].
+
 ### D31. ★enactic bilateral = naive 대칭 pos-pos(우리와 동일 알고리즘), 차이는 fresh vs delayed 상태 (2026-06-21)
 - enactic/openarm_teleop control.cpp bilateral_step 정독: **활성 알고리즘 = τ=Kp(q_peer−q)+Kd(q̇_peer−q̇)+gravity+friction(tanh, 게이트X), 모터속도, MIT.** peer 상태는 AdminThread가 **in-process(공유메모리)** 로 교환(토픽 아님). 2 arm thread ~500Hz + 모터 온보드 루프.
 - **DOB·energy tank·4channel·oblique-coords·능동진동억제 전부 없음**(코드엔 `Differentiate_w_obs`[DOB류 속도], `oblique_coordinates_*`[modal], `DetectVibration`[stddev 모니터, 0.7rad/s] 정의돼 있으나 **bilateral_step서 호출 안 됨** — grep 검증). 힘반사는 대칭 스프링서 emergent.
