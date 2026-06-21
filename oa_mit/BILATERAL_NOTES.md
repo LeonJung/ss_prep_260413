@@ -191,6 +191,50 @@ tau=gravity} (was kp=0 + PC torque spring). Keep couple_lpf available. Test:
 does the vibration vanish (it should, like the follower)? Then tune Kf for FF
 strength vs free-space lightness.
 
+## CORRECTION (2026-06-21): the UR10e bilateral that WORKED has no DOB/tank
+
+Operator: the hybrid (DOB+EnergyTank) and ff packages did NOT work. The one that
+WORKED is `ur10e_teleop` (exe `bilateral_control`). Its law (read in full):
+```
+tau_cmd[i] = Kp·(q_leader−q_follower) + Kd·(dq_leader−dq_follower) − friction(dq_follower)
+friction   = Fc·tanh(k·dq) + Fv·dq + Fo
+```
+pure torque; **no DOB, no energy tank, no gravity term** (UR does gravity
+internally); "preserved EXACTLY from openarm_teleop" (= enactic's law). Single
+process, 3 threads (Leader/Follower/Admin), in-memory `g_state` mutex, 500 Hz.
+Real mode: follower gets the pure-torque law, leader read-only (passive human-
+held); sim mode: both arms driven symmetrically (drag either → other follows =
+true bilateral).
+
+⇒ **This invalidates the earlier "UR10e worked because of DOB+EnergyTank" claim
+(that was the FAILED hybrid).** All THREE working references — enactic,
+working-UR10e, and our intended direction — converge on the SAME simple
+symmetric position-position law. The DOB / energy-tank / 4-channel variants are
+exactly the ones that DID NOT work.
+
+### Convergent law (what we will build), per arm, symmetric:
+```
+tau_self = Kp·(q_peer − q) + Kd·(dq_peer − dq) − friction(dq) + gravity(q)
+```
+(OpenArm needs the +gravity term that UR did internally.) **No DOB, no energy
+tank** — they failed for the operator and aren't needed.
+
+### Delivery on OpenArm = motor-side MIT (our asset UR10e lacked)
+`MIT{ kp=Kp, kd=Kd, pos=q_peer(delayed), vel=dq_peer, tau=gravity+friction_comp }`
+— motor closes kp/kd on fresh local q (delay-free, passive); peer is a delayed
+setpoint (the follower already does this and is smooth). UR10e had to do pure
+PC-side torque (no motor loop); we don't.
+
+### Revised milestones (DOB/tank dropped)
+- **M1 (single PC)**: implement the convergent law symmetrically (both arms
+  driven). 3 independent working refs agree → expected to work. Concretely =
+  the D32 first step: oa_mit leader → MIT-kp toward delayed follower pos +
+  gravity + friction (replacing the PC-side torque spring). + drive follower
+  toward leader (already does, kp=50).
+- **M2 (2-PC remote)**: same law over the network. If the link delay breaks it,
+  use the *minimum* (e.g. wave variables) — NOT the energy tank (it failed) and
+  NOT a full DOB. Characterize the link with comm_benchmark first.
+
 ## Conclusion / recommended path
 The naive position-position oa_mit was always going to be stiff + vibrate: it
 lacks **DOB (transparency)** and an **energy tank (delay-passivity)** — the two

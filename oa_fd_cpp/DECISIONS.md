@@ -125,6 +125,14 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D33. ★정정: 된 UR10e bilateral엔 DOB/tank 없음 — 단순 법칙이 정답(D30 전제 오류) (2026-06-21)
+- 운영자: hybrid(DOB+EnergyTank)·ff는 **안 됐다**. 된 건 `ur10e_teleop`(exe `bilateral_control`, src control.cpp+bilateral_control_main.cpp).
+- 된 UR10e 법칙(정독): **`tau = Kp(q_L−q_F) + Kd(dq_L−dq_F) − friction(dq_F)`**, pure torque, **DOB·energy tank·gravity항 없음**(UR 내부중력보상). 주석 "openarm_teleop에서 EXACTLY 이식" = **enactic 법칙과 동일**. 단일프로세스 3스레드(Leader/Follower/Admin) in-memory g_state mutex, 500Hz. real모드=follower에 pure torque, leader read-only(수동); sim모드=양팔 대칭구동(드래그 양방향). friction은 보상(Fc·tanh+Fv+Fo).
+- **→ D30 정정**: "UR10e가 DOB+tank로 됐다"는 **틀림**. DOB+tank(hybrid)·ff는 실패작. **3 레퍼런스(enactic=된UR10e=우리방향) 전부 단순 대칭 position-position으로 수렴**, 화려한 것은 다 실패.
+- **확정 법칙(양팔 대칭, OpenArm용)**: `tau_self = Kp(q_peer−q)+Kd(dq_peer−dq) − friction(dq) + gravity(q)` (OpenArm은 중력 추가 필요, UR은 내부처리). **DOB/energy tank 안 씀**(실패 + 불필요).
+- **딜리버리(우리 자산)**: 모터측 MIT — `MIT{kp=Kp, kd=Kd, pos=q_peer(지연), vel=dq_peer, tau=gravity+friction_comp}`. kp/kd는 모터가 닫음(지연0·수동), peer는 지연 setpoint(follower가 이미 그렇게 매끈). UR10e는 모터루프 없어 pure torque였지만 우리는 MIT로 더 유리.
+- **재계획**: ⓜ1(단일PC) 이 법칙 양팔 대칭 구현 → enactic/UR10e처럼 됨이 기대(3레퍼런스 일치). oa_mit leader를 PC토크스프링→MIT-kp(지연 follower pos)+중력+마찰로 바꾸는 D32 첫스텝이 곧 이것. ⓜ2(2-PC) 동일 법칙 네트워크로; 깨지면 **tank 말고**(실패) wave-variable 등 최소만, 그것도 강제될 때만. D32 layer2-3(UR10e DOB/tank 차용) **철회**.
+
 ### D32. ★우리 bilateral 방향 = 모터측 MIT 대칭 position 결합(UR10e 통째 포팅 X) (2026-06-21)
 - enactic 데드코드 호출경로까지 검증 확정(oblique/Differentiate_w_obs/DetectVibration/differentiator 전부 0회 호출; 속도=motor.get_velocity).
 - **핵심 자산**: Robstride는 **모터측 MIT 루프(kp/kd, 로컬 인코더, 지연0·수동)** 보유. UR10e는 없어서 전부 PC측 토크+energy tank로 처리한 것. 우리는 그걸 흉내낼 필요 없음.
