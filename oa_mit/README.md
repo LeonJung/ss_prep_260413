@@ -6,12 +6,18 @@ our own). The leader runs the official Mode-2 weightless gravity-comp recipe
 follower's `forward_position_controller`. **Added:** a force-reflection coupling
 so the leader feels the follower.
 
-## How force feedback works
-The leader node subscribes to the follower's `/joint_states` and adds:
+## How force feedback works (D33: motor-side MIT coupling)
+The leader node subscribes to the follower's `/joint_states` and servoes the
+leader toward the (delayed) follower position **via the motor's own MIT loop**:
 ```
-tau_couple[i] = couple_kp · (q_follower[i] − q_leader[i]) − couple_kd · qd_leader[i]
+leader MIT = { kp=couple_kp, kd=couple_kd, position = s·q_follower(delayed),
+               velocity = 0, torque = gravity(+hold) }
 ```
-to the leader's MIT torque (clamped to `couple_tau_limit`).
+The motor closes `couple_kp·(q_follower − q_leader)` on FRESH local encoder q
+(delay-free, passive); only the follower setpoint is delayed (benign — the
+follower side already does delayed-setpoint MIT and is smooth). This is the
+convergent enactic / working-UR10e symmetric position-position law, NOT a
+PC-side torque spring (v1 did that and vibrated). No DOB, no energy tank.
 - **Free space**: the follower tracks the leader, so `q_follower ≈ q_leader` →
   coupling ≈ 0 → leader stays **weightless** (= Mode 2).
 - **Contact**: the follower can't reach `q_leader` and lags → the term grows

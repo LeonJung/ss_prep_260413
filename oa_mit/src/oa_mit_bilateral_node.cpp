@@ -65,11 +65,14 @@ public:
         this->declare_parameter<int>("hold_settle_ms", 300);
         this->declare_parameter<std::vector<double>>("gdir", {0.0, -9.81, 0.0});
 
-        // Bilateral force-reflection coupling (NEW): leader feels follower lag.
-        // couple_kp=0 -> pure Mode-2 weightless (safe default). Raise to add FF.
+        // Bilateral coupling = MOTOR-SIDE MIT gains (D33): the leader is servoed
+        // toward the (delayed) follower position by the motor's own loop.
+        // couple_kp = MIT kp [like the follower's kp~50]; start LOW/asymmetric
+        // (leader softer than follower, e.g. 10-20) -> lighter leader + force
+        // feedback when the follower lags. couple_kp=0 -> pure Mode-2 weightless.
         this->declare_parameter<double>("couple_kp", 0.0);
-        this->declare_parameter<double>("couple_kd", 0.0);
-        this->declare_parameter<double>("couple_tau_limit", 8.0);  // per-joint |Nm| on the coupling term
+        this->declare_parameter<double>("couple_kd", 1.0);   // MIT kd (motor-side velocity damping)
+        this->declare_parameter<double>("couple_tau_limit", 8.0);  // (unused now; coupling bounded by motor current limit)
         // EMA on the (slow, ~74Hz, stale) follower position before coupling, to
         // smooth its stair-steps that excite the delayed-loop vibration. 1.0 =
         // no filter; lower = smoother but laggier FF. e.g. 0.3-0.5.
@@ -315,46 +318,47 @@ private:
             for (size_t i = 0; i < nj && i < q_follower_.size(); ++i) qf[i] = q_follower_[i];
         }
 
+        // Bilateral coupling is delivered MOTOR-SIDE via MIT kp/kd (NOT a PC-side
+        // torque). oa_mit v1 added couple_kp*(qf-q) as a torque (MIT kp=0) —
+        // delayed-data torque injected past the motor servo -> non-passive ->
+        // vibration. Instead: MIT{kp=couple_kp, kd=couple_kd, pos=s*q_follower}
+        // so the motor closes kp(q_follower - q) on FRESH local q (delay-free,
+        // passive); the follower setpoint may be stale (benign — the follower
+        // side already does delayed-setpoint MIT and is smooth). This is the
+        // convergent enactic / working-UR10e symmetric position-position law
+        // (D33), delivered through our MIT motor loop. couple_kp=0 (or no
+        // follower data yet) => pure Mode-2 weightless float (safe parity).
+        const bool couple_on = have_f && couple_kp_ > 0.0;
         double max_abs_tau = 0.0;
-        for (size_t i = 0; i < nj; ++i) {
-            tau_g_[i]    *= g_scale_;
-            tau_damp_[i] = -kd_damp_ * qd_[i];
-            tau_hold_[i] = hold_latched_ ? (kp_hold_ * (hold_target_[i] - q_[i])) : 0.0;
-            // force feedback: pull leader toward follower; ~0 in free space,
-            // resists when follower lags (contact). Off until follower data seen.
-            if (have_f && couple_kp_ > 0.0) {
-                double tc = couple_kp_ * (qf[i] - q_[i]) - couple_kd_ * qd_[i];
-                tc = std::clamp(tc, -couple_tau_limit_, couple_tau_limit_);
-                tau_couple_[i] = tc;
-            } else {
-                tau_couple_[i] = 0.0;
-            }
-            max_abs_tau = std::max(max_abs_tau,
-                std::fabs(tau_g_[i] + tau_damp_[i] + tau_hold_[i] + tau_couple_[i]));
-        }
-
         std::vector<openarmx::robstride_motor::MotionControlParam> cmds;
         cmds.reserve(nj);
         for (size_t i = 0; i < nj; ++i) {
-            double tau_joint = tau_g_[i] + tau_damp_[i] + tau_hold_[i] + tau_couple_[i];
-            double s = (i < dir_signs_.size()) ? dir_signs_[i] : 1.0;
-            double limit = (i < tau_limits_.size()) ? tau_limits_[i] : std::numeric_limits<double>::infinity();
+            tau_g_[i]    *= g_scale_;
+            tau_damp_[i] = -kd_damp_ * qd_[i];   // optional extra global damping
+            tau_hold_[i] = hold_latched_ ? (kp_hold_ * (hold_target_[i] - q_[i])) : 0.0;
+            const double tau_ff_joint = tau_g_[i] + tau_damp_[i] + tau_hold_[i];
+            max_abs_tau = std::max(max_abs_tau, std::fabs(tau_ff_joint));
 
-            double tau_motor = s * tau_joint;
-            if (std::isfinite(limit)) {
-                double abs_tau = std::fabs(tau_motor);
-                if (abs_tau > limit) {
-                    double sign = (tau_motor >= 0.0) ? 1.0 : -1.0;
-                    tau_motor = sign * limit;
-                }
-            }
+            const double s = (i < dir_signs_.size()) ? dir_signs_[i] : 1.0;
+            const double limit = (i < tau_limits_.size())
+                ? tau_limits_[i] : std::numeric_limits<double>::infinity();
+            double tau_motor = s * tau_ff_joint;          // FF (gravity etc.), motor frame
+            if (std::isfinite(limit)) tau_motor = std::clamp(tau_motor, -limit, limit);
 
             openarmx::robstride_motor::MotionControlParam p{};
-            p.position = 0.0;
-            p.velocity = 0.0;
-            p.kp       = 0.0;
-            p.kd       = 0.0;
-            p.torque   = tau_motor;
+            if (couple_on) {
+                // motor servos leader q_ -> q_follower:  motor target = s*qf
+                // (q_joint = s*mpos => mpos_target = s*q_target). kd damps leader
+                // velocity (vel_cmd=0). Coupling torque is bounded by the motor's
+                // own current limit (real contact force -> real feedback).
+                p.kp       = couple_kp_;
+                p.kd       = couple_kd_;
+                p.position = s * qf[i];
+                p.velocity = 0.0;
+            } else {
+                p.kp = 0.0; p.kd = 0.0; p.position = 0.0; p.velocity = 0.0;
+            }
+            p.torque = tau_motor;
             cmds.push_back(p);
         }
 
