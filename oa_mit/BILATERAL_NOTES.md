@@ -66,6 +66,61 @@ dynamics, arXiv:2507.06174); Franken/Stramigioli 2011 + Minelli 2023–24
   RT with clean RTDE state; our follower state is ~74 Hz (CAN-bound JSB). Lower
   rate + more delay = even more need for passivity handling.
 
+## enactic OpenArm bilateral — what it ACTUALLY is (source read 2026-06-21)
+
+Read `enactic/openarm_teleop` `src/controller/control.cpp` (`bilateral_step`),
+`control.hpp`, `diff.hpp`, `dynamics.cpp`. The **active** bilateral law:
+```
+τ = Kp·(q_peer − q) + Kd·(q̇_peer − q̇) + gravity(q) + friction(q̇)      [MIT mode]
+friction = Fc·tanh(0.1·k·q̇) + Fv·q̇ + Fo          (full, no velocity gate)
+```
+- velocity = **motor-reported** `get_velocity()` (not a differentiator).
+- peer state = exchanged **in-process** (AdminThread copies leader↔follower
+  state in shared memory every tick — NOT over ROS topics).
+- two arm threads ~500 Hz + the Damiao motor's onboard MIT loop.
+- **No DOB, no energy tank, no 4-channel, no oblique-coords transform, no active
+  vibration suppression in the loop.** Force feedback is *emergent* from the
+  symmetric position spring (follower blocked → q_peer−q grows → leader feels it).
+
+Latent-but-UNUSED code (present, never called in bilateral_step — grep-verified):
+`Differentiate_w_obs` (a DOB-ish velocity obs: `acc=LPF(τ/m); v=LPF(Δq)+acc`),
+`oblique_coordinates_force/position` (modal/4ch hint), `DetectVibration`
+(velocity-stddev monitor, threshold 0.7 rad/s — diagnostic only, no action).
+⇒ enactic *explored* these but ships **plain symmetric position-position**.
+
+### 3-way comparison
+| aspect | UR10e hybrid (HW-verified, networked) | enactic OpenArm (smooth video) | oa_mit (vibrates) |
+|---|---|---|---|
+| core law | 4-channel Lawrence + DOB | symmetric pos-pos + g + friction | symmetric pos-pos + g (couple_kp) |
+| transparency | **DOB (τ̂_ext)** | none (light arm masks it) | none |
+| delay passivity | **EnergyTank (2-layer)** | none | none |
+| **peer state** | topics (delay) **+ tank** | **in-process, FRESH** | **topic ~74 Hz, DELAYED** |
+| velocity | LPF estimator | motor-reported | motor-reported |
+| force reflect | explicit Kf·τ̂_ext both ways | emergent (pos spring) | emergent (pos spring) |
+| rate | 500 Hz RT | ~500 Hz/arm + motor loop | 300 Hz / 74 Hz follower |
+
+### The decisive takeaways
+1. **enactic ≈ oa_mit in ALGORITHM** (both naive symmetric pos-pos + gravity).
+   The ONLY material difference is **fresh in-process peer state (enactic) vs
+   delayed 74 Hz topic peer state (oa_mit)**. → It's the *delayed channel*, not
+   the control law, that makes ours vibrate where enactic's is smooth. Confirms
+   D28/D29.
+2. **enactic's approach is fundamentally NOT delay-tolerant** — it has zero
+   passivity machinery; it only works because the peer state is fresh (one PC,
+   shared memory). Put that same law on a delayed/networked link and it
+   vibrates exactly like oa_mit. So **enactic is NOT a valid model for the 2-PC
+   remote goal.**
+3. **UR10e's DOB + EnergyTank IS built for the delayed/networked case** (tank =
+   delay passivity, DOB = transparency) → the right model for 2-PC remote.
+
+### Staged option this opens up
+- **Single-PC bilateral (intermediate, fast win)**: port enactic's simple
+  `bilateral_step` (both arms one process, in-memory fresh state) → likely
+  smooth like the video, validates OpenArm HW + gives a baseline. Does NOT meet
+  the remote goal.
+- **2-PC remote bilateral (the goal)**: port the UR10e DOB + EnergyTank stack
+  (delay-passive + transparent). Harder, but the only one that survives the link.
+
 ## Conclusion / recommended path
 The naive position-position oa_mit was always going to be stiff + vibrate: it
 lacks **DOB (transparency)** and an **energy tank (delay-passivity)** — the two

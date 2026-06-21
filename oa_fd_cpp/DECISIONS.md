@@ -125,6 +125,12 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D31. ★enactic bilateral = naive 대칭 pos-pos(우리와 동일 알고리즘), 차이는 fresh vs delayed 상태 (2026-06-21)
+- enactic/openarm_teleop control.cpp bilateral_step 정독: **활성 알고리즘 = τ=Kp(q_peer−q)+Kd(q̇_peer−q̇)+gravity+friction(tanh, 게이트X), 모터속도, MIT.** peer 상태는 AdminThread가 **in-process(공유메모리)** 로 교환(토픽 아님). 2 arm thread ~500Hz + 모터 온보드 루프.
+- **DOB·energy tank·4channel·oblique-coords·능동진동억제 전부 없음**(코드엔 `Differentiate_w_obs`[DOB류 속도], `oblique_coordinates_*`[modal], `DetectVibration`[stddev 모니터, 0.7rad/s] 정의돼 있으나 **bilateral_step서 호출 안 됨** — grep 검증). 힘반사는 대칭 스프링서 emergent.
+- **결정적**: enactic ≈ oa_mit **알고리즘 동일**. 유일한 실질차 = **fresh in-process(enactic) vs delayed 74Hz 토픽(oa_mit)**. → 우리가 진동하는 건 제어법이 아니라 **지연채널** 때문(D28/29 재확인). enactic은 수동성 장치가 0이라 **지연링크에선 우리처럼 진동** → **2-PC 원격엔 부적합 모델**. UR10e(DOB+tank)만 지연을 견딤.
+- **단계 옵션**: (중간 빠른win) 단일PC bilateral = enactic bilateral_step 포팅(양팔 1프로세스, fresh) → 영상처럼 매끈할 것, HW검증·baseline. 단 원격목표 미충족. (목표) 2-PC = UR10e DOB+EnergyTank 포팅. 상세: [oa_mit/BILATERAL_NOTES.md].
+
 ### D30. ★UR10e bilateral은 풀스택(4CH+DOB+EnergyTank)이라 됐고, OpenArm naive는 그게 없어 안 됨 (2026-06-21)
 - 운영자 질문: UR10e bilateral은 됐는데 OpenArm은 왜 진동/뻑뻑? → `ur10e_teleop_control_hybrid_cpp` 정독.
 - UR10e = SOTA 풀스택(실기검증): **DynamicsModel(M,C,g) + VelocityEstimator(LPF) + DisturbanceObserver(τ̂_ext 무센서) + FourChannelController(Lawrence, Kp·e_pos+Kd·e_vel+Kf_self·τ̂_ext+Kf_peer·τ̂_ext_peer) + EnergyTank(2-layer 수동성)**, 500Hz RT, leader/follower 토픽통신. (Buamanee2025 4CH+DOB / Franken-Stramigioli EnergyTank.)
