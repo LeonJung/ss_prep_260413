@@ -125,6 +125,13 @@
 - **link7-only / 무게보정 시도 실패 (2026-06-19)**: leader팔+그리퍼(link7만 fit)는 g1이 오히려↑ → follower-right까지 폭주 → 되돌림(5192e58). 그리퍼 무게 1.047→0.94(1.5배) 보정도 fit이 재흡수해 g1 거의 불변. 즉 단발 모델조작으론 안 됨.
 - **불안정 평형 = 과보상 확정 (운영자 관찰)**: follower q1을 어떤 균형점서 양쪽으로 밀면 그 방향 가속(negative stiffness) = comp>실제중력. leader는 간당 안정, 무거운 follower가 임계 넘김. q4도 동일. **comp은 반드시 필요**(없으면 follower 처짐→leader에 무게=투명도↓; 과보상도 ACTIVE서 follower 위치 어긋나 leader에 힘=투명도↓). 그러니 **정확한 comp**가 답(scaling 금지).
 - **q4 커버리지 가설 철회 (운영자 지적)**: leader-right도 q4[0.13,1.55] 같은 커버리지로 cali했는데 안정 → q4 커버리지는 원인 아님. (gen_cali_poses --q4-min/--q4-max 추가는 남겨두되 follower엔 불필요.)
+### D30. ★UR10e bilateral은 풀스택(4CH+DOB+EnergyTank)이라 됐고, OpenArm naive는 그게 없어 안 됨 (2026-06-21)
+- 운영자 질문: UR10e bilateral은 됐는데 OpenArm은 왜 진동/뻑뻑? → `ur10e_teleop_control_hybrid_cpp` 정독.
+- UR10e = SOTA 풀스택(실기검증): **DynamicsModel(M,C,g) + VelocityEstimator(LPF) + DisturbanceObserver(τ̂_ext 무센서) + FourChannelController(Lawrence, Kp·e_pos+Kd·e_vel+Kf_self·τ̂_ext+Kf_peer·τ̂_ext_peer) + EnergyTank(2-layer 수동성)**, 500Hz RT, leader/follower 토픽통신. (Buamanee2025 4CH+DOB / Franken-Stramigioli EnergyTank.)
+- 증상 매핑: **뻑뻑=DOB 부재**(우리는 위치지연 반사→파트너 관성/마찰까지 느낌; DOB는 외력 τ̂_ext만 반사→투명). **진동=EnergyTank 부재**(지연채널 force feedback은 비수동→에너지주입→한계진동; 탱크가 수동성 보장→지연강건). oa_mit엔 둘 다 없음(순수 Kp 스프링).
+- **HW 각도**: UR10e 고감속 하모닉=고마찰/감쇠라 관대(그래도 탱크 씀). OpenArm/Robstride 저감속 quasi-DD=저마찰/backdrivable→**자연 감쇠 거의 없음**→지연피드백 에너지 흡수 못 함→더 잘 진동. **OpenArm이 UR10e보다 이 기계장치가 더 필요**.
+- **결론/경로**: naive 재발명 말고 **UR10e hybrid 제어코어를 OpenArm에 포팅**. I/O만 교체(urcl/RTDE torque → openarmx_can MIT torque: kp=kd=0,torque=계산, oa_mit leader가 이미 그 방식). follower도 MIT-torque로. 상태머신/RT/leader-follower 토픽통신 재사용 → 2-PC 원격 목표와 정합(탱크가 네트워크 지연 흡수). 좋은 M(q)/C 위한 URDF 검증 필요(cali 중력URDF 보유). 주의(UR10e README): DOB 반력 "URDF 모델하 약함", apparent inertia 하한 존재, EnergyTank HW-미검증. 상세: [oa_mit/BILATERAL_NOTES.md].
+
 ### D29. ★최종목표=2-PC 원격 → 지연채널 전제 설계, 단일프로세스 폐기, oa_mit 구조 채택 (2026-06-20)
 - **새 정보(운영자)**: 두 양팔로봇을 나중에 **PC 2대로 분리, 원격제어**. + couple_kp=0이 공식 Mode2와 동성능(=oa_mit 토대 OK).
 - **함의**: leader/follower가 물리적 다른 PC → 단일프로세스 양팔 CAN 불가 → **D28의 (B) 단일프로세스/enactic in-memory 방식 폐기**. leader↔follower는 **영구적 지연 네트워크 채널**(지금 100Hz 토픽=네트워크지연 예고편). **oa_mit 토픽 구조가 정답**(토픽→DDS 확장).
