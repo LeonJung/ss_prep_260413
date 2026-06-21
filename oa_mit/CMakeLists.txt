@@ -36,13 +36,18 @@ ament_target_dependencies(oa_mit_dynamics
   urdf orocos_kdl kdl_parser urdfdom urdfdom_headers)
 target_link_libraries(oa_mit_dynamics openarmx_can::openarmx_can)
 
-# Bilateral force-feedback leader node
+# Bilateral force-feedback leader node (M2/remote vehicle: topic-coupled)
 add_executable(oa_mit_bilateral_node src/oa_mit_bilateral_node.cpp)
 target_link_libraries(oa_mit_bilateral_node oa_mit_dynamics)
 ament_target_dependencies(oa_mit_bilateral_node
   rclcpp std_msgs sensor_msgs)
 
-install(TARGETS oa_mit_bilateral_node
+# M1: single-process dual-arm bilateral (both arms direct CAN, in-memory)
+add_executable(oa_mit_bilateral_dual_node src/oa_mit_bilateral_dual_node.cpp)
+target_link_libraries(oa_mit_bilateral_dual_node oa_mit_dynamics)
+ament_target_dependencies(oa_mit_bilateral_dual_node rclcpp)
+
+install(TARGETS oa_mit_bilateral_node oa_mit_bilateral_dual_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
