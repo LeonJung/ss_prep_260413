@@ -24,8 +24,9 @@
 
 #include <algorithm>
 #include <chrono>
-#include <csignal>
+#include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
