@@ -163,6 +163,10 @@ public:
         declare_parameter<double>("follower_kd", 1.5);
         declare_parameter<double>("couple_sign", -1.0);  // relay convention; verify on HW
         declare_parameter<bool>("verbose", false);
+        // select which arm(s) of the pair to bring up. Run one alone (e.g.
+        // enable_follower:=false) to test a single arm's gravity comp safely.
+        declare_parameter<bool>("enable_leader", true);
+        declare_parameter<bool>("enable_follower", true);
 
         side_ = get_parameter("arm_side").as_string();
         std::string lcan = get_parameter("leader_can").as_string();
@@ -192,9 +196,15 @@ public:
                     lcan.c_str(), fcan.c_str(), side_.c_str(), rate, gx, gy, gz);
         RCLCPP_INFO(get_logger(), "leader kp=%.1f kd=%.1f | follower kp=%.1f kd=%.1f | couple_sign=%.0f",
                     leader_.kp, leader_.kd, follower_.kp, follower_.kd, couple_sign_);
-        if (!leader_.init(lcan, urdf, root, leaf, gx, gy, gz, get_logger()))
+        en_leader_   = get_parameter("enable_leader").as_bool();
+        en_follower_ = get_parameter("enable_follower").as_bool();
+        if (!en_leader_ && !en_follower_)
+            throw std::runtime_error("both arms disabled — nothing to do");
+        RCLCPP_INFO(get_logger(), "enabled: leader=%s follower=%s",
+                    en_leader_ ? "yes" : "no", en_follower_ ? "yes" : "no");
+        if (en_leader_ && !leader_.init(lcan, urdf, root, leaf, gx, gy, gz, get_logger()))
             throw std::runtime_error("leader init failed");
-        if (!follower_.init(fcan, urdf, root, leaf, gx, gy, gz, get_logger()))
+        if (en_follower_ && !follower_.init(fcan, urdf, root, leaf, gx, gy, gz, get_logger()))
             throw std::runtime_error("follower init failed");
 
         auto period = std::chrono::microseconds(1000000 / std::max(1, rate));
@@ -209,15 +219,18 @@ public:
 
 private:
     void loop() {
-        // read BOTH arms fresh this cycle (in-memory, no topic)
-        leader_.read();
-        follower_.read();
-        leader_.gravity();
-        follower_.gravity();
-        // symmetric coupling: each tracks the other's (fresh) motor position
-        leader_.command(leader_.kp > 0.0, couple_sign_, follower_.qm, follower_.dqm);
-        follower_.command(follower_.kp > 0.0, couple_sign_, leader_.qm, leader_.dqm);
-        if (verbose_ && (++tick_ % 250) == 0) {
+        // read enabled arm(s) fresh this cycle (in-memory, no topic)
+        if (en_leader_)   { leader_.read();   leader_.gravity(); }
+        if (en_follower_) { follower_.read(); follower_.gravity(); }
+        // symmetric coupling: each tracks the other — but only if the PEER is
+        // enabled (single-arm mode => no peer => weightless gravity float).
+        if (en_leader_)
+            leader_.command(en_follower_ && leader_.kp > 0.0, couple_sign_,
+                            follower_.qm, follower_.dqm);
+        if (en_follower_)
+            follower_.command(en_leader_ && follower_.kp > 0.0, couple_sign_,
+                              leader_.qm, leader_.dqm);
+        if (verbose_ && (++tick_ % 250) == 0 && en_leader_ && en_follower_) {
             RCLCPP_INFO(get_logger(), "q_L0=%.3f q_F0=%.3f  err0=%.3f",
                         leader_.q[0], follower_.q[0], leader_.q[0] - follower_.q[0]);
         }
@@ -227,6 +240,7 @@ private:
     std::string side_;
     double couple_sign_ = -1.0;
     bool verbose_ = false;
+    bool en_leader_ = true, en_follower_ = true;
     long tick_ = 0;
     rclcpp::TimerBase::SharedPtr timer_;
 };

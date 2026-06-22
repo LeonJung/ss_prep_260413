@@ -41,6 +41,8 @@ def generate_launch_description():
         DeclareLaunchArgument('follower_kd', default_value='1.5'),
         DeclareLaunchArgument('couple_sign', default_value='-1.0'),
         DeclareLaunchArgument('verbose', default_value='true'),
+        DeclareLaunchArgument('enable_leader', default_value='true'),
+        DeclareLaunchArgument('enable_follower', default_value='true'),
     ]
     node = Node(
         package='oa_mit', executable='oa_mit_bilateral_dual_node',
@@ -59,6 +61,8 @@ def generate_launch_description():
             'follower_kd': LaunchConfiguration('follower_kd'),
             'couple_sign': LaunchConfiguration('couple_sign'),
             'verbose': LaunchConfiguration('verbose'),
+            'enable_leader': LaunchConfiguration('enable_leader'),
+            'enable_follower': LaunchConfiguration('enable_follower'),
         }],
     )
     return LaunchDescription(args + [node])
