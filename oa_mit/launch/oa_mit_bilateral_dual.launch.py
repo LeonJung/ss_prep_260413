@@ -28,9 +28,10 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     args = [
-        DeclareLaunchArgument('arm_side', default_value='right_arm'),
-        DeclareLaunchArgument('leader_can', default_value='can0'),
-        DeclareLaunchArgument('follower_can', default_value='can2'),
+        DeclareLaunchArgument('arm_side', default_value='right_arm',
+                              description='right_arm (can0/can2) or left_arm (can1/can3)'),
+        DeclareLaunchArgument('leader_can', default_value='auto'),    # auto = from arm_side
+        DeclareLaunchArgument('follower_can', default_value='auto'),
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
         DeclareLaunchArgument('control_rate_hz', default_value='250'),
         DeclareLaunchArgument('g_scale', default_value='0.9'),

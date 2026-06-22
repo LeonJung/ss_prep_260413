@@ -148,8 +148,11 @@ class BilateralDual : public rclcpp::Node {
 public:
     BilateralDual() : Node("oa_mit_bilateral_dual") {
         declare_parameter<std::string>("arm_side", "right_arm");
-        declare_parameter<std::string>("leader_can", "can0");
-        declare_parameter<std::string>("follower_can", "can2");
+        // "auto" => derived from arm_side: right => leader can0 / follower can2,
+        // left => leader can1 / follower can3. So `arm_side:=left_arm` alone
+        // selects the whole LEFT bilateral pair (and right_arm the RIGHT pair).
+        declare_parameter<std::string>("leader_can", "auto");
+        declare_parameter<std::string>("follower_can", "auto");
         declare_parameter<std::string>("urdf_path", "/tmp/v10_bimanual.urdf");
         declare_parameter<int>("control_rate_hz", 250);
         declare_parameter<double>("g_scale", 0.9);
@@ -169,8 +172,11 @@ public:
         declare_parameter<bool>("enable_follower", true);
 
         side_ = get_parameter("arm_side").as_string();
+        const bool is_left = (side_ == "left_arm");
         std::string lcan = get_parameter("leader_can").as_string();
         std::string fcan = get_parameter("follower_can").as_string();
+        if (lcan == "auto") lcan = is_left ? "can1" : "can0";   // right pair: can0/can2
+        if (fcan == "auto") fcan = is_left ? "can3" : "can2";   // left  pair: can1/can3
         std::string urdf = get_parameter("urdf_path").as_string();
         int rate = get_parameter("control_rate_hz").as_int();
         double gscale = get_parameter("g_scale").as_double();
