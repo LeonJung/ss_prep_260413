@@ -39,15 +39,6 @@
 
 using namespace std::chrono_literals;
 
-namespace {
-const std::vector<openarmx::robstride_motor::MotorType> ARM_MOTOR_TYPES = {
-    openarmx::robstride_motor::MotorType::RS04, openarmx::robstride_motor::MotorType::RS04,
-    openarmx::robstride_motor::MotorType::RS03, openarmx::robstride_motor::MotorType::RS03,
-    openarmx::robstride_motor::MotorType::RS00, openarmx::robstride_motor::MotorType::RS00,
-    openarmx::robstride_motor::MotorType::RS00};
-const std::vector<uint32_t> ARM_IDS = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
-}  // namespace
-
 // One arm: its CAN bus, KDL gravity model, state, and per-arm params.
 struct Arm {
     std::unique_ptr<openarmx::can::socket::OpenArmX> bus;
@@ -69,8 +60,15 @@ struct Arm {
         dyn = std::make_unique<Dynamics>(urdf, root, leaf);
         if (!dyn->Init()) { RCLCPP_FATAL(log, "[%s] KDL init failed", name.c_str()); return false; }
         dyn->SetGravityVector(gx, gy, gz);
+        // motor types/ids as LOCAL non-const vectors (mirror the working node)
+        std::vector<openarmx::robstride_motor::MotorType> motor_types = {
+            openarmx::robstride_motor::MotorType::RS04, openarmx::robstride_motor::MotorType::RS04,
+            openarmx::robstride_motor::MotorType::RS03, openarmx::robstride_motor::MotorType::RS03,
+            openarmx::robstride_motor::MotorType::RS00, openarmx::robstride_motor::MotorType::RS00,
+            openarmx::robstride_motor::MotorType::RS00};
+        std::vector<uint32_t> ids = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
         bus = std::make_unique<openarmx::can::socket::OpenArmX>(can, false);
-        bus->init_arm_motors(ARM_MOTOR_TYPES, ARM_IDS, ARM_IDS);
+        bus->init_arm_motors(motor_types, ids, ids);
         bus->init_gripper_motor(openarmx::robstride_motor::MotorType::RS00, 0x08, 0x08);
         bus->set_callback_mode_all(openarmx::robstride_motor::CallbackMode::STATE);
         if (!bus->enable_all()) { RCLCPP_FATAL(log, "[%s] enable failed", name.c_str()); return false; }
