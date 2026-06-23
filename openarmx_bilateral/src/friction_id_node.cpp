@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -33,9 +34,10 @@ public:
     FrictionIdNode() : Node("openarmx_friction_id") {
         declare_parameter<std::string>("joint_prefix", "openarmx_left_joint");
         declare_parameter<int>("n_joints", 7);
-        declare_parameter<std::vector<int64_t>>("joints", {1, 2, 3, 4, 5, 6, 7});
+        declare_parameter<std::vector<int64_t>>("joints",
+            std::vector<int64_t>{1, 2, 3, 4, 5, 6, 7});
         declare_parameter<std::vector<double>>("speeds",
-            {0.1, 0.2, 0.3, 0.5, 0.8, 1.2});  // rad/s magnitudes
+            std::vector<double>{0.1, 0.2, 0.3, 0.5, 0.8, 1.2});  // rad/s magnitudes
         declare_parameter<double>("range", 0.45);    // shuttle half-range [rad]
         declare_parameter<double>("dwell", 5.0);      // seconds per speed level
         declare_parameter<std::string>("vel_cmd",
@@ -53,6 +55,16 @@ public:
         speeds_ = get_parameter("speeds").as_double_array();
         range_ = get_parameter("range").as_double();
         dwell_ = get_parameter("dwell").as_double();
+
+        // guards: never index an empty schedule (was the SIGSEGV cause)
+        if (seq_.empty()) { for (int j = 1; j <= nj_; ++j) seq_.push_back(j); }
+        for (auto it = seq_.begin(); it != seq_.end();)        // drop out-of-range joints
+            it = (*it < 1 || *it > nj_) ? seq_.erase(it) : it + 1;
+        if (speeds_.empty()) speeds_ = {0.1, 0.2, 0.3, 0.5, 0.8, 1.2};
+        if (seq_.empty()) {
+            RCLCPP_FATAL(get_logger(), "no valid joints to excite; aborting");
+            throw std::runtime_error("friction_id: empty joint schedule");
+        }
 
         q_.assign(nj_, 0.0); v_.assign(nj_, 0.0); eff_.assign(nj_, 0.0); grav_.assign(nj_, 0.0);
 
