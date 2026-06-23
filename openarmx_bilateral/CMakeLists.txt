@@ -24,7 +24,12 @@ ament_target_dependencies(log_node rclcpp sensor_msgs std_msgs)
 add_executable(friction_id_node src/friction_id_node.cpp)
 ament_target_dependencies(friction_id_node rclcpp sensor_msgs std_msgs)
 
-install(TARGETS relay_node log_node friction_id_node DESTINATION lib/${PROJECT_NAME})
+# Temporary helper: print per-joint angles (both arms, leader+follower)
+add_executable(joint_echo_node src/joint_echo_node.cpp)
+ament_target_dependencies(joint_echo_node rclcpp sensor_msgs)
+
+install(TARGETS relay_node log_node friction_id_node joint_echo_node
+        DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_package()
