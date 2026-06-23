@@ -42,7 +42,7 @@ public:
         declare_parameter<std::string>("gripper_joint", "openarmx_" + sp + "_finger_joint1");
         declare_parameter<int>("n_joints", 7);
         declare_parameter<bool>("include_gripper", true);
-        declare_parameter<double>("couple_sign", -1.0);   // openarmx relay convention
+        declare_parameter<double>("couple_sign", 1.0);   // +1 verified on HW (left pair)
         declare_parameter<bool>("bilateral", false);      // false = unilateral (step b)
         declare_parameter<int>("rate_hz", 200);
 

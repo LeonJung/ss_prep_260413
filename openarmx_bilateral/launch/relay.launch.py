@@ -64,7 +64,7 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('arm_side', default_value='left_arm'),
         DeclareLaunchArgument('bilateral', default_value='false'),
-        DeclareLaunchArgument('couple_sign', default_value='-1.0'),
+        DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on HW
         DeclareLaunchArgument('rate_hz', default_value='200'),
         # leader gains auto-set (no manual param-set loop). unilateral: 0/0.
         DeclareLaunchArgument('set_leader_gains', default_value='true'),
