@@ -1,5 +1,6 @@
-# Effort controller params for the FOLLOWER (left arm), spawned by
-# follower_gravity.launch.py. The official namespaced controllers yaml
+# Effort controller params for the LEFT arm, spawned for BOTH leader (root CM)
+# and follower (/follower CM) -- the `/**` wildcard matches under either
+# namespace, so one file serves both. The official namespaced controllers yaml
 # (openarmx_v10_bimanual_controllers_namespaced.yaml) declares ONLY
 # joint_state_broadcaster / JTC / forward_position / gripper — it does NOT
 # declare any forward_effort controller. So /follower/controller_manager has

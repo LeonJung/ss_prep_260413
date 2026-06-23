@@ -30,7 +30,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     eff_params = os.path.join(
         get_package_share_directory('openarmx_bilateral'),
-        'config', 'follower_effort_controller.yaml')
+        'config', 'left_effort_controller.yaml')
 
     return LaunchDescription([
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
