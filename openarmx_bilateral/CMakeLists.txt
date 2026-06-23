@@ -21,6 +21,6 @@ add_executable(log_node src/log_node.cpp)
 ament_target_dependencies(log_node rclcpp sensor_msgs std_msgs)
 
 install(TARGETS relay_node log_node DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
 ament_package()

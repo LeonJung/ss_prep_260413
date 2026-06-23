@@ -1,0 +1,26 @@
+# Effort controller params for the FOLLOWER (left arm), spawned by
+# follower_gravity.launch.py. The official namespaced controllers yaml
+# (openarmx_v10_bimanual_controllers_namespaced.yaml) declares ONLY
+# joint_state_broadcaster / JTC / forward_position / gripper — it does NOT
+# declare any forward_effort controller. So /follower/controller_manager has
+# no definition for left_forward_effort_controller and the plain spawner fails
+# with "failed loading controller left_forward_effort_controller".
+#
+# Rather than edit the official package, we hand the spawner the controller
+# TYPE (-t) and these params (--param-file). The `/**` wildcard makes the block
+# match under any namespace (here /follower).
+/**/left_forward_effort_controller:
+  ros__parameters:
+    joints:
+      - openarmx_left_joint1
+      - openarmx_left_joint2
+      - openarmx_left_joint3
+      - openarmx_left_joint4
+      - openarmx_left_joint5
+      - openarmx_left_joint6
+      - openarmx_left_joint7
+    interface_name: effort
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position

@@ -10,9 +10,17 @@
 #   * this launch spawns the follower's effort controller AND a gravity_comp_node
 #     REMAPPED onto /follower (left arm only).
 #
+# The namespaced controllers yaml does NOT declare any forward_effort controller,
+# so /follower/controller_manager doesn't know it -> a plain spawner fails. We
+# therefore give the spawner the controller TYPE (-t) and a param file (-p,
+# config/follower_effort_controller.yaml) so it can load the controller itself.
+#
 # ON  = run this launch.   OFF = don't.
 #   ros2 launch openarmx_bilateral follower_gravity.launch.py
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.substitutions import LaunchConfiguration
@@ -20,15 +28,22 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    eff_params = os.path.join(
+        get_package_share_directory('openarmx_bilateral'),
+        'config', 'follower_effort_controller.yaml')
+
     return LaunchDescription([
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
         DeclareLaunchArgument('g_scale', default_value='1.05'),
         DeclareLaunchArgument('cm', default_value='/follower/controller_manager'),
-        # 1) spawn the follower's left effort controller (so gravity torque applies)
+        # 1) spawn the follower's left effort controller. The namespaced yaml does
+        #    not declare it, so pass the type and params explicitly.
         Node(
             package='controller_manager', executable='spawner', output='screen',
-            arguments=['left_forward_effort_controller', '-c',
-                       LaunchConfiguration('cm')],
+            arguments=['left_forward_effort_controller',
+                       '-c', LaunchConfiguration('cm'),
+                       '-t', 'forward_command_controller/ForwardCommandController',
+                       '-p', eff_params],
         ),
         # 2) gravity_comp_node REMAPPED onto /follower (left only), after the
         #    controller is up
