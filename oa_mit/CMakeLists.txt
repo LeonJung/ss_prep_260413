@@ -52,8 +52,12 @@ add_executable(oa_mit_bilateral_dual_threaded_node src/oa_mit_bilateral_dual_thr
 target_link_libraries(oa_mit_bilateral_dual_threaded_node oa_mit_dynamics pthread)
 ament_target_dependencies(oa_mit_bilateral_dual_threaded_node rclcpp)
 
+# Version A: cross-relay for full ros2_control bilateral (both arms official HW)
+add_executable(oa_mit_relay_node src/oa_mit_relay_node.cpp)
+ament_target_dependencies(oa_mit_relay_node rclcpp sensor_msgs std_msgs)
+
 install(TARGETS oa_mit_bilateral_node oa_mit_bilateral_dual_node
-                oa_mit_bilateral_dual_threaded_node
+                oa_mit_bilateral_dual_threaded_node oa_mit_relay_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
