@@ -23,16 +23,19 @@
 
 class RelayNode : public rclcpp::Node {
 public:
-    RelayNode() : Node("oa_bilateral_relay") {
+    RelayNode() : Node("openarmx_bilateral_relay") {
         // LEFT defaults (override arm_side / topics for right or different ns)
         declare_parameter<std::string>("arm_side", "left_arm");   // left_arm | right_arm
         std::string side = get_parameter("arm_side").as_string();
         std::string sp = (side == "right_arm") ? "right" : "left";
 
-        declare_parameter<std::string>("leader_states",   "/leader/joint_states");
+        // LEADER runs NON-namespaced so the official gravity_comp_node (absolute
+        // topics) reaches it; FOLLOWER under /follower. Override if your bringup
+        // namespacing differs.
+        declare_parameter<std::string>("leader_states",   "/joint_states");
         declare_parameter<std::string>("follower_states", "/follower/joint_states");
         declare_parameter<std::string>("leader_cmd",
-            "/leader/" + sp + "_forward_position_controller/commands");
+            "/" + sp + "_forward_position_controller/commands");
         declare_parameter<std::string>("follower_cmd",
             "/follower/" + sp + "_forward_position_controller/commands");
         declare_parameter<std::string>("joint_prefix", "openarmx_" + sp + "_joint");   // +1..7
@@ -68,7 +71,7 @@ public:
 
         timer_ = create_wall_timer(std::chrono::microseconds(1000000 / std::max(1, rate)),
                                    [this] { tick(); });
-        RCLCPP_INFO(get_logger(), "oa_bilateral relay: side=%s mode=%s n=%d sign=%.0f gripper=%s",
+        RCLCPP_INFO(get_logger(), "openarmx_bilateral relay: side=%s mode=%s n=%d sign=%.0f gripper=%s",
                     side.c_str(), bilateral_ ? "BILATERAL" : "unilateral",
                     nj_, couple_sign_, include_gripper_ ? "yes" : "no");
     }

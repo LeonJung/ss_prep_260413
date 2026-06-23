@@ -1,4 +1,4 @@
-# oa_bilateral — OpenArmX bilateral force-feedback teleop
+# openarmx_bilateral — OpenArmX bilateral force-feedback teleop
 
 Topic-only cross-relay built on the official **ros2_control MIT** stack (the
 standard openarmx control method — the HW interface does CAN/MIT; this node only
@@ -30,7 +30,7 @@ position (no DOB / energy tank — none exist upstream either).
 3. URDF for gravity_comp if used: `/tmp/v10_bimanual.urdf` (xacro v10 bimanual).
 4. Relay (unilateral):
 ```bash
-ros2 launch oa_bilateral relay.launch.py        # left, bilateral:=false
+ros2 launch openarmx_bilateral relay.launch.py        # left, bilateral:=false
 ```
 Verify: move leader-left by hand → follower-left tracks smoothly (q1-q7). Check
 the topic names with `ros2 topic list` and override leader_states/follower_states
@@ -38,7 +38,7 @@ the topic names with `ros2 topic list` and override leader_states/follower_state
 
 ## Step (c): bilateral force feedback
 ```bash
-ros2 launch oa_bilateral relay.launch.py bilateral:=true
+ros2 launch openarmx_bilateral relay.launch.py bilateral:=true
 # leader kp soft for force feel, e.g.:
 ros2 param set /leader/openarmx_left_hardware_params kp_joint1 15.0   # ...joint2..7
 ```
