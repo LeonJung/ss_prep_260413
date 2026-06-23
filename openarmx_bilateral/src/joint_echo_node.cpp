@@ -45,20 +45,29 @@ private:
         for (size_t k = 0; k < msg->name.size() && k < msg->position.size(); ++k)
             m[msg->name[k]] = msg->position[k];
     }
-    static std::string fmt(const std::map<std::string, double>& m) {
-        std::string s;
-        char buf[80];
-        for (const auto& kv : m) {   // std::map => sorted by joint name
-            std::snprintf(buf, sizeof(buf), "  %-26s % .4f rad (% 7.2f deg)\n",
-                          kv.first.c_str(), kv.second, kv.second * 180.0 / 3.14159265358979);
+    // one line per arm: j1..j7 angles in degrees
+    static std::string arm_line(const std::map<std::string, double>& m,
+                                const char* label, const std::string& side) {
+        char buf[64];
+        std::string s = label;
+        for (int j = 1; j <= 7; ++j) {
+            auto it = m.find("openarmx_" + side + "_joint" + std::to_string(j));
+            if (it == m.end()) { s += "  j" + std::to_string(j) + ":   --  "; continue; }
+            std::snprintf(buf, sizeof(buf), "  j%d:% 7.1f", j, it->second * 180.0 / 3.14159265358979);
             s += buf;
         }
-        return s;
+        return s + "\n";
     }
     void dump() {
-        std::string out = "\n===== JOINT ANGLES =====\n";
-        out += have_l_ ? "[LEADER]\n"   + fmt(lmap_) : "[LEADER]   (no data)\n";
-        out += have_f_ ? "[FOLLOWER]\n" + fmt(fmap_) : "[FOLLOWER] (no data)\n";
+        std::string out = "\n===== JOINT ANGLES (deg) =====\n";
+        if (have_l_) {
+            out += arm_line(lmap_, "[LEADER  L]", "left");
+            out += arm_line(lmap_, "[LEADER  R]", "right");
+        } else out += "[LEADER]   (no data)\n";
+        if (have_f_) {
+            out += arm_line(fmap_, "[FOLLOW  L]", "left");
+            out += arm_line(fmap_, "[FOLLOW  R]", "right");
+        } else out += "[FOLLOWER] (no data)\n";
         RCLCPP_INFO(get_logger(), "%s", out.c_str());
     }
 
