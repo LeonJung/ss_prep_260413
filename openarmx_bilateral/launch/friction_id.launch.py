@@ -24,6 +24,7 @@ from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -56,9 +57,9 @@ def generate_launch_description():
         package='openarmx_bilateral', executable='friction_id_node',
         name='openarmx_friction_id', output='screen',
         parameters=[{
-            'csv': LaunchConfiguration('csv'),
-            'range': LaunchConfiguration('range'),
-            'dwell': LaunchConfiguration('dwell'),
+            'csv': ParameterValue(LaunchConfiguration('csv'), value_type=str),
+            'range': ParameterValue(LaunchConfiguration('range'), value_type=float),
+            'dwell': ParameterValue(LaunchConfiguration('dwell'), value_type=float),
         }],
     )])
 
