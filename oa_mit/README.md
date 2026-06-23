@@ -64,6 +64,43 @@ ros2 launch oa_mit oa_mit_bilateral.launch.py couple_kp:=8.0
 | `kd_damp` | 0.0 | global leader damping |
 | `gdir` | (0,∓9.81,0) | gravity in link0 (Y axis per mount) |
 
+## STEP2 팡팡 — two architectures to compare (A vs B)
+
+q3-q7 popped with the SINGLE-loop dual node (`oa_mit_bilateral_dual_node`):
+one thread serializing BOTH CAN buses → irregular MIT setpoints → low-inertia
+wrist jerks. The official ros2_control follower (dedicated per-arm loop) was
+smooth. Two fixes, built side by side:
+
+### Version A — ros2_control follower (official smooth HW) + our leader node
+Follower driven by the official `forward_position_controller` (per-arm HW loop,
+the smooth path); leader = `oa_mit_bilateral_node` (gravity float + motor-side
+MIT coupling toward follower /joint_states for force feedback).
+```bash
+# [control PC] terminal 1: official FOLLOWER bringup (can2/can3)
+ros2 launch openarmx_bringup openarmx.bimanual.launch.py \
+     right_can_interface:=can2 left_can_interface:=can3 \
+     control_mode:=mit robot_controller:=forward_position_controller
+# terminal 2: our LEADER node (gravity float; couple_kp=0 unilateral, >0 force fb)
+ros2 launch oa_mit oa_mit_bilateral.launch.py couple_kp:=0.0
+```
+
+### Version B — single process, ONE THREAD PER ARM (our node, decoupled CAN)
+`oa_mit_bilateral_dual_threaded_node`: each arm has its own thread + steady CAN
+loop, peer state in-memory. Same control law/gains as the single-loop node.
+Owns both arms' CAN → do NOT run the follower bringup.
+```bash
+# [control PC]
+ros2 launch oa_mit oa_mit_bilateral_dual_threaded.launch.py \
+     arm_side:=right_arm follower_gain:=1.0 verbose:=true
+```
+Watch the per-thread `[leader]/[follower] Hz, max gap` print — should be steady
+~250 Hz with small gaps if the per-arm threads fixed the timing.
+
+Compare q3-q7 smoothness: A (official HW follower) vs B (our threaded). Both
+should beat the single-loop node. A is most-proven-smooth but ties us to
+ros2_control + topic relay; B is self-contained (fits the 2-PC remote path with
+the topic split later).
+
 ## Provenance / license
 `src/oa_mit_bilateral_node.cpp` is derived from, and `src/dynamics.cpp` +
 `include/dynamics.hpp` are copied verbatim from,

@@ -42,12 +42,18 @@ target_link_libraries(oa_mit_bilateral_node oa_mit_dynamics)
 ament_target_dependencies(oa_mit_bilateral_node
   rclcpp std_msgs sensor_msgs)
 
-# M1: single-process dual-arm bilateral (both arms direct CAN, in-memory)
+# M1 Version B-base: single-process dual-arm bilateral, SINGLE loop (both buses)
 add_executable(oa_mit_bilateral_dual_node src/oa_mit_bilateral_dual_node.cpp)
 target_link_libraries(oa_mit_bilateral_dual_node oa_mit_dynamics)
 ament_target_dependencies(oa_mit_bilateral_dual_node rclcpp)
 
+# M1 Version B: single process, ONE THREAD PER ARM (decoupled CAN timing)
+add_executable(oa_mit_bilateral_dual_threaded_node src/oa_mit_bilateral_dual_threaded_node.cpp)
+target_link_libraries(oa_mit_bilateral_dual_threaded_node oa_mit_dynamics pthread)
+ament_target_dependencies(oa_mit_bilateral_dual_threaded_node rclcpp)
+
 install(TARGETS oa_mit_bilateral_node oa_mit_bilateral_dual_node
+                oa_mit_bilateral_dual_threaded_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
