@@ -16,7 +16,11 @@ find_package(std_msgs REQUIRED)
 add_executable(relay_node src/relay_node.cpp)
 ament_target_dependencies(relay_node rclcpp sensor_msgs std_msgs)
 
-install(TARGETS relay_node DESTINATION lib/${PROJECT_NAME})
+# Phase-1 logger: follower cmd-vs-actual CSV for the gravity-comp A/B test
+add_executable(log_node src/log_node.cpp)
+ament_target_dependencies(log_node rclcpp sensor_msgs std_msgs)
+
+install(TARGETS relay_node log_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 ament_package()
