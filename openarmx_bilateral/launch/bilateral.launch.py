@@ -23,6 +23,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             TimerAction)
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -31,18 +32,35 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg = get_package_share_directory('openarmx_bilateral')
     eff_params = os.path.join(pkg, 'config', 'left_effort_controller.yaml')
+    vel_params = os.path.join(pkg, 'config', 'left_velocity_controller.yaml')
     urdf = LaunchConfiguration('urdf_path')
     g_scale = LaunchConfiguration('g_scale')
+    vel_ff = LaunchConfiguration('vel_ff')
 
-    # --- relay + auto leader kp/kd (defaults 0/0) ---
+    # --- relay + auto leader/follower kp/kd (set all joints in one shot) ---
     relay = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(pkg, 'launch', 'relay.launch.py')),
         launch_arguments={
             'arm_side': LaunchConfiguration('arm_side'),
             'bilateral': LaunchConfiguration('bilateral'),
+            'vel_ff': vel_ff,
             'leader_kp': LaunchConfiguration('leader_kp'),
             'leader_kd': LaunchConfiguration('leader_kd'),
+            'follower_kp': LaunchConfiguration('follower_kp'),
+            'follower_kd': LaunchConfiguration('follower_kd'),
         }.items(),
+    )
+
+    # --- follower velocity controller (Phase 2): only when vel_ff:=true.
+    #     Claims the VELOCITY interface only, so it runs alongside the position
+    #     controller -> MIT command gets both {pos, vel}. ---
+    follower_vel = Node(
+        package='controller_manager', executable='spawner', output='screen',
+        condition=IfCondition(vel_ff),
+        arguments=['left_forward_velocity_controller',
+                   '-c', '/follower/controller_manager',
+                   '-t', 'forward_command_controller/ForwardCommandController',
+                   '-p', vel_params],
     )
 
     # --- follower effort controller + gravity comp (already remapped onto /follower) ---
@@ -73,12 +91,16 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('arm_side', default_value='left_arm'),
         DeclareLaunchArgument('bilateral', default_value='false'),
+        DeclareLaunchArgument('vel_ff', default_value='false'),  # Phase 2 velocity FF A/B
         DeclareLaunchArgument('leader_kp', default_value='0.0'),
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
+        DeclareLaunchArgument('follower_kp', default_value=''),  # '' => keep HW defaults
+        DeclareLaunchArgument('follower_kd', default_value=''),
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
         DeclareLaunchArgument('g_scale', default_value='1.05'),
         relay,
         leader_eff,
         leader_grav,
         follower_grav,
+        follower_vel,
     ])

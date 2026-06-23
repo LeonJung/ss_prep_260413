@@ -32,6 +32,7 @@ def launch_setup(context, *args, **kwargs):
         parameters=[{
             'arm_side': LaunchConfiguration('arm_side'),
             'bilateral': LaunchConfiguration('bilateral'),
+            'vel_ff': LaunchConfiguration('vel_ff'),
             'couple_sign': LaunchConfiguration('couple_sign'),
             'rate_hz': LaunchConfiguration('rate_hz'),
             'leader_states': LaunchConfiguration('leader_states'),
@@ -42,21 +43,33 @@ def launch_setup(context, *args, **kwargs):
     )
     actions = [relay]
 
-    if LaunchConfiguration('set_leader_gains').perform(context).lower() == 'true':
-        kp = LaunchConfiguration('leader_kp').perform(context)
-        kd = LaunchConfiguration('leader_kd').perform(context)
-        node = LaunchConfiguration('leader_param_node').perform(context)
-        if not node:
-            node = '/openarmx_%s_hardware_params' % sp
-        n = int(LaunchConfiguration('n_joints').perform(context))
+    n = int(LaunchConfiguration('n_joints').perform(context))
+
+    def gain_loop(label, node, kp, kd):
+        # set kp_joint1..n and kd_joint1..n in ONE shot (no hand-tuning per joint)
         cmd = ('for j in $(seq 1 %d); do '
                'ros2 param set %s kp_joint$j %s; '
                'ros2 param set %s kd_joint$j %s; done; '
-               'echo "[openarmx_bilateral] leader gains set: kp=%s kd=%s on %s"'
-               % (n, node, kp, node, kd, kp, kd, node))
-        # delay so the leader HW param node is up (bring up the robots first)
-        actions.append(TimerAction(period=3.0, actions=[
-            ExecuteProcess(cmd=['bash', '-lc', cmd], output='screen')]))
+               'echo "[openarmx_bilateral] %s gains set: kp=%s kd=%s on %s"'
+               % (n, node, kp, node, kd, label, kp, kd, node))
+        # delay so the HW param node is up (bring up the robots first)
+        return TimerAction(period=3.0, actions=[
+            ExecuteProcess(cmd=['bash', '-lc', cmd], output='screen')])
+
+    if LaunchConfiguration('set_leader_gains').perform(context).lower() == 'true':
+        node = LaunchConfiguration('leader_param_node').perform(context) \
+            or '/openarmx_%s_hardware_params' % sp
+        actions.append(gain_loop('leader', node,
+                                 LaunchConfiguration('leader_kp').perform(context),
+                                 LaunchConfiguration('leader_kd').perform(context)))
+
+    # follower gains: only touched if BOTH kp and kd given (else keep HW defaults)
+    fkp = LaunchConfiguration('follower_kp').perform(context)
+    fkd = LaunchConfiguration('follower_kd').perform(context)
+    if fkp != '' and fkd != '':
+        node = LaunchConfiguration('follower_param_node').perform(context) \
+            or '/follower/openarmx_%s_hardware_params' % sp
+        actions.append(gain_loop('follower', node, fkp, fkd))
     return actions
 
 
@@ -64,6 +77,7 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('arm_side', default_value='left_arm'),
         DeclareLaunchArgument('bilateral', default_value='false'),
+        DeclareLaunchArgument('vel_ff', default_value='false'),     # Phase 2 velocity FF
         DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on HW
         DeclareLaunchArgument('rate_hz', default_value='200'),
         # leader gains auto-set (no manual param-set loop). unilateral: 0/0.
@@ -71,6 +85,10 @@ def generate_launch_description():
         DeclareLaunchArgument('leader_kp', default_value='0.0'),   # bilateral: ~15 (soft)
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
         DeclareLaunchArgument('leader_param_node', default_value=''),  # '' => /openarmx_<side>_hardware_params
+        # follower gains: '' = keep HW defaults; set BOTH to override all joints at once
+        DeclareLaunchArgument('follower_kp', default_value=''),
+        DeclareLaunchArgument('follower_kd', default_value=''),
+        DeclareLaunchArgument('follower_param_node', default_value=''),  # '' => /follower/openarmx_<side>_hardware_params
         DeclareLaunchArgument('n_joints', default_value='7'),
         # leader NON-namespaced (gravity_comp reaches it); follower /follower
         DeclareLaunchArgument('leader_states', default_value='/joint_states'),

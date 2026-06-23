@@ -45,6 +45,15 @@ public:
         declare_parameter<double>("couple_sign", 1.0);   // +1 verified on HW (left pair)
         declare_parameter<bool>("bilateral", false);      // false = unilateral (step b)
         declare_parameter<int>("rate_hz", 200);
+        // Phase 2: velocity feedforward. When true, ALSO relay peer JOINT VELOCITY
+        // to the forward_VELOCITY_controller (MIT vel setpoint) so the follower's
+        // kd term tracks the leader's motion instead of damping against vel=0.
+        // OFF by default => identical to v1.1 (position-only). No gripper velocity.
+        declare_parameter<bool>("vel_ff", false);
+        declare_parameter<std::string>("follower_vel_cmd",
+            "/follower/" + sp + "_forward_velocity_controller/commands");
+        declare_parameter<std::string>("leader_vel_cmd",
+            "/" + sp + "_forward_velocity_controller/commands");
 
         nj_ = get_parameter("n_joints").as_int();
         std::string jp = get_parameter("joint_prefix").as_string();
@@ -53,35 +62,48 @@ public:
         include_gripper_ = get_parameter("include_gripper").as_bool();
         couple_sign_ = get_parameter("couple_sign").as_double();
         bilateral_ = get_parameter("bilateral").as_bool();
+        vel_ff_ = get_parameter("vel_ff").as_bool();
         int rate = get_parameter("rate_hz").as_int();
 
         ql_.assign(nj_, 0.0); qf_.assign(nj_, 0.0);
+        vl_.assign(nj_, 0.0); vf_.assign(nj_, 0.0);
 
         follower_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
             get_parameter("follower_cmd").as_string(), 10);
         if (bilateral_)
             leader_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
                 get_parameter("leader_cmd").as_string(), 10);
+        if (vel_ff_) {
+            follower_vel_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+                get_parameter("follower_vel_cmd").as_string(), 10);
+            if (bilateral_)
+                leader_vel_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+                    get_parameter("leader_vel_cmd").as_string(), 10);
+        }
         leader_sub_ = create_subscription<sensor_msgs::msg::JointState>(
             get_parameter("leader_states").as_string(), 10,
-            [this](sensor_msgs::msg::JointState::SharedPtr m) { grab(m, ql_, gl_, have_l_); });
+            [this](sensor_msgs::msg::JointState::SharedPtr m) { grab(m, ql_, vl_, gl_, have_l_); });
         follower_sub_ = create_subscription<sensor_msgs::msg::JointState>(
             get_parameter("follower_states").as_string(), 10,
-            [this](sensor_msgs::msg::JointState::SharedPtr m) { grab(m, qf_, gf_, have_f_); });
+            [this](sensor_msgs::msg::JointState::SharedPtr m) { grab(m, qf_, vf_, gf_, have_f_); });
 
         timer_ = create_wall_timer(std::chrono::microseconds(1000000 / std::max(1, rate)),
                                    [this] { tick(); });
-        RCLCPP_INFO(get_logger(), "openarmx_bilateral relay: side=%s mode=%s n=%d sign=%.0f gripper=%s",
+        RCLCPP_INFO(get_logger(), "openarmx_bilateral relay: side=%s mode=%s vel_ff=%s n=%d sign=%.0f gripper=%s",
                     side.c_str(), bilateral_ ? "BILATERAL" : "unilateral",
-                    nj_, couple_sign_, include_gripper_ ? "yes" : "no");
+                    vel_ff_ ? "on" : "off", nj_, couple_sign_, include_gripper_ ? "yes" : "no");
     }
 
 private:
     void grab(const sensor_msgs::msg::JointState::SharedPtr& m,
-              std::vector<double>& q, double& grip, bool& have) {
+              std::vector<double>& q, std::vector<double>& v, double& grip, bool& have) {
         for (int j = 0; j < nj_; ++j)
             for (size_t k = 0; k < m->name.size(); ++k)
-                if (m->name[k] == names_[j] && k < m->position.size()) { q[j] = m->position[k]; break; }
+                if (m->name[k] == names_[j]) {
+                    if (k < m->position.size()) q[j] = m->position[k];
+                    if (k < m->velocity.size()) v[j] = m->velocity[k];
+                    break;
+                }
         for (size_t k = 0; k < m->name.size(); ++k)
             if (m->name[k] == gripper_name_ && k < m->position.size()) { grip = m->position[k]; break; }
         have = true;
@@ -92,18 +114,30 @@ private:
         if (include_gripper_) msg.data.push_back(src_grip);   // gripper relayed directly
         return msg;
     }
+    std_msgs::msg::Float64MultiArray makeVel(const std::vector<double>& src_vel) {
+        std_msgs::msg::Float64MultiArray msg;                 // velocity controller: 7 joints, no gripper
+        for (int j = 0; j < nj_; ++j) msg.data.push_back(couple_sign_ * src_vel[j]);
+        return msg;
+    }
     void tick() {
-        if (have_l_) follower_pub_->publish(make(ql_, gl_));            // follower tracks leader
-        if (bilateral_ && have_f_) leader_pub_->publish(make(qf_, gf_)); // leader feels follower
+        if (have_l_) {
+            follower_pub_->publish(make(ql_, gl_));            // follower tracks leader pos
+            if (vel_ff_) follower_vel_pub_->publish(makeVel(vl_)); // + leader vel feedforward
+        }
+        if (bilateral_ && have_f_) {
+            leader_pub_->publish(make(qf_, gf_));              // leader feels follower pos
+            if (vel_ff_) leader_vel_pub_->publish(makeVel(vf_));
+        }
     }
 
     int nj_ = 7;
-    bool include_gripper_ = true, bilateral_ = false, have_l_ = false, have_f_ = false;
+    bool include_gripper_ = true, bilateral_ = false, vel_ff_ = false, have_l_ = false, have_f_ = false;
     double couple_sign_ = -1.0, gl_ = 0.0, gf_ = 0.0;
     std::string gripper_name_;
     std::vector<std::string> names_;
-    std::vector<double> ql_, qf_;
+    std::vector<double> ql_, qf_, vl_, vf_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr leader_pub_, follower_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr leader_vel_pub_, follower_vel_pub_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr leader_sub_, follower_sub_;
     rclcpp::TimerBase::SharedPtr timer_;
 };

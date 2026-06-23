@@ -1,0 +1,22 @@
+# Velocity controller params for the LEFT arm (Phase 2 velocity feedforward),
+# spawned with explicit -t/-p (same reason as the effort controller: the
+# namespaced controllers yaml declares no forward_velocity controller). The `/**`
+# wildcard matches under any namespace (here /follower). This controller claims
+# only the joints' VELOCITY command interface, so it runs ALONGSIDE the
+# forward_position_controller (which claims POSITION) -- together they feed the
+# MIT command {pos, vel}. No gripper.
+/**/left_forward_velocity_controller:
+  ros__parameters:
+    joints:
+      - openarmx_left_joint1
+      - openarmx_left_joint2
+      - openarmx_left_joint3
+      - openarmx_left_joint4
+      - openarmx_left_joint5
+      - openarmx_left_joint6
+      - openarmx_left_joint7
+    interface_name: velocity
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - velocity
