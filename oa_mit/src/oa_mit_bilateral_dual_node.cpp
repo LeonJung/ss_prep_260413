@@ -254,6 +254,20 @@ public:
 
 private:
     void loop() {
+        // --- loop-rate diagnostic: is the single 2-bus loop actually steady?
+        // jittery period => irregular MIT setpoints => 팡팡 on low-inertia joints.
+        auto tnow = std::chrono::steady_clock::now();
+        if (!first_tick_) {
+            double d = std::chrono::duration<double>(tnow - t_prev_).count();
+            rate_sum_ += d; if (d > rate_max_) rate_max_ = d; ++rate_n_;
+            if (rate_n_ >= 500) {
+                RCLCPP_INFO(get_logger(), "[loop] %.0f Hz avg, max gap %.1f ms (last 500)",
+                            500.0 / rate_sum_, rate_max_ * 1000.0);
+                rate_sum_ = 0.0; rate_max_ = 0.0; rate_n_ = 0;
+            }
+        }
+        first_tick_ = false; t_prev_ = tnow;
+
         // read enabled arm(s) fresh this cycle (in-memory, no topic)
         if (en_leader_)   { leader_.read();   leader_.gravity(); }
         if (en_follower_) { follower_.read(); follower_.gravity(); }
@@ -277,6 +291,10 @@ private:
     bool verbose_ = false;
     bool en_leader_ = true, en_follower_ = true;
     long tick_ = 0;
+    // loop-rate diagnostic
+    std::chrono::steady_clock::time_point t_prev_;
+    bool first_tick_ = true;
+    double rate_sum_ = 0.0, rate_max_ = 0.0; long rate_n_ = 0;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 
