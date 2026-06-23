@@ -170,6 +170,11 @@ public:
         //   *_gain = 0 => that arm weightless (coupling off).
         declare_parameter<double>("leader_gain", 0.0);
         declare_parameter<double>("follower_gain", 0.0);
+        // kd is scaled with gain at the openarmx ratio (kd=0.05*kp) by default.
+        // Raise *_kd_scale to add DAMPING independently (vs vibration) without
+        // changing kp. 1.0 = openarmx-proportional.
+        declare_parameter<double>("leader_kd_scale", 1.0);
+        declare_parameter<double>("follower_kd_scale", 1.0);
         declare_parameter<bool>("vel_ff", false);        // peer-velocity FF (off=smooth)
         declare_parameter<double>("couple_sign", -1.0);  // relay convention; verify on HW
         declare_parameter<bool>("verbose", false);
@@ -203,19 +208,21 @@ public:
         const std::vector<double> KD_BASE = {2.5, 2.5, 2.5, 2.5, 0.5, 0.5, 0.5};
         double lgain = get_parameter("leader_gain").as_double();
         double fgain = get_parameter("follower_gain").as_double();
+        double lkds = get_parameter("leader_kd_scale").as_double();
+        double fkds = get_parameter("follower_kd_scale").as_double();
         bool velff = get_parameter("vel_ff").as_bool();
-        auto setup = [&](Arm& a, const std::string& nm, double gain) {
+        auto setup = [&](Arm& a, const std::string& nm, double gain, double kd_scale) {
             a.name = nm; a.g_scale = gscale; a.tau_limit = tau_lim;
             a.gain = gain; a.vel_ff = velff;
             a.kp_vec.assign(KP_BASE.size(), 0.0);
             a.kd_vec.assign(KD_BASE.size(), 0.0);
             for (size_t i = 0; i < KP_BASE.size(); ++i) {
                 a.kp_vec[i] = KP_BASE[i] * gain;
-                a.kd_vec[i] = KD_BASE[i] * gain;
+                a.kd_vec[i] = KD_BASE[i] * gain * kd_scale;   // independent damping knob
             }
         };
-        setup(leader_,   "leader",   lgain);
-        setup(follower_, "follower", fgain);
+        setup(leader_,   "leader",   lgain, lkds);
+        setup(follower_, "follower", fgain, fkds);
 
         RCLCPP_INFO(get_logger(), "init leader=%s follower=%s side=%s rate=%d gdir=[%.1f %.1f %.1f]",
                     lcan.c_str(), fcan.c_str(), side_.c_str(), rate, gx, gy, gz);
