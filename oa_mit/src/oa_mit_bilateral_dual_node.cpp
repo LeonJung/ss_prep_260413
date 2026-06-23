@@ -47,7 +47,9 @@ struct Arm {
     std::string name;
     std::vector<double> dir;          // motor dir signs (joint = dir*motor)
     std::vector<double> tau_limit;    // FF torque clamp [Nm], joint frame
-    double kp = 0.0, kd = 1.0;        // motor-side coupling MIT gains
+    std::vector<double> kp_vec, kd_vec;  // PER-JOINT motor-side MIT gains
+    double gain = 0.0;                // coupling on/off + scale (0 => weightless)
+    bool vel_ff = false;             // inject peer velocity? (off = smooth, like openarmx)
     double g_scale = 0.9;
     size_t nj = 7;
     // live state
@@ -120,9 +122,12 @@ struct Arm {
             double tau_motor = std::clamp(s * tau_ff_joint, -lim, lim);
             openarmx::robstride_motor::MotionControlParam p{};
             if (couple_on) {
-                p.kp = kp; p.kd = kd;
+                p.kp = (i < kp_vec.size()) ? kp_vec[i] : 0.0;   // per-joint
+                p.kd = (i < kd_vec.size()) ? kd_vec[i] : 0.0;
                 p.position = couple_sign * (i < peer_qm.size() ? peer_qm[i] : 0.0);
-                p.velocity = couple_sign * (i < peer_dqm.size() ? peer_dqm[i] : 0.0);
+                // velocity FF off by default (noisy peer wrist velocity -> 팡팡);
+                // openarmx follower used vel=0 + per-joint kp and was smooth.
+                p.velocity = vel_ff ? couple_sign * (i < peer_dqm.size() ? peer_dqm[i] : 0.0) : 0.0;
             } else { p.kp = 0; p.kd = 0; p.position = 0; p.velocity = 0; }
             p.torque = tau_motor;
             cmds.push_back(p);
@@ -158,11 +163,14 @@ public:
         // gdir derived from arm_side (right=(0,-9.81,0), left=(0,+9.81,0)) per the
         // openarmx mount convention; override via gx/gy/gz if needed.
         declare_parameter<double>("gy_override", 0.0);  // 0 => auto from arm_side
-        // asymmetric coupling (motor-side MIT): follower stiff, leader soft.
-        declare_parameter<double>("leader_kp", 0.0);   // 0 => weightless parity; raise (10-20)
-        declare_parameter<double>("leader_kd", 1.0);
-        declare_parameter<double>("follower_kp", 0.0); // 0 => weightless parity; raise (30-50)
-        declare_parameter<double>("follower_kd", 1.5);
+        // Coupling = GAIN (scale) on a per-joint base profile (openarmx-proven
+        // shape: shoulder kp 50, wrist kp 10 -> wrist auto-softer, no 팡팡).
+        //   follower_gain=1.0 == openarmx follower gains (smooth).
+        //   leader_gain   = soft leader for force feedback (e.g. 0.3).
+        //   *_gain = 0 => that arm weightless (coupling off).
+        declare_parameter<double>("leader_gain", 0.0);
+        declare_parameter<double>("follower_gain", 0.0);
+        declare_parameter<bool>("vel_ff", false);        // peer-velocity FF (off=smooth)
         declare_parameter<double>("couple_sign", -1.0);  // relay convention; verify on HW
         declare_parameter<bool>("verbose", false);
         // select which arm(s) of the pair to bring up. Run one alone (e.g.
@@ -190,17 +198,32 @@ public:
         std::string leaf = (side_ == "left_arm") ? "openarmx_left_link7" : "openarmx_right_link7";
 
         const std::vector<double> tau_lim = {10, 10, 5, 5, 2, 2, 2};
-        leader_.name = "leader";   leader_.g_scale = gscale;  leader_.tau_limit = tau_lim;
-        leader_.kp = get_parameter("leader_kp").as_double();
-        leader_.kd = get_parameter("leader_kd").as_double();
-        follower_.name = "follower"; follower_.g_scale = gscale; follower_.tau_limit = tau_lim;
-        follower_.kp = get_parameter("follower_kp").as_double();
-        follower_.kd = get_parameter("follower_kd").as_double();
+        // per-joint base profile (openarmx HW: shoulder 50 / wrist 10; kd ~0.05*kp)
+        const std::vector<double> KP_BASE = {50, 50, 50, 50, 10, 10, 10};
+        const std::vector<double> KD_BASE = {2.5, 2.5, 2.5, 2.5, 0.5, 0.5, 0.5};
+        double lgain = get_parameter("leader_gain").as_double();
+        double fgain = get_parameter("follower_gain").as_double();
+        bool velff = get_parameter("vel_ff").as_bool();
+        auto setup = [&](Arm& a, const std::string& nm, double gain) {
+            a.name = nm; a.g_scale = gscale; a.tau_limit = tau_lim;
+            a.gain = gain; a.vel_ff = velff;
+            a.kp_vec.assign(KP_BASE.size(), 0.0);
+            a.kd_vec.assign(KD_BASE.size(), 0.0);
+            for (size_t i = 0; i < KP_BASE.size(); ++i) {
+                a.kp_vec[i] = KP_BASE[i] * gain;
+                a.kd_vec[i] = KD_BASE[i] * gain;
+            }
+        };
+        setup(leader_,   "leader",   lgain);
+        setup(follower_, "follower", fgain);
 
         RCLCPP_INFO(get_logger(), "init leader=%s follower=%s side=%s rate=%d gdir=[%.1f %.1f %.1f]",
                     lcan.c_str(), fcan.c_str(), side_.c_str(), rate, gx, gy, gz);
-        RCLCPP_INFO(get_logger(), "leader kp=%.1f kd=%.1f | follower kp=%.1f kd=%.1f | couple_sign=%.0f",
-                    leader_.kp, leader_.kd, follower_.kp, follower_.kd, couple_sign_);
+        RCLCPP_INFO(get_logger(),
+            "leader_gain=%.2f follower_gain=%.2f vel_ff=%s couple_sign=%.0f "
+            "(kp profile: shoulder %.0f/%.0f wrist %.0f/%.0f)",
+            lgain, fgain, velff ? "on" : "off", couple_sign_,
+            KP_BASE[0]*fgain, KP_BASE[0]*lgain, KP_BASE[6]*fgain, KP_BASE[6]*lgain);
         en_leader_   = get_parameter("enable_leader").as_bool();
         en_follower_ = get_parameter("enable_follower").as_bool();
         if (!en_leader_ && !en_follower_)
@@ -230,10 +253,10 @@ private:
         // symmetric coupling: each tracks the other — but only if the PEER is
         // enabled (single-arm mode => no peer => weightless gravity float).
         if (en_leader_)
-            leader_.command(en_follower_ && leader_.kp > 0.0, couple_sign_,
+            leader_.command(en_follower_ && leader_.gain > 0.0, couple_sign_,
                             follower_.qm, follower_.dqm);
         if (en_follower_)
-            follower_.command(en_leader_ && follower_.kp > 0.0, couple_sign_,
+            follower_.command(en_leader_ && follower_.gain > 0.0, couple_sign_,
                               leader_.qm, leader_.dqm);
         if (verbose_ && (++tick_ % 250) == 0 && en_leader_ && en_follower_) {
             RCLCPP_INFO(get_logger(), "q_L0=%.3f q_F0=%.3f  err0=%.3f",
