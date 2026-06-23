@@ -43,7 +43,7 @@ def generate_launch_description():
             arguments=['left_forward_effort_controller',
                        '-c', LaunchConfiguration('cm'),
                        '-t', 'forward_command_controller/ForwardCommandController',
-                       '-p', eff_params],
+                       '-p', eff_params, '--unload-on-kill'],
         ),
         # 2) gravity_comp_node REMAPPED onto /follower (left only), after the
         #    controller is up

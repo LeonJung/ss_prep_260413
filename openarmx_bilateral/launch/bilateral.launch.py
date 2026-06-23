@@ -60,7 +60,7 @@ def generate_launch_description():
         arguments=['left_forward_velocity_controller',
                    '-c', '/follower/controller_manager',
                    '-t', 'forward_command_controller/ForwardCommandController',
-                   '-p', vel_params],
+                   '-p', vel_params, '--unload-on-kill'],
     )
 
     # --- follower effort controller + gravity comp (already remapped onto /follower) ---
@@ -76,7 +76,7 @@ def generate_launch_description():
         arguments=['left_forward_effort_controller',
                    '-c', '/controller_manager',
                    '-t', 'forward_command_controller/ForwardCommandController',
-                   '-p', eff_params],
+                   '-p', eff_params, '--unload-on-kill'],
     )
     # --- leader gravity comp (root topics = leader, no remap) ---
     leader_grav = TimerAction(period=3.0, actions=[Node(
