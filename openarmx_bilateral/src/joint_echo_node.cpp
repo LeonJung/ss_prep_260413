@@ -45,18 +45,18 @@ private:
         for (size_t k = 0; k < msg->name.size() && k < msg->position.size(); ++k)
             m[msg->name[k]] = msg->position[k];
     }
-    // one line per arm: j1..j7 angles in degrees
+    // one line per arm: [n, n, ...] j1..j7 angles in degrees
     static std::string arm_line(const std::map<std::string, double>& m,
                                 const char* label, const std::string& side) {
-        char buf[64];
-        std::string s = label;
+        char buf[32];
+        std::string s = std::string(label) + " [";
         for (int j = 1; j <= 7; ++j) {
             auto it = m.find("openarmx_" + side + "_joint" + std::to_string(j));
-            if (it == m.end()) { s += "  j" + std::to_string(j) + ":   --  "; continue; }
-            std::snprintf(buf, sizeof(buf), "  j%d:% 7.1f", j, it->second * 180.0 / 3.14159265358979);
-            s += buf;
+            if (it == m.end()) s += "--";
+            else { std::snprintf(buf, sizeof(buf), "%.1f", it->second * 180.0 / 3.14159265358979); s += buf; }
+            if (j < 7) s += ", ";
         }
-        return s + "\n";
+        return s + "]\n";
     }
     void dump() {
         std::string out = "\n===== JOINT ANGLES (deg) =====\n";
