@@ -32,7 +32,12 @@ ament_target_dependencies(joint_echo_node rclcpp sensor_msgs)
 add_executable(friction_comp_node src/friction_comp_node.cpp)
 ament_target_dependencies(friction_comp_node rclcpp sensor_msgs std_msgs)
 
-install(TARGETS relay_node log_node friction_id_node joint_echo_node friction_comp_node
+# Phase-3 friction A/B logger: per-joint vel + effort breakdown (meas/cmd/grav/fric)
+add_executable(friction_log_node src/friction_log_node.cpp)
+ament_target_dependencies(friction_log_node rclcpp sensor_msgs std_msgs)
+
+install(TARGETS relay_node log_node friction_id_node joint_echo_node
+        friction_comp_node friction_log_node
         DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
