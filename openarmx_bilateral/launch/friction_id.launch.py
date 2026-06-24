@@ -52,6 +52,15 @@ def generate_launch_description():
              'for j in $(seq 1 7); do ros2 param set %s kp_joint$j 0.0; done; '
              'echo "[friction_id] follower kp=0 set on %s"' % (fparam, fparam)],
         output='screen')])
+    # friction-test-only per-joint ABSOLUTE limits [rad] (NOT control limits).
+    # From the operator's measured safe ranges. LEFT arm (this launch tests left):
+    #   J1 [-135, 45]  J2 [-135, 0]  J3 [-45, 90]  J4 [0, 100]
+    #   J5 [-45, 90]   J6 [0, 45]    J7 [-90, 80]   (deg)
+    # RIGHT (for later): lo=[-0.785,0,-1.571,0,-1.571,-0.785,-1.396]
+    #                    hi=[2.356,2.356,0.785,1.745,0.785,0,1.571]
+    left_lo = [-2.356, -2.356, -0.785, 0.0, -0.785, 0.0, -1.571]
+    left_hi = [0.785, 0.0, 1.571, 1.745, 1.571, 0.785, 1.396]
+
     # friction_id_node after controllers + kp=0 are in place
     idnode = TimerAction(period=6.0, actions=[Node(
         package='openarmx_bilateral', executable='friction_id_node',
@@ -60,6 +69,9 @@ def generate_launch_description():
             'csv': ParameterValue(LaunchConfiguration('csv'), value_type=str),
             'range': ParameterValue(LaunchConfiguration('range'), value_type=float),
             'dwell': ParameterValue(LaunchConfiguration('dwell'), value_type=float),
+            'margin': ParameterValue(LaunchConfiguration('margin'), value_type=float),
+            'joint_lo': left_lo,
+            'joint_hi': left_hi,
         }],
     )])
 
@@ -67,8 +79,9 @@ def generate_launch_description():
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
         DeclareLaunchArgument('g_scale', default_value='1.05'),
         DeclareLaunchArgument('csv', default_value='/tmp/friction_id.csv'),
-        DeclareLaunchArgument('range', default_value='0.45'),   # shuttle half-range [rad]
+        DeclareLaunchArgument('range', default_value='0.45'),   # fallback half-range [rad]
         DeclareLaunchArgument('dwell', default_value='5.0'),    # s per speed level
+        DeclareLaunchArgument('margin', default_value='0.087'), # cushion inside limits [rad] ~5deg
         follower_grav,
         follower_vel,
         set_kp0,

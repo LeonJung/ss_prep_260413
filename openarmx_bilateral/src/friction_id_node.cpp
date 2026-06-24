@@ -23,6 +23,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
@@ -38,8 +39,15 @@ public:
             std::vector<int64_t>{1, 2, 3, 4, 5, 6, 7});
         declare_parameter<std::vector<double>>("speeds",
             std::vector<double>{0.1, 0.2, 0.3, 0.5, 0.8, 1.2});  // rad/s magnitudes
-        declare_parameter<double>("range", 0.45);    // shuttle half-range [rad]
+        declare_parameter<double>("range", 0.45);    // fallback half-range [rad] if no abs bounds
         declare_parameter<double>("dwell", 5.0);      // seconds per speed level
+        // friction-test-only per-joint ABSOLUTE limits [rad] (NOT control limits).
+        // If both arrays are length n_joints, shuttle stays inside [lo,hi]; else
+        // fall back to +-range around the start pose. margin = cushion kept inside
+        // the stated limit to absorb braking overshoot.
+        declare_parameter<std::vector<double>>("joint_lo", std::vector<double>{});
+        declare_parameter<std::vector<double>>("joint_hi", std::vector<double>{});
+        declare_parameter<double>("margin", 0.087);   // ~5 deg
         declare_parameter<std::string>("vel_cmd",
             "/follower/left_forward_velocity_controller/commands");
         declare_parameter<std::string>("states", "/follower/joint_states");
@@ -55,6 +63,12 @@ public:
         speeds_ = get_parameter("speeds").as_double_array();
         range_ = get_parameter("range").as_double();
         dwell_ = get_parameter("dwell").as_double();
+        lo_ = get_parameter("joint_lo").as_double_array();
+        hi_ = get_parameter("joint_hi").as_double_array();
+        margin_ = get_parameter("margin").as_double();
+        use_abs_ = ((int)lo_.size() == nj_ && (int)hi_.size() == nj_);
+        RCLCPP_INFO(get_logger(), "bounds: %s",
+                    use_abs_ ? "per-joint absolute [lo,hi]" : "fallback +-range around start");
 
         // guards: never index an empty schedule (was the SIGSEGV cause)
         if (seq_.empty()) { for (int j = 1; j <= nj_; ++j) seq_.push_back(j); }
@@ -139,10 +153,18 @@ private:
         if (done_) { publish(0.0); return; }
 
         int j = seq_[cur_] - 1;
-        double lo = q0_[j] - range_, hi = q0_[j] + range_;
-        // shuttle: flip near the bounds
-        if (dir_ > 0 && q_[j] >= hi - 0.03) dir_ = -1;
-        else if (dir_ < 0 && q_[j] <= lo + 0.03) dir_ = 1;
+        double lo, hi;
+        if (use_abs_) { lo = lo_[j]; hi = hi_[j]; }
+        else          { lo = q0_[j] - range_; hi = q0_[j] + range_; }
+        if (hi < lo) std::swap(lo, hi);
+        // keep a margin inside the stated limit (shrink if band is narrow)
+        double m = std::min(margin_, 0.3 * (hi - lo));
+        double Blo = lo + m, Bhi = hi - m;
+        // anticipate braking distance so overshoot stays within the margin
+        double brake = std::min(0.4 * (Bhi - Blo), 0.05 + 0.2 * speeds_[spd_]);
+        // shuttle: flip before the bounds (and hard-steer back if already past)
+        if (q_[j] >= Bhi - brake) dir_ = -1;
+        else if (q_[j] <= Blo + brake) dir_ = 1;
         publish(dir_ * speeds_[spd_]);
 
         // advance speed level / joint after dwell
@@ -167,9 +189,9 @@ private:
     int nj_ = 7;
     std::vector<std::string> names_;
     std::vector<int> seq_;
-    std::vector<double> speeds_, q_, v_, eff_, grav_, q0_;
-    double range_ = 0.45, dwell_ = 5.0;
-    bool have_state_ = false, started_ = false, done_ = false;
+    std::vector<double> speeds_, q_, v_, eff_, grav_, q0_, lo_, hi_;
+    double range_ = 0.45, dwell_ = 5.0, margin_ = 0.087;
+    bool use_abs_ = false, have_state_ = false, started_ = false, done_ = false;
     int cur_ = 0, spd_ = 0, dir_ = 1;
     rclcpp::Time t0_, seg_t0_;
     std::ofstream f_;
