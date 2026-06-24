@@ -59,7 +59,6 @@ public:
         nj_ = get_parameter("n_joints").as_int();
         std::string jp = get_parameter("joint_prefix").as_string();
         for (int i = 0; i < nj_; ++i) names_.push_back(jp + std::to_string(i + 1));
-        for (auto j : get_parameter("joints").as_integer_array()) seq_.push_back((int)j);
         speeds_ = get_parameter("speeds").as_double_array();
         range_ = get_parameter("range").as_double();
         dwell_ = get_parameter("dwell").as_double();
@@ -70,15 +69,19 @@ public:
         RCLCPP_INFO(get_logger(), "bounds: %s",
                     use_abs_ ? "per-joint absolute [lo,hi]" : "fallback +-range around start");
 
-        // guards: never index an empty schedule (was the SIGSEGV cause)
-        if (seq_.empty()) { for (int j = 1; j <= nj_; ++j) seq_.push_back(j); }
-        for (auto it = seq_.begin(); it != seq_.end();)        // drop out-of-range joints
-            it = (*it < 1 || *it > nj_) ? seq_.erase(it) : it + 1;
-        if (speeds_.empty()) speeds_ = {0.1, 0.2, 0.3, 0.5, 0.8, 1.2};
-        if (seq_.empty()) {
-            RCLCPP_FATAL(get_logger(), "no valid joints to excite; aborting");
-            throw std::runtime_error("friction_id: empty joint schedule");
+        // SCHEDULE: ALWAYS the full 1..nj_ sweep, built directly here. The old
+        // path (seq_ from the joints param + a drop-out-of-range guard) produced
+        // a wrong [3..7] schedule in the field, so it is removed entirely.
+        {   // diagnostic only: what the joints param actually held
+            std::string raw;
+            for (auto v : get_parameter("joints").as_integer_array())
+                raw += std::to_string(v) + " ";
+            RCLCPP_INFO(get_logger(), "joints param raw=[%s] (IGNORED; full 1..%d sweep)",
+                        raw.c_str(), nj_);
         }
+        seq_.clear();
+        for (int j = 1; j <= nj_; ++j) seq_.push_back(j);   // 1,2,...,nj_  (no guard)
+        if (speeds_.empty()) speeds_ = {0.1, 0.2, 0.3, 0.5, 0.8, 1.2};
 
         // diagnostic: show exactly what schedule/topics this node received
         std::string sched;
