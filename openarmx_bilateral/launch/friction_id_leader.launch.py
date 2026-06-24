@@ -18,7 +18,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess, TimerAction)
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -50,10 +50,14 @@ def generate_launch_description():
         name='leader_gravity_comp', output='screen',
         parameters=[{'urdf_path': urdf, 'g_scale': g_scale,
                      'enable_left': True, 'enable_right': False}])])
-    set_kp0 = TimerAction(period=3.0, actions=[ExecuteProcess(
-        cmd=['bash', '-lc',
-             'for j in $(seq 1 7); do ros2 param set %s kp_joint$j 0.0; done; '
-             'echo "[friction_id] leader kp=0 set on %s"' % (lparam, lparam)],
+    # leader kp -> 0 + kd -> <kd> (torque authority to drive high-friction
+    # shoulders), all 7 joints in one shot. kd does not bias the friction estimate.
+    pre = ('for j in $(seq 1 7); do ros2 param set %s kp_joint$j 0.0; '
+           'ros2 param set %s kd_joint$j ' % (lparam, lparam))
+    post = '; done; echo "[friction_id] leader kp=0 kd set on %s"' % lparam
+    set_gains = TimerAction(period=3.0, actions=[ExecuteProcess(
+        cmd=['bash', '-lc', [TextSubstitution(text=pre),
+                             LaunchConfiguration('kd'), TextSubstitution(text=post)]],
         output='screen')])
     idnode = TimerAction(period=6.0, actions=[Node(
         package='openarmx_bilateral', executable='friction_id_node',
@@ -77,9 +81,10 @@ def generate_launch_description():
         DeclareLaunchArgument('range', default_value='0.45'),
         DeclareLaunchArgument('dwell', default_value='5.0'),
         DeclareLaunchArgument('margin', default_value='0.087'),
+        DeclareLaunchArgument('kd', default_value='10.0'),  # velocity-loop authority during ID
         leader_eff,
         leader_vel,
         leader_grav,
-        set_kp0,
+        set_gains,
         idnode,
     ])

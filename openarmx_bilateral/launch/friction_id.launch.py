@@ -22,7 +22,7 @@ from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
                             IncludeLaunchDescription, TimerAction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -46,11 +46,15 @@ def generate_launch_description():
                    '-t', 'forward_command_controller/ForwardCommandController',
                    '-p', vel_params, '--unload-on-kill'],
     )
-    # follower kp -> 0 (no position hold), all 7 joints in one shot
-    set_kp0 = TimerAction(period=3.0, actions=[ExecuteProcess(
-        cmd=['bash', '-lc',
-             'for j in $(seq 1 7); do ros2 param set %s kp_joint$j 0.0; done; '
-             'echo "[friction_id] follower kp=0 set on %s"' % (fparam, fparam)],
+    # follower kp -> 0 (no position hold) and kd -> <kd> (so the velocity
+    # controller has torque authority to drive even the high-friction shoulders),
+    # all 7 joints in one shot. kd does NOT bias friction = effort - gravity.
+    pre = ('for j in $(seq 1 7); do ros2 param set %s kp_joint$j 0.0; '
+           'ros2 param set %s kd_joint$j ' % (fparam, fparam))
+    post = '; done; echo "[friction_id] follower kp=0 kd set on %s"' % fparam
+    set_gains = TimerAction(period=3.0, actions=[ExecuteProcess(
+        cmd=['bash', '-lc', [TextSubstitution(text=pre),
+                             LaunchConfiguration('kd'), TextSubstitution(text=post)]],
         output='screen')])
     # friction-test-only per-joint ABSOLUTE limits [rad] (NOT control limits).
     # From the operator's measured safe ranges. LEFT arm (this launch tests left):
@@ -82,8 +86,9 @@ def generate_launch_description():
         DeclareLaunchArgument('range', default_value='0.45'),   # fallback half-range [rad]
         DeclareLaunchArgument('dwell', default_value='5.0'),    # s per speed level
         DeclareLaunchArgument('margin', default_value='0.087'), # cushion inside limits [rad] ~5deg
+        DeclareLaunchArgument('kd', default_value='10.0'),      # velocity-loop authority during ID
         follower_grav,
         follower_vel,
-        set_kp0,
+        set_gains,
         idnode,
     ])
