@@ -80,6 +80,16 @@ public:
             throw std::runtime_error("friction_id: empty joint schedule");
         }
 
+        // diagnostic: show exactly what schedule/topics this node received
+        std::string sched;
+        for (int j : seq_) sched += std::to_string(j) + " ";
+        RCLCPP_INFO(get_logger(),
+            "DIAG n_joints=%d joints_param=%zu SCHEDULE=[%s] states=%s vel_cmd=%s grav=%s",
+            nj_, get_parameter("joints").as_integer_array().size(), sched.c_str(),
+            get_parameter("states").as_string().c_str(),
+            get_parameter("vel_cmd").as_string().c_str(),
+            get_parameter("grav").as_string().c_str());
+
         q_.assign(nj_, 0.0); v_.assign(nj_, 0.0); eff_.assign(nj_, 0.0); grav_.assign(nj_, 0.0);
 
         std::string path = get_parameter("csv").as_string();
