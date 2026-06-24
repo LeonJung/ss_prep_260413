@@ -123,6 +123,40 @@ Specs (2022): 2× QDD arms, **6-DOF**, reach 0.96m, 13.8kg; controlled over **SP
     **불리한 격차가 아니므로 신경 안 써도 됨.**
 - **d~i = 나중에 다시 논의** (대역폭·지연·RT·제어주기·제어법·SW 스택).
 
+### d/f/g — PreemptRT PC로 교체하면?
+PreemptRT는 커널 스케줄 지터를 ms→수십µs로 bound. 라벨별:
+- **f 실시간성: ~해결(핵심 타겟)**. 단 커널만으론 부족 — RT 우선순위(SCHED_FIFO),
+  CPU 격리(isolcpus), 메모리 락(mlockall), RT CAN 드라이버 동반 필요.
+- **g 제어주기: 상당부분**. CM 100Hz→500Hz~1kHz 안정화 가능(=MIT 500Hz 메인루프급).
+  천장은 CAN(d)+사이클 연산. 액추에이터 3kHz는 g 아닌 d/HW.
+- **d 모터버스: 부분(~30-50%)**. CAN I/O 지터는 개선, **대역폭/토폴로지(1Mbps,
+  버스당 모터수, CAN-FD)는 불변** → 3kHz급은 CAN-FD/버스분할/드라이버 = HW·설정.
+- ⚠️ 구조 함정: 양방향 커플링이 **ROS2 토픽 경로**면 그 DDS 지연은 RT가 안 없앤다.
+  풀효과 = 커플링을 **controller_manager RT update() 안 커스텀 컨트롤러로 이전**해야 함.
+  커널 단독 = 필요조건이지 충분조건 아님.
+
+### e/i — 병목 = ROS2 DDS + 멀티노드 토픽 홉 구조. 대안(간단)
+- (1) **단일 RT 컨트롤러 in-process**: 양팔을 한 controller_manager에 올리고(현재는
+  leader/follower 별도 CM!) 커스텀 bilateral 컨트롤러가 update() 안에서 양팔 state/command
+  인터페이스를 직접 읽고씀 → **루프에서 DDS 완전 제거**. 가장 MIT스럽고 효과 큼.
+- (2) **intra-process / 공유메모리**: rclcpp intra-process(zero-copy), 또는 Iceoryx/
+  Zenoh shared-mem RMW. 전송비↓(executor 오버헤드는 남음).
+- (3) **DDS 튜닝**: RMW(Cyclone/Fast) 교체, best-effort QoS, 홉 최소화 — 완화일 뿐.
+- (4) **ROS 우회**: 내부루프는 전용 C++ RT 프로세스가 CAN 직접(=MIT i7 SBC 방식), ROS는
+  비-RT 감독만. 가장 근본적·가장 큰 작업.
+
+### h — "알고리즘 동급"의 정확한 의미 (정정)
+literally 같은 수식은 아님. 정확히는:
+- **힘을 만드는 핵심항은 동일**: `Kp·(peer_pos−own_pos) + Kd·(peer_vel−own_vel)`
+  (P-P 스프링+댐퍼). enactic·우리 모두 이 형태. ← 이게 "동급"이라 한 부분(=반력 메커니즘).
+- **다른 부분 (사소하지 않음, 여기서 투명도/느낌이 갈림)**:
+  · feedforward 보상: 우리=중력+Coulomb마찰 / enactic=중력+Coulomb+**점성Fv+offset Fo**(+일부 coriolis×0.1).
+  · 게인 값: enactic Kp=240(어깨,관절별) vs 우리 50~60(균일).
+  · 좌표계: 우리=관절공간 PD / MIT2022는 task-space 임피던스일 가능성(원문 미확인).
+- 결론: **제어 "구조/계열"은 같다(임피던스/P-P + proprioceptive 토크), 그러나 보상항·
+  게인·좌표계는 다르고 그게 바로 전부의 차이를 만든다.** DOB/4채널/MPC 같은 다른 방식은
+  아님. 즉 "같은 골격, 다른 살" — 살(보상·게인)이 느낌을 결정.
+
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
 지연·결정론성**(ROS2 DDS 다단 홉 vs RT 직결), ③ **HW 투명도**(Robstride 마찰 vs QDD).
