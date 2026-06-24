@@ -161,6 +161,24 @@ PreemptRT는 커널 스케줄 지터를 ms→수십µs로 bound. 라벨별:
   coriolis), Kp 240(관절별) vs 우리 50~60(균일). enactic은 MIT와 같은 SPBT 계열의 공개 구현.
 - TODO(원하면): MIT 플랫폼 관련 석사논문 찾아 정확한 제어식 확정.
 
+### h — MIT 정확한 제어식 확보 (CONFIRMED, ar5iv Eq.4)
+논문: SaLoutos, Stanger-Jones, Kim, "Fast Reflexive Grasping with a Proprioceptive
+Teleoperation Platform" (IROS 2022). Eq.4 (관절별 i):
+```
+follower: τ_f,i = Kp(q_l,i − q_f,i) + Kd(q̇_l,i − q̇_f,i) + τ_g
+leader:   τ_l,i = − τ_f,i
+```
+joint-space, 대응관절 미러링, 500Hz + CAN 3kHz, 중력보상 O, **마찰/관성 보상 X**,
+proprioceptive(force센서 없음).
+- 대수전개: τ_l = −τ_f = Kp(q_f−q_l) + Kd(q̇_f−q̇_l) − τ_g → **leader 커플링항이 우리
+  대칭 P-P와 동일.** τ_l=−τ_f 는 "작용-반작용 표기"일 뿐 구조 차이 아님. **같은 골격
+  확정(수식 레벨).**
+- 차이: **마찰보상 없음**(QDD 투명 → 불필요; 우리는 추가=HW 부족분 대체), 중력 작용-반작용
+  표기, 게인 미공개(타 출처 높음 추정), 좌표계는 우리와 같은 관절공간.
+- **최종 결론**: "비법 커플링항" 없음. MIT 느낌 = 수식 아님 → **QDD 투명도 + 500Hz/3kHz
+  대역폭 + (추정)높은 게인**. 우리 경로(마찰보상으로 투명도 회복 + RT/대역폭(d/f/g) +
+  게인 튜닝) = 검증된 정답. enactic(대칭 P-P+마찰)도 같은 SPBT 계열 — 셋 다 동일 골격.
+
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
 지연·결정론성**(ROS2 DDS 다단 홉 vs RT 직결), ③ **HW 투명도**(Robstride 마찰 vs QDD).
