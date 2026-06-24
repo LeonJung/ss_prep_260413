@@ -45,6 +45,10 @@ def launch_setup(context, *args, **kwargs):
         'range': ParameterValue(LaunchConfiguration('range'), value_type=float),
         'dwell': ParameterValue(LaunchConfiguration('dwell'), value_type=float),
         'margin': ParameterValue(LaunchConfiguration('margin'), value_type=float),
+        # force the full schedule from the launch (overrides the node default, so a
+        # stale binary whose default mis-compiled can't drop joints 1,2)
+        'joints': [1, 2, 3, 4, 5, 6, 7],
+        'n_joints': 7,
         'joint_lo': LEFT_LO,
         'joint_hi': LEFT_HI,
     }
