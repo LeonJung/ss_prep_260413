@@ -45,13 +45,19 @@ def launch_setup(context, *args, **kwargs):
 
     n = int(LaunchConfiguration('n_joints').perform(context))
 
+    def expand(s):
+        # "60" -> [60]*n ; "80,80,80,80,20,20,20" -> per-joint list (enactic-style)
+        parts = [p.strip() for p in s.split(',')] if ',' in s else [s.strip()]
+        return [parts[min(i, len(parts) - 1)] for i in range(n)]
+
     def gain_loop(label, node, kp, kd):
-        # set kp_joint1..n and kd_joint1..n in ONE shot (no hand-tuning per joint)
-        cmd = ('for j in $(seq 1 %d); do '
-               'ros2 param set %s kp_joint$j %s; '
-               'ros2 param set %s kd_joint$j %s; done; '
-               'echo "[openarmx_bilateral] %s gains set: kp=%s kd=%s on %s"'
-               % (n, node, kp, node, kd, label, kp, kd, node))
+        # set kp_joint1..n / kd_joint1..n; scalar => uniform, comma-list => per-joint
+        kps, kds = expand(kp), expand(kd)
+        sets = []
+        for j in range(1, n + 1):
+            sets.append('ros2 param set %s kp_joint%d %s' % (node, j, kps[j - 1]))
+            sets.append('ros2 param set %s kd_joint%d %s' % (node, j, kds[j - 1]))
+        cmd = '; '.join(sets) + ('; echo "[openarmx_bilateral] %s gains set on %s"' % (label, node))
         # delay so the HW param node is up (bring up the robots first)
         return TimerAction(period=3.0, actions=[
             ExecuteProcess(cmd=['bash', '-lc', cmd], output='screen')])
