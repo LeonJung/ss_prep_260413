@@ -95,18 +95,33 @@ Specs (2022): 2× QDD arms, **6-DOF**, reach 0.96m, 13.8kg; controlled over **SP
 500Hz** by an i7 SBC; custom PCB → **CAN up to 3kHz** per actuator; proprioceptive
 (current) force feedback.
 
-| 구분 | MIT 2022 (Kim lab) | 우리 openarmx v2.0 | 영향 |
-|---|---|---|---|
-| **HW 액추에이터** | QDD BLDC + 저감속 유성기어, 고투명·저마찰·저관성 | Robstride QDD(CAN) — 같은 계열이나 마찰 큼(어깨 Coulomb~1Nm 측정) | 투명도 격차 → SW(마찰보상)로 회복 |
-| **HW DOF/질량** | 6-DOF, 13.8kg 경량 | 7-DOF bimanual, 더 무겁/관성↑ | lag↑ |
-| **힘 센싱** | proprioceptive(모터 전류) | proprioceptive(MIT모드 전류) | **동일** |
-| **통신-모터버스** | 커스텀 PCB, CAN **최대 3kHz** | CAN(ros2_control HW IF) | 갱신주기 격차 가능 |
-| **통신-토폴로지** | i7 SBC→SPI→PCB→CAN, 직결·최소 홉 | ROS2 DDS 토픽 다단(relay→pos ctrl→HW; grav→grav_only→fric→eff ctrl) | 지연·지터↑, 투명도↓ |
-| **실시간성** | 거의 RT, 결정론적 | 일반 Linux+DDS, 비RT 지터 | 안정 Kp 상한↓, 벽 무름 |
-| **제어주기** | 메인 **500Hz** + CAN 3kHz | controller_manager **100Hz** + relay 200Hz | **5배+ 느림 = 가장 큰 격차 (벽 선명도·추종 직접)** |
-| **양방향 제어법** | P-P/임피던스 + 전류토크 | P-P(relay)+MIT kp/kd+중력/마찰/속도FF | **알고리즘 사실상 동급 → 격차 아님** |
-| **모델 보상** | (2019-20) 단순, 액추에이터로 충분 | 중력+마찰+속도FF | 우리는 HW투명도 부족분을 SW로 메우는 중 |
-| **SW 스택** | 베어메탈/RT 펌웨어+SBC | ROS2 Jazzy, 노드/DDS, colcon | 추상화·홉 오버헤드 |
+| 라벨 | 구분 | MIT 2022 (Kim lab) | 우리 openarmx v2.0 | 영향 / 대응 |
+|---|---|---|---|---|
+| **a** | HW·액추에이터 | QDD BLDC+저감속 유성기어, 고투명·저마찰·저관성 | Robstride QDD(CAN) — 같은 계열이나 마찰 큼(어깨 Coulomb~1Nm) | 투명도 격차 → **대응불가(HW)**, 마찰보상으로 일부 회복 |
+| **b** | HW·DOF/질량 | 6-DOF, 13.8kg 경량 | 7-DOF bimanual, 더 무겁/관성↑ | lag↑ → **대응불가(HW)** |
+| **c** | 힘 센싱 | proprioceptive(모터 전류→토크) | proprioceptive(MIT모드: 모터가 전류로 토크 추정·보고) | **사실상 동일 패러다임** (차이=구현, 아래) |
+| **d** | 통신·모터버스 | 커스텀PCB, CAN 최대 3kHz | CAN(ros2_control HW IF) | 주기 격차 가능 — *나중 논의* |
+| **e** | 통신·토폴로지 | i7 SBC→SPI→PCB→CAN, 직결·최소 홉 | ROS2 DDS 토픽 다단(relay→pos ctrl→HW; grav→grav_only→fric→eff) | 지연·지터↑ — *나중* |
+| **f** | 실시간성 | 거의 RT, 결정론적 | 일반 Linux+DDS, 비RT 지터 | 안정 Kp 상한↓ — *나중* |
+| **g** | 제어주기 | 메인 500Hz + CAN 3kHz | controller_manager 100Hz + relay 200Hz | 최대 격차(벽 선명도·추종) — *나중* |
+| **h** | 제어법+보상 | P-P/임피던스 + 전류토크, 단순보상 | P-P(relay)+MIT kp/kd+중력/마찰/속도FF | 알고리즘 동급 → 격차 아님 — *나중* |
+| **i** | SW 스택 | 베어메탈/RT 펌웨어+SBC | ROS2 Jazzy, 노드/DDS, colcon | 추상화·홉 오버헤드 — *나중* |
+
+### 항목별 논의 결정
+- **a, b = 대응 불가** (하드웨어 교체 불가; a의 마찰만 SW 마찰보상으로 부분 회복).
+- **c (힘 센싱) — 사실상 동일.** "MIT mode" 자체가 MIT mini-cheetah 액추에이터 명령
+  프로토콜 {p,v,kp,kd,τ}에서 유래 → Robstride MIT mode = cheetah 방식 그대로. 둘 다
+  **별도 force/토크 센서 없이 모터 전류로 토크 추정**(proprioceptive). 차이는 구현뿐:
+  - 임피던스 루프 위치: MIT=호스트(i7)에서 토크법칙 계산+커스텀 드라이버 FOC 전류루프
+    / 우리=Robstride **펌웨어 onboard(~kHz)**에서 kp·err+kd·err+τ_ff 계산, 호스트는
+    setpoint만 100-200Hz 전송. → **강성 렌더링은 우리도 모터 onboard 고속**이라 100Hz에
+    안 묶임(불리X).
+  - 접근성: MIT=raw 전류·FOC 직접 접근/튜닝/캘리브 / 우리=Robstride 블랙박스(고정 FOC,
+    보고되는 토크 추정치만 사용). → 우리 약점 = **토크 추정치 품질(노이즈/필터/Kt
+    선형성)에 의존**(마찰 ID R²이 애매했던 한 원인일 수 있음). 하지만 패러다임 격차는 아님.
+  - 결론: c는 동등(둘 다 proprioceptive). Robstride 펌웨어라 c 자체도 우리가 못 바꾸지만,
+    **불리한 격차가 아니므로 신경 안 써도 됨.**
+- **d~i = 나중에 다시 논의** (대역폭·지연·RT·제어주기·제어법·SW 스택).
 
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
