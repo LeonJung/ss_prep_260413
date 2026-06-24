@@ -27,6 +27,13 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+
+# Phase 3 identified Coulomb friction (LEFT arm), per robot. tau_fric = Fc*tanh(0.1*k*w)
+LEADER_FC   = [1.21, 0.63, 0.31, 0.39, 0.14, 0.17, 0.13]
+LEADER_K    = [81.0, 51.0, 40.0, 52.0, 36.0, 20.0, 48.0]
+FOLLOWER_FC = [1.04, 1.06, 0.35, 0.36, 0.16, 0.15, 0.12]
+FOLLOWER_K  = [68.0, 60.0, 26.0, 87.0, 62.0, 57.0, 39.0]
 
 
 def generate_launch_description():
@@ -36,6 +43,8 @@ def generate_launch_description():
     urdf = LaunchConfiguration('urdf_path')
     g_scale = LaunchConfiguration('g_scale')
     vel_ff = LaunchConfiguration('vel_ff')
+    fric_en = ParameterValue(LaunchConfiguration('friction'), value_type=bool)
+    fric_scale = ParameterValue(LaunchConfiguration('friction_scale'), value_type=float)
 
     # --- relay + auto leader/follower kp/kd (set all joints in one shot) ---
     relay = IncludeLaunchDescription(
@@ -63,11 +72,25 @@ def generate_launch_description():
                    '-p', vel_params, '--unload-on-kill'],
     )
 
-    # --- follower effort controller + gravity comp (already remapped onto /follower) ---
+    # --- follower effort controller + gravity comp. Gravity is routed to
+    #     /follower/grav_only; the follower friction_comp_node adds friction and
+    #     publishes to the effort controller. (friction:=false => passthrough.) ---
     follower_grav = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg, 'launch', 'follower_gravity.launch.py')),
-        launch_arguments={'urdf_path': urdf, 'g_scale': g_scale}.items(),
+        launch_arguments={'urdf_path': urdf, 'g_scale': g_scale,
+                          'effort_topic': '/follower/grav_only'}.items(),
+    )
+    follower_fric = Node(
+        package='openarmx_bilateral', executable='friction_comp_node',
+        name='follower_friction_comp', output='screen',
+        parameters=[{
+            'grav_in': '/follower/grav_only',
+            'states': '/follower/joint_states',
+            'effort_out': '/follower/left_forward_effort_controller/commands',
+            'fc': FOLLOWER_FC, 'k': FOLLOWER_K,
+            'enable': fric_en, 'scale': fric_scale,
+        }],
     )
 
     # --- leader effort controller (root CM) ---
@@ -78,7 +101,8 @@ def generate_launch_description():
                    '-t', 'forward_command_controller/ForwardCommandController',
                    '-p', eff_params, '--unload-on-kill'],
     )
-    # --- leader gravity comp (root topics = leader, no remap) ---
+    # --- leader gravity comp (root topics = leader). Gravity -> /grav_only;
+    #     leader friction_comp_node adds friction -> effort controller. ---
     leader_grav = TimerAction(period=3.0, actions=[Node(
         package='openarmx_gravity_comp', executable='gravity_comp_node',
         name='leader_gravity_comp', output='screen',
@@ -86,12 +110,26 @@ def generate_launch_description():
             'urdf_path': urdf, 'g_scale': g_scale,
             'enable_left': True, 'enable_right': False,
         }],
+        remappings=[('/left_forward_effort_controller/commands', '/grav_only')],
     )])
+    leader_fric = Node(
+        package='openarmx_bilateral', executable='friction_comp_node',
+        name='leader_friction_comp', output='screen',
+        parameters=[{
+            'grav_in': '/grav_only',
+            'states': '/joint_states',
+            'effort_out': '/left_forward_effort_controller/commands',
+            'fc': LEADER_FC, 'k': LEADER_K,
+            'enable': fric_en, 'scale': fric_scale,
+        }],
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument('arm_side', default_value='left_arm'),
         DeclareLaunchArgument('bilateral', default_value='false'),
         DeclareLaunchArgument('vel_ff', default_value='false'),  # Phase 2 velocity FF A/B
+        DeclareLaunchArgument('friction', default_value='false'),  # Phase 3 friction comp A/B
+        DeclareLaunchArgument('friction_scale', default_value='0.7'),
         DeclareLaunchArgument('leader_kp', default_value='0.0'),
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
         DeclareLaunchArgument('follower_kp', default_value=''),  # '' => keep HW defaults
@@ -101,6 +139,8 @@ def generate_launch_description():
         relay,
         leader_eff,
         leader_grav,
+        leader_fric,
         follower_grav,
+        follower_fric,
         follower_vel,
     ])

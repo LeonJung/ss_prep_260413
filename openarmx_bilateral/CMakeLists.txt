@@ -28,7 +28,11 @@ ament_target_dependencies(friction_id_node rclcpp sensor_msgs std_msgs)
 add_executable(joint_echo_node src/joint_echo_node.cpp)
 ament_target_dependencies(joint_echo_node rclcpp sensor_msgs)
 
-install(TARGETS relay_node log_node friction_id_node joint_echo_node
+# Phase-3 friction compensation: gravity + Fc*tanh(0.1*k*w) -> effort controller
+add_executable(friction_comp_node src/friction_comp_node.cpp)
+ament_target_dependencies(friction_comp_node rclcpp sensor_msgs std_msgs)
+
+install(TARGETS relay_node log_node friction_id_node joint_echo_node friction_comp_node
         DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 

@@ -36,6 +36,11 @@ def generate_launch_description():
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
         DeclareLaunchArgument('g_scale', default_value='1.05'),
         DeclareLaunchArgument('cm', default_value='/follower/controller_manager'),
+        # gravity output topic: default = effort controller (friction_id uses this
+        # directly). bilateral.launch routes it to /follower/grav_only so the
+        # friction_comp_node can add friction before the effort controller.
+        DeclareLaunchArgument('effort_topic',
+            default_value='/follower/left_forward_effort_controller/commands'),
         # 1) spawn the follower's left effort controller. The namespaced yaml does
         #    not declare it, so pass the type and params explicitly.
         Node(
@@ -59,7 +64,7 @@ def generate_launch_description():
             remappings=[
                 ('/joint_states', '/follower/joint_states'),
                 ('/left_forward_effort_controller/commands',
-                 '/follower/left_forward_effort_controller/commands'),
+                 LaunchConfiguration('effort_topic')),
             ],
         )]),
     ])
