@@ -195,6 +195,18 @@ proprioceptive(force센서 없음).
 MIT 근접 조합: **1+2+3**(대역폭·결정론·DDS제거) + **5+6**(투명도 회복·게인). 4는 d 한계 돌파용,
 7은 후순위. a/b/c는 손 안 댐.
 
+### PreemptRT 이전 시도 — PC N 팡팡 디버깅 (2026-06)
+PC M(일반 우분투 커널) = bilateral 정상(팡팡 없음). PC N(PreemptRT 6.6.99-rt58, NUC11PHi7)
+= **follower 팡팡(관절 튐)**, 동일 소스·빌드·파라미터.
+- 격리 결과: **unilateral(기본)에서도 팡팡 / leader 정지 시엔 정상(움직일 때만) / 게인 낮춰도
+  여전 / RMW(Zenoh·Cyclone 둘 다 N에서 팡팡, M은 둘 다 정상) → RMW 아님 / CAN 동일·깨끗
+  (둘 다 PEAK PCAN-USB FD 1Mbps, 에러·드롭 0)**. → 유일 차이 = **PreemptRT 커널**.
+- 결론(전제): **PreemptRT × USB-CAN(pcan_usb_fd) 상호작용**이 위치 샘플을 버스트/지터로 →
+  follower가 튀는 명령을 추종 → 팡팡. (USB는 RT 비결정적; MIT는 USB 아닌 PCB→CAN 직결.)
+- 대응: (1) USB autosuspend off, (2) xhci(USB) IRQ RT우선순위↑ + CPU격리, **(3) TODO:
+  USB-CAN → PCIe/SPI-CAN 교체** (USB는 RT 결정론에 부적합; RT 이득 보려면 사실상 전제.
+  MIT도 USB 안 씀). 당장 운용은 PC M(비-RT) 유지가 안전.
+
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
 지연·결정론성**(ROS2 DDS 다단 홉 vs RT 직결), ③ **HW 투명도**(Robstride 마찰 vs QDD).
