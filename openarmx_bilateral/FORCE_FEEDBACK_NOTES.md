@@ -207,6 +207,25 @@ PC M(일반 우분투 커널) = bilateral 정상(팡팡 없음). PC N(PreemptRT 
   USB-CAN → PCIe/SPI-CAN 교체** (USB는 RT 결정론에 부적합; RT 이득 보려면 사실상 전제.
   MIT도 USB 안 씀). 당장 운용은 PC M(비-RT) 유지가 안전.
 
+UPDATE(2026-06-28): 처방1(autosuspend) 무효(PCAN power/control 이미 on), 처방2(a)(xhci IRQ
+FIFO90 + CM FIFO60) **0 효과**. 그리고 **PC M·N의 USB-CAN 설정 동일**(둘 다 PCAN-USB FD,
+같은 config)인데 M만 정상 → **USB-CAN HW 탓 아님 확정.** 변수는 오직 **PreemptRT 커널이 같은
+USB-CAN을 다르게 처리**(=RT 튜닝 미완). 이전 "USB-CAN 탓" 결론 정정.
+- **방안 1 (TODO): PreemptRT 지연 튜닝.** ① `cyclictest -p90 -i200 -m -l100000` 로 Max latency
+  측정(잘 튜닝 시 <100µs; 수백µs~ms면 미완=팡팡 원인). ② **깊은 C-state 억제**(NUC 1순위):
+  런타임 `/dev/cpu_dma_latency`에 0 잡아두기 / 영구 GRUB `intel_idle.max_cstate=1
+  processor.max_cstate=1`. ③ RT 스로틀 해제 `kernel.sched_rt_runtime_us=-1`. ④ net-RX softirq
+  (ksoftirqd/napi) 우선순위↑. → 측정 후 ②부터 적용해 팡팡 재확인.
+- **방안 2 (TODO): PC N의 누락된 사전세팅 점검** — openarmx 전 repo md 정독 결과:
+  · **최유력: `openarmx-can_1.0.0_amd64.deb` (시스템 dpkg 설치, "driver of motors, must be
+    installed before compilation").** `openarmx_can`은 소스 워크스페이스에 없음 → build/install
+    복사해도 안 따라옴. PC N에 설치는 돼 있음(로봇 움직임)이나 **버전이 PC M과 같은지 확인 필요**
+    (다르면 CAN 타이밍/로직 차이로 팡팡 가능). 점검: `dpkg -l|grep -i openarmx`, `lsb_release -a`,
+    `echo $ROS_DISTRO` 를 PC M·N 비교. 다르면 동일 .deb 재설치.
+  · 나머지(CAN 브링업 `ip link ... bitrate 1000000 up`)는 양쪽 동일 확인. openarmx 문서 전체에
+    setcap/udev/sysctl/RT/latency 사전세팅 **없음** → 팡팡은 문서화된 세팅 누락이 아니라 PreemptRT
+    커널(방안 1) 쪽 방증.
+
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
 지연·결정론성**(ROS2 DDS 다단 홉 vs RT 직결), ③ **HW 투명도**(Robstride 마찰 vs QDD).
