@@ -30,7 +30,7 @@ public:
     ChirpNode() : Node("openarmx_chirp") {
         declare_parameter<std::string>("joint_prefix", "openarmx_left_joint");
         declare_parameter<int>("n_joints", 7);
-        declare_parameter<int>("joint", 4);          // which joint sweeps (1..n)
+        declare_parameter<std::vector<int64_t>>("joints", std::vector<int64_t>{});  // empty = all 1..n, sequential
         declare_parameter<double>("amp", 0.12);      // amplitude [rad]
         declare_parameter<double>("f0", 0.2);        // start freq [Hz]
         declare_parameter<double>("f1", 3.0);        // end freq [Hz]
@@ -48,7 +48,10 @@ public:
         nj_ = get_parameter("n_joints").as_int();
         gripper_name_ = get_parameter("gripper_joint").as_string();
         include_gripper_ = get_parameter("include_gripper").as_bool();
-        jx_ = get_parameter("joint").as_int() - 1;
+        for (auto j : get_parameter("joints").as_integer_array())
+            if (j >= 1 && j <= nj_) seq_.push_back((int)j);
+        if (seq_.empty()) for (int j = 1; j <= nj_; ++j) seq_.push_back(j);  // default: all
+        jx_ = seq_[0] - 1;
         amp_ = get_parameter("amp").as_double();
         f0_ = get_parameter("f0").as_double();
         f1_ = get_parameter("f1").as_double();
@@ -61,8 +64,8 @@ public:
         std::string path = get_parameter("csv").as_string();
         f_.open(path);
         if (f_.is_open()) f_ << "t,joint,freq,cmd,act,vel,eff\n";
-        RCLCPP_INFO(get_logger(), "chirp -> %s : joint %d amp %.3f f %.2f->%.2fHz %.0fs",
-                    path.c_str(), jx_ + 1, amp_, f0_, f1_, dur_);
+        RCLCPP_INFO(get_logger(), "chirp -> %s : %zu joint(s) sequential, amp %.3f f %.2f->%.2fHz %.0fs each",
+                    path.c_str(), seq_.size(), amp_, f0_, f1_, dur_);
 
         pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
             get_parameter("cmd").as_string(), 10);
@@ -107,22 +110,35 @@ private:
 
     void tick() {
         if (!have_) return;
-        if (!started_) { q0_ = q_; grip0_ = grip_; started_ = true; t0_ = now(); phase_ = 0.0; return; }
-        double t = (now() - t0_).seconds();
-        std_msgs::msg::Float64MultiArray msg;
-        msg.data = q0_;                       // hold all joints at start
-        if (t <= dur_) {
-            freq_now_ = f0_ + (f1_ - f0_) * (t / dur_);    // linear chirp
-            phase_ += 2.0 * M_PI * freq_now_ * dt_;
-            double c = q0_[jx_] + amp_ * std::sin(phase_);
-            c = std::clamp(c, lo(jx_), hi(jx_));
-            cmd_now_ = c;
-            msg.data[jx_] = c;
-        } else {
-            cmd_now_ = q0_[jx_]; msg.data[jx_] = q0_[jx_];
-            if (!done_) { done_ = true; RCLCPP_INFO(get_logger(), "chirp DONE -> CSV. Ctrl+C."); }
+        if (!started_) {
+            q0_ = q_; grip0_ = grip_; started_ = true;
+            t0_ = now(); seg_t0_ = now(); cur_ = 0; jx_ = seq_[0] - 1; phase_ = 0.0;
+            RCLCPP_INFO(get_logger(), "start: joint %d", seq_[0]);
+            return;
         }
-        if (include_gripper_) msg.data.push_back(grip0_);   // 8th value = gripper (held)
+        std_msgs::msg::Float64MultiArray msg;
+        msg.data = q0_;                       // hold all joints at their start pose
+        if (!done_) {
+            double tseg = (now() - seg_t0_).seconds();   // per-joint segment time
+            if (tseg <= dur_) {
+                freq_now_ = f0_ + (f1_ - f0_) * (tseg / dur_);   // linear chirp
+                phase_ += 2.0 * M_PI * freq_now_ * dt_;
+                double c = std::clamp(q0_[jx_] + amp_ * std::sin(phase_), lo(jx_), hi(jx_));
+                cmd_now_ = c; msg.data[jx_] = c;
+            } else {                          // this joint done -> next joint (or finish)
+                cmd_now_ = q0_[jx_];
+                if (++cur_ >= (int)seq_.size()) {
+                    done_ = true;
+                    RCLCPP_INFO(get_logger(), "chirp DONE (all joints) -> CSV. Ctrl+C.");
+                } else {
+                    jx_ = seq_[cur_] - 1; phase_ = 0.0; seg_t0_ = now();
+                    RCLCPP_INFO(get_logger(), "next: joint %d", seq_[cur_]);
+                }
+            }
+        } else {
+            cmd_now_ = q0_[jx_];
+        }
+        if (include_gripper_) msg.data.push_back(grip0_);   // 8th = gripper held
         pub_->publish(msg);
     }
 
@@ -132,7 +148,9 @@ private:
     bool have_ = false, started_ = false, done_ = false, include_gripper_ = true;
     double grip_ = 0.0, grip0_ = 0.0;
     std::string gripper_name_;
-    rclcpp::Time t0_;
+    rclcpp::Time t0_, seg_t0_;
+    int cur_ = 0;
+    std::vector<int> seq_;
     std::vector<std::string> names_;
     std::vector<double> q_, q0_;
     std::ofstream f_;
