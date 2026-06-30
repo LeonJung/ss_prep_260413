@@ -223,8 +223,25 @@ USB-CAN을 다르게 처리**(=RT 튜닝 미완). 이전 "USB-CAN 탓" 결론 �
     (다르면 CAN 타이밍/로직 차이로 팡팡 가능). 점검: `dpkg -l|grep -i openarmx`, `lsb_release -a`,
     `echo $ROS_DISTRO` 를 PC M·N 비교. 다르면 동일 .deb 재설치.
   · 나머지(CAN 브링업 `ip link ... bitrate 1000000 up`)는 양쪽 동일 확인. openarmx 문서 전체에
-    setcap/udev/sysctl/RT/latency 사전세팅 **없음** → 팡팡은 문서화된 세팅 누락이 아니라 PreemptRT
-    커널(방안 1) 쪽 방증.
+    setcap/udev/sysctl/RT/latency 사전세팅 **없음**.
+
+UPDATE(2026-06-30) — 팡팡 근본원인 = **PC N 기계(USB 토폴로지)**, RT 아님 (확정):
+- 결정적: **PC M + 같은 PreemptRT 커널 → 팡팡 없음.** PC M(generic·RT 둘 다 정상) vs PC N(generic·RT
+  둘 다 팡팡). → 팡팡은 RT 커널도 SW도 아니고 **PC N 하드웨어**. 방안1(RT 튜닝)은 헛다리였음.
+- 유일한 HW 차이 = **USB 토폴로지**: PC M = root→7p허브→PCAN×6 (허브 1단) / PC N = root→**4p허브→7p허브**
+  →PCAN×6 (**허브 2단 캐스케이드**). 펌웨어(fw v3.2.0)·드라이버(peak_usb)·속도(12M full-speed)·ID
+  (0c72:0012)·can매핑 전부 동일. 6개 full-speed가 허브 TT 공유 + 단수 추가 → CAN 지터 → 팡팡(커널/RMW
+  무관, 움직일 때만 표출과 일치).
+- **TODO**: PC N 중간 4p허브 제거하고 7p PCAN허브를 NUC 포트 직결(PC M처럼) → 팡팡 사라지나 확인 = 토폴로지
+  확정 테스트. (사라지면 토폴로지 확정 / 그대로면 가설 폐기.)
+- **TODO**: 허브 **STT vs MTT** 확인 (`lsusb -v` 의 bDeviceProtocol; 01=Single TT, 02=Multi TT). PC M=MTT/
+  PC N=STT 거나 단수 차이면 정확한 근거.
+
+RT 효과 검증(별개) — "RT 깔면 transparency↑"는 **PC M에서 RT 깔아도 체감 동일** → 미확인. RT는 필요조건이지
+충분조건 아님(대역폭↑·DDS제거·비USB CAN 동반 필요). **TODO**: generic vs RT 객관 비교 (PC M에서):
+지표 = ①추종지연(상호상관 lag) ②동적추종오차 RMS ③오차-속도 기울기 ④대역폭+위상지연(chirp) ⑤루프 타이밍
+지터(dt std/max) ⑥자유공간 경량성(eff·sign(vel)) ⑦명령 매끄러움(저크). RT 효과 기대처 = ⑤>①④.
+방법 = **chirp_node**(follower 한 관절 사인 스윕 위치명령 + cmd/act/t 로깅) + 기존 **log_node**(동일 손동작).
 
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
