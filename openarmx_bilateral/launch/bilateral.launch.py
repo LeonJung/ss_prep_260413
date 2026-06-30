@@ -133,6 +133,6 @@ def generate_launch_description():
         DeclareLaunchArgument('follower_kp', default_value=''),
         DeclareLaunchArgument('follower_kd', default_value=''),
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
-        DeclareLaunchArgument('g_scale', default_value='1.0'),   # 1.0=exact; 1.05 overcomped -> J1/J2/J4 float up
+        DeclareLaunchArgument('g_scale', default_value='0.97'),  # under 1.0: still floated at 1.0 -> trim down
         OpaqueFunction(function=launch_setup),
     ])
