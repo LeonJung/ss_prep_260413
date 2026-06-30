@@ -243,6 +243,19 @@ RT 효과 검증(별개) — "RT 깔면 transparency↑"는 **PC M에서 RT 깔�
 지터(dt std/max) ⑥자유공간 경량성(eff·sign(vel)) ⑦명령 매끄러움(저크). RT 효과 기대처 = ⑤>①④.
 방법 = **chirp_node**(follower 한 관절 사인 스윕 위치명령 + cmd/act/t 로깅) + 기존 **log_node**(동일 손동작).
 
+### 실험 데이터 — chirp, PC M, generic vs RT (정량, 해석 없이 수치만)
+루프 dt[ms]: generic 평균 11.73 / std 4.70 / max 25.18 ; RT 평균 11.83 / std 4.71 / max 25.20
+추종지연[ms] J1..J7: generic 180.0, 185.7, 82.5, 94.6, 92.2, 94.5, 92.8
+              RT      174.5, 189.5, 84.3, 93.9, 83.2, 94.7, 94.5
+−3dB 대역폭[Hz] J1..J7: generic 1.90, 2.08, 2.92, 2.92, 2.92, 2.92, 2.92
+                  RT      1.93, 2.09, 2.92, 2.89, 2.92, (nan), 2.92
+RMS 추종오차[rad] J1..J7: generic 0.113, 0.125, 0.073, 0.085, 0.074, 0.077, 0.073
+                    RT      0.114, 0.144, 0.074, 0.084, 0.076, 0.084, 0.085
+(teleop generic/RT: 손동작 비반복 → 비교 불가, latency 상호상관 아티팩트로 제외)
+- **TODO: RT 커널 기능을 충분히 활용 못 하고 있을 가능성** — 제대로 쓰는 법 조사
+  (RT priority/SCHED_FIFO·CPU 격리(isolcpus)·mlockall·in-process RT 컨트롤러·threaded-IRQ 정렬 등).
+- 진행: ①제어 rate 올리기, ②파이프라인 지연/지터 줄이기 — 각 변경마다 chirp 재측정해 baseline과 비교.
+
 ### 결론 (격차 우선순위)
 알고리즘은 같다. 격차는 ① **제어 대역폭/주기**(100·200Hz vs 500Hz+3kHz), ② **통신
 지연·결정론성**(ROS2 DDS 다단 홉 vs RT 직결), ③ **HW 투명도**(Robstride 마찰 vs QDD).
