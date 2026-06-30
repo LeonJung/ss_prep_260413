@@ -71,6 +71,15 @@ def launch_setup(context, *args, **kwargs):
         actions.append(gain_loop('leader', node,
                                  LaunchConfiguration('leader_kp').perform(context),
                                  LaunchConfiguration('leader_kd').perform(context)))
+        # leader gripper (joint8) gains — separate from the 7 arm joints
+        gkp = LaunchConfiguration('leader_gripper_kp').perform(context)
+        gkd = LaunchConfiguration('leader_gripper_kd').perform(context)
+        if gkp != '' and gkd != '':
+            gcmd = ('ros2 param set %s kp_joint8 %s; ros2 param set %s kd_joint8 %s; '
+                    'echo "[openarmx_bilateral] leader gripper(j8) kp=%s kd=%s on %s"'
+                    % (node, gkp, node, gkd, gkp, gkd, node))
+            actions.append(TimerAction(period=3.0, actions=[
+                ExecuteProcess(cmd=['bash', '-lc', gcmd], output='screen')]))
 
     # follower gains: only touched if BOTH kp and kd given (else keep HW defaults)
     fkp = LaunchConfiguration('follower_kp').perform(context)
@@ -94,6 +103,9 @@ def generate_launch_description():
         DeclareLaunchArgument('leader_kp', default_value='0.0'),   # bilateral: ~15 (soft)
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
         DeclareLaunchArgument('leader_param_node', default_value=''),  # '' => /openarmx_<side>_hardware_params
+        # leader gripper (joint8) gains (operator request: 5.0/0.5). '' => skip.
+        DeclareLaunchArgument('leader_gripper_kp', default_value='5.0'),
+        DeclareLaunchArgument('leader_gripper_kd', default_value='0.5'),
         # follower gains: '' = keep HW defaults; set BOTH to override all joints at once
         DeclareLaunchArgument('follower_kp', default_value=''),
         DeclareLaunchArgument('follower_kd', default_value=''),

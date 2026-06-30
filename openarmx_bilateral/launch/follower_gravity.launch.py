@@ -52,7 +52,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('side', default_value='left'),   # left | right
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
-        DeclareLaunchArgument('g_scale', default_value='1.05'),
+        DeclareLaunchArgument('g_scale', default_value='1.0'),   # 1.0=exact (1.05 overcomp -> float up)
         DeclareLaunchArgument('cm', default_value='/follower/controller_manager'),
         # '' => /follower/<side>_forward_effort_controller/commands (friction_id uses this);
         # bilateral.launch routes it to /follower/grav_only_<side>.
