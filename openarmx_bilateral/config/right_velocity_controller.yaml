@@ -1,0 +1,18 @@
+# Velocity controller params for the RIGHT arm (Phase 2 velocity FF; mirror of
+# left_velocity_controller.yaml). Claims only the velocity interface, runs alongside
+# the position controller. `/**` wildcard matches under root or /follower. No gripper.
+/**/right_forward_velocity_controller:
+  ros__parameters:
+    joints:
+      - openarmx_right_joint1
+      - openarmx_right_joint2
+      - openarmx_right_joint3
+      - openarmx_right_joint4
+      - openarmx_right_joint5
+      - openarmx_right_joint6
+      - openarmx_right_joint7
+    interface_name: velocity
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - velocity

@@ -1,0 +1,18 @@
+# Effort controller params for the RIGHT arm (mirror of left_effort_controller.yaml).
+# Spawned with explicit -t/-p because the namespaced controllers yaml declares no
+# forward_effort controller. `/**` wildcard matches under root or /follower.
+/**/right_forward_effort_controller:
+  ros__parameters:
+    joints:
+      - openarmx_right_joint1
+      - openarmx_right_joint2
+      - openarmx_right_joint3
+      - openarmx_right_joint4
+      - openarmx_right_joint5
+      - openarmx_right_joint6
+      - openarmx_right_joint7
+    interface_name: effort
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position

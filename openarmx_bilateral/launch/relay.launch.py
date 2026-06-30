@@ -28,7 +28,7 @@ def launch_setup(context, *args, **kwargs):
 
     relay = Node(
         package='openarmx_bilateral', executable='relay_node',
-        name='openarmx_bilateral_relay', output='screen',
+        name='openarmx_bilateral_relay_%s' % sp, output='screen',   # side-specific (both-arm safe)
         parameters=[{
             'arm_side': LaunchConfiguration('arm_side'),
             'bilateral': LaunchConfiguration('bilateral'),
