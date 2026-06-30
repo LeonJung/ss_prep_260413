@@ -26,6 +26,15 @@ def launch_setup(context, *args, **kwargs):
     side = LaunchConfiguration('arm_side').perform(context)
     sp = 'right' if side == 'right_arm' else 'left'
 
+    # topics: empty arg => derive from side (so arm_side=right_arm hits RIGHT topics).
+    def topic(name, default):
+        v = LaunchConfiguration(name).perform(context)
+        return v if v else default
+    leader_states  = topic('leader_states',  '/joint_states')
+    follower_states = topic('follower_states', '/follower/joint_states')
+    leader_cmd     = topic('leader_cmd',     '/%s_forward_position_controller/commands' % sp)
+    follower_cmd   = topic('follower_cmd',   '/follower/%s_forward_position_controller/commands' % sp)
+
     relay = Node(
         package='openarmx_bilateral', executable='relay_node',
         name='openarmx_bilateral_relay_%s' % sp, output='screen',   # side-specific (both-arm safe)
@@ -35,10 +44,10 @@ def launch_setup(context, *args, **kwargs):
             'vel_ff': LaunchConfiguration('vel_ff'),
             'couple_sign': LaunchConfiguration('couple_sign'),
             'rate_hz': LaunchConfiguration('rate_hz'),
-            'leader_states': LaunchConfiguration('leader_states'),
-            'follower_states': LaunchConfiguration('follower_states'),
-            'leader_cmd': LaunchConfiguration('leader_cmd'),
-            'follower_cmd': LaunchConfiguration('follower_cmd'),
+            'leader_states': leader_states,
+            'follower_states': follower_states,
+            'leader_cmd': leader_cmd,
+            'follower_cmd': follower_cmd,
         }],
     )
     actions = [relay]
@@ -90,12 +99,11 @@ def generate_launch_description():
         DeclareLaunchArgument('follower_kd', default_value=''),
         DeclareLaunchArgument('follower_param_node', default_value=''),  # '' => /follower/openarmx_<side>_hardware_params
         DeclareLaunchArgument('n_joints', default_value='7'),
-        # leader NON-namespaced (gravity_comp reaches it); follower /follower
-        DeclareLaunchArgument('leader_states', default_value='/joint_states'),
-        DeclareLaunchArgument('follower_states', default_value='/follower/joint_states'),
-        DeclareLaunchArgument('leader_cmd',
-            default_value='/left_forward_position_controller/commands'),
-        DeclareLaunchArgument('follower_cmd',
-            default_value='/follower/left_forward_position_controller/commands'),
+        # topics: '' => derived from arm_side (leader /joint_states, follower
+        # /follower/joint_states, cmd /<side>_forward_position_controller/commands).
+        DeclareLaunchArgument('leader_states', default_value=''),
+        DeclareLaunchArgument('follower_states', default_value=''),
+        DeclareLaunchArgument('leader_cmd', default_value=''),
+        DeclareLaunchArgument('follower_cmd', default_value=''),
     ]
     return LaunchDescription(args + [OpaqueFunction(function=launch_setup)])
