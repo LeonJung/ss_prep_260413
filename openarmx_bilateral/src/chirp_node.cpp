@@ -40,8 +40,14 @@ public:
             "/follower/left_forward_position_controller/commands");
         declare_parameter<std::string>("states", "/follower/joint_states");
         declare_parameter<std::string>("csv", "/tmp/chirp.csv");
+        // the left_forward_position_controller is 8-DOF (7 joints + finger gripper),
+        // so commands must carry 8 values (gripper held). Match the relay.
+        declare_parameter<std::string>("gripper_joint", "openarmx_left_finger_joint1");
+        declare_parameter<bool>("include_gripper", true);
 
         nj_ = get_parameter("n_joints").as_int();
+        gripper_name_ = get_parameter("gripper_joint").as_string();
+        include_gripper_ = get_parameter("include_gripper").as_bool();
         jx_ = get_parameter("joint").as_int() - 1;
         amp_ = get_parameter("amp").as_double();
         f0_ = get_parameter("f0").as_double();
@@ -94,12 +100,14 @@ private:
                     }
                     break;
                 }
+        for (size_t k = 0; k < m->name.size(); ++k)
+            if (m->name[k] == gripper_name_ && k < m->position.size()) { grip_ = m->position[k]; break; }
         have_ = true;
     }
 
     void tick() {
         if (!have_) return;
-        if (!started_) { q0_ = q_; started_ = true; t0_ = now(); phase_ = 0.0; return; }
+        if (!started_) { q0_ = q_; grip0_ = grip_; started_ = true; t0_ = now(); phase_ = 0.0; return; }
         double t = (now() - t0_).seconds();
         std_msgs::msg::Float64MultiArray msg;
         msg.data = q0_;                       // hold all joints at start
@@ -114,13 +122,16 @@ private:
             cmd_now_ = q0_[jx_]; msg.data[jx_] = q0_[jx_];
             if (!done_) { done_ = true; RCLCPP_INFO(get_logger(), "chirp DONE -> CSV. Ctrl+C."); }
         }
+        if (include_gripper_) msg.data.push_back(grip0_);   // 8th value = gripper (held)
         pub_->publish(msg);
     }
 
     int nj_ = 7, jx_ = 3;
     double amp_ = 0.12, f0_ = 0.2, f1_ = 3.0, dur_ = 20.0, dt_ = 0.005;
     double phase_ = 0.0, freq_now_ = 0.0, cmd_now_ = 0.0;
-    bool have_ = false, started_ = false, done_ = false;
+    bool have_ = false, started_ = false, done_ = false, include_gripper_ = true;
+    double grip_ = 0.0, grip0_ = 0.0;
+    std::string gripper_name_;
     rclcpp::Time t0_;
     std::vector<std::string> names_;
     std::vector<double> q_, q0_;
