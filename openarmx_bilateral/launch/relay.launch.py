@@ -104,8 +104,8 @@ def generate_launch_description():
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
         DeclareLaunchArgument('leader_param_node', default_value=''),  # '' => /openarmx_<side>_hardware_params
         # leader gripper (joint8) gains (operator request: 5.0/0.5). '' => skip.
-        DeclareLaunchArgument('leader_gripper_kp', default_value='1.0'),
-        DeclareLaunchArgument('leader_gripper_kd', default_value='0.1'),
+        DeclareLaunchArgument('leader_gripper_kp', default_value='0.3'),
+        DeclareLaunchArgument('leader_gripper_kd', default_value='0.03'),
         # follower gains: '' = keep HW defaults; set BOTH to override all joints at once
         DeclareLaunchArgument('follower_kp', default_value=''),
         DeclareLaunchArgument('follower_kd', default_value=''),
