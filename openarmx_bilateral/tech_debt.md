@@ -109,3 +109,14 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
 (1) 이 파일 + `FORCE_FEEDBACK_NOTES.md` 읽기. (2) 해결 로드맵 1번(비-USB CAN) 가능 여부부터
 판단(하드웨어 조달). 그 전 무료 확정은 로드맵 2번(PC N 허브 직결 테스트). (3) 비-USB CAN 확보
 후에야 rate↑·in-process RT·게인 튜닝이 의미. 그 전엔 transparency는 USB-CAN ~89Hz에 묶임.
+
+## 11. 기타 TODO
+- **축별(per-joint) gravity scale 필요.** 현재 상황: openarmx `gravity_comp_node`는 **전역 스칼라
+  `g_scale` 하나만** 지원(`tau = g_scale * tau_g[j]`, 모든 관절 동일). 관절별 배열 파라미터 없음.
+  현재 전역 `g_scale=0.95`로 J1/J2/J4 붕 뜸을 트림 중이나, 관절마다 필요량이 달라 전역값은 절충.
+  → **나중에 축별 gravity scale 가능하게 해야 함.** 구현안 (A, 권장): `friction_comp_node`에
+  `grav_scale[7]`(기본 1.0) 파라미터 추가해 `out[j]=grav_scale[j]*grav[j]+friction[j]` (openarmx
+  미수정). (B): openarmx_gravity_comp.cpp에 `scale_joints` 추가(패키지 수정). oa_fd_cpp엔 이미
+  `scale_joints`[7] 존재(참고).
+- **posture spring (#2, oa_fd_cpp 컨셉) 보류 중** — J3/J5 영점 복원. friction_comp에 per-joint
+  posture FF 추가 예정. PC측 spring은 CAN 지연 chatter 위험(oa_fd 교훈) → 약한 게인+deadband.
