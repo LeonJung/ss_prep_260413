@@ -33,10 +33,10 @@ LEADER_K    = [81.0, 51.0, 40.0, 52.0, 36.0, 20.0, 48.0]
 FOLLOWER_FC = [1.04, 1.06, 0.35, 0.36, 0.16, 0.15, 0.12]
 FOLLOWER_K  = [68.0, 60.0, 26.0, 87.0, 62.0, 57.0, 39.0]
 
-# Posture spring (oa_fd_cpp values): J3/J5 self-center toward q_ref=0. LEADER only,
+# Posture spring: J3 self-center toward q_ref=0 (J5 removed per operator). LEADER only,
 # enabled with posture:=true. Weak PC-side FF (watch for chatter over CAN delay).
-POSTURE_KP = [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
-POSTURE_KD = [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
+POSTURE_KP = [0.0, 0.0, 1.8, 0.0, 0.0, 0.0, 0.0]
+POSTURE_KD = [0.0, 0.0, 0.18, 0.0, 0.0, 0.0, 0.0]
 POSTURE_Q  = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 
