@@ -121,8 +121,9 @@ def launch_setup(context, *args, **kwargs):
         'fric_scale': ParameterValue(LaunchConfiguration('friction_scale'), value_type=float),
     }
     posture_on = LaunchConfiguration('posture').perform(context).lower() in ('true', '1')
-    lc['post_kp'] = POSTURE_KP if posture_on else [0.0] * 7   # leader J3/J5 self-center
-    lc['post_kd'] = POSTURE_KD if posture_on else [0.0] * 7
+    pscale = float(LaunchConfiguration('posture_scale').perform(context))  # boost vs coupling kp
+    lc['post_kp'] = [v * pscale for v in POSTURE_KP] if posture_on else [0.0] * 7  # leader J3/J5 self-center
+    lc['post_kd'] = [v * pscale for v in POSTURE_KD] if posture_on else [0.0] * 7
     lc['post_q']  = POSTURE_Q
     arm = LaunchConfiguration('arm').perform(context).lower()
     sides = ['left', 'right'] if arm.startswith('b') else (['right'] if arm.startswith('r') else ['left'])
@@ -140,6 +141,7 @@ def generate_launch_description():
         DeclareLaunchArgument('friction', default_value='false'),
         DeclareLaunchArgument('friction_scale', default_value='0.7'),
         DeclareLaunchArgument('posture', default_value='false'),  # J3/J5 self-center (leader)
+        DeclareLaunchArgument('posture_scale', default_value='1.0'),  # ↑ to overcome coupling kp in bilateral
         DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on LEFT; verify RIGHT
         DeclareLaunchArgument('leader_kp', default_value='0.0'),
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
