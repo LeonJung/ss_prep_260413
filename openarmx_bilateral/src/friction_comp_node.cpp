@@ -36,6 +36,13 @@ public:
         declare_parameter<bool>("enable", true);          // false => gravity passthrough (A/B OFF)
         declare_parameter<double>("tau_max", 3.0);        // per-joint friction clamp [Nm]
         declare_parameter<double>("vel_eps", 0.0);        // ignore |w| below this (0 = off)
+        // posture spring (per-joint, toward q_ref): tau += kp_post*(q_ref-q) - kd_post*qd.
+        // Weak, selected joints (e.g. J3/J5) self-center. Empty arrays => off. PC-side
+        // FF: keep gains low (oa_fd saw chatter with strong PC-side springs over CAN delay).
+        declare_parameter<std::vector<double>>("kp_post", std::vector<double>{});
+        declare_parameter<std::vector<double>>("kd_post", std::vector<double>{});
+        declare_parameter<std::vector<double>>("q_ref", std::vector<double>{});
+        declare_parameter<double>("post_max", 2.0);       // posture torque clamp [Nm]
 
         nj_ = get_parameter("n_joints").as_int();
         std::string jp = get_parameter("joint_prefix").as_string();
@@ -46,7 +53,14 @@ public:
         enable_ = get_parameter("enable").as_bool();
         tau_max_ = get_parameter("tau_max").as_double();
         vel_eps_ = get_parameter("vel_eps").as_double();
-        vel_.assign(nj_, 0.0);
+        vel_.assign(nj_, 0.0); q_.assign(nj_, 0.0);
+        kp_post_ = get_parameter("kp_post").as_double_array();
+        kd_post_ = get_parameter("kd_post").as_double_array();
+        q_ref_   = get_parameter("q_ref").as_double_array();
+        post_max_ = get_parameter("post_max").as_double();
+        posture_ok_ = ((int)kp_post_.size() == nj_);
+        if (posture_ok_ && (int)kd_post_.size() != nj_) kd_post_.assign(nj_, 0.0);
+        if (posture_ok_ && (int)q_ref_.size()  != nj_) q_ref_.assign(nj_, 0.0);
 
         bool ok = ((int)fc_.size() == nj_ && (int)k_.size() == nj_);
         if (!ok) {
@@ -54,8 +68,9 @@ public:
                         fc_.size(), k_.size(), nj_);
             enable_ = false;
         }
-        RCLCPP_INFO(get_logger(), "friction_comp: enable=%s scale=%.2f n=%d  out=%s",
-                    enable_ ? "ON" : "off(passthrough)", scale_, nj_,
+        RCLCPP_INFO(get_logger(), "friction_comp: enable=%s scale=%.2f posture=%s n=%d out=%s",
+                    enable_ ? "ON" : "off(passthrough)", scale_,
+                    posture_ok_ ? "ON" : "off", nj_,
                     get_parameter("effort_out").as_string().c_str());
 
         pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -67,6 +82,7 @@ public:
                     for (size_t kk = 0; kk < m->name.size(); ++kk)
                         if (m->name[kk] == names_[j]) {
                             if (kk < m->velocity.size()) vel_[j] = m->velocity[kk];
+                            if (kk < m->position.size()) q_[j] = m->position[kk];
                             break;
                         }
             });
@@ -89,16 +105,21 @@ private:
                     tau += fr;
                 }
             }
+            // posture spring toward q_ref (weak, selected joints; e.g. J3/J5)
+            if (posture_ok_ && (int)j < nj_ && kp_post_[j] != 0.0) {
+                double p = kp_post_[j] * (q_ref_[j] - q_[j]) - kd_post_[j] * vel_[j];
+                tau += std::clamp(p, -post_max_, post_max_);
+            }
             out.data[j] = tau;
         }
         pub_->publish(out);
     }
 
     int nj_ = 7;
-    bool enable_ = true;
-    double scale_ = 0.7, tau_max_ = 3.0, vel_eps_ = 0.0;
+    bool enable_ = true, posture_ok_ = false;
+    double scale_ = 0.7, tau_max_ = 3.0, vel_eps_ = 0.0, post_max_ = 2.0;
     std::vector<std::string> names_;
-    std::vector<double> fc_, k_, vel_;
+    std::vector<double> fc_, k_, vel_, q_, kp_post_, kd_post_, q_ref_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pub_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr st_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr grav_sub_;

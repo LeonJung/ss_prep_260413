@@ -33,6 +33,12 @@ LEADER_K    = [81.0, 51.0, 40.0, 52.0, 36.0, 20.0, 48.0]
 FOLLOWER_FC = [1.04, 1.06, 0.35, 0.36, 0.16, 0.15, 0.12]
 FOLLOWER_K  = [68.0, 60.0, 26.0, 87.0, 62.0, 57.0, 39.0]
 
+# Posture spring (oa_fd_cpp values): J3/J5 self-center toward q_ref=0. LEADER only,
+# enabled with posture:=true. Weak PC-side FF (watch for chatter over CAN delay).
+POSTURE_KP = [0.0, 0.0, 1.8, 0.0, 0.8, 0.0, 0.0]
+POSTURE_KD = [0.0, 0.0, 0.18, 0.0, 0.08, 0.0, 0.0]
+POSTURE_Q  = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
 
 def build_side(side, pkg, lc):
     """All bilateral nodes for one arm side ('left' or 'right')."""
@@ -87,7 +93,9 @@ def build_side(side, pkg, lc):
         parameters=[{'grav_in': grav_only_l, 'states': '/joint_states',
                      'effort_out': eff_l, 'joint_prefix': jp,
                      'fc': LEADER_FC, 'k': LEADER_K,
-                     'enable': lc['fric'], 'scale': lc['fric_scale']}])
+                     'enable': lc['fric'], 'scale': lc['fric_scale'],
+                     'kp_post': lc['post_kp'], 'kd_post': lc['post_kd'],
+                     'q_ref': lc['post_q']}])
 
     # --- follower velocity controller (Phase 2), only when vel_ff:=true ---
     follower_vel = Node(
@@ -112,6 +120,10 @@ def launch_setup(context, *args, **kwargs):
         'fric': ParameterValue(LaunchConfiguration('friction'), value_type=bool),
         'fric_scale': ParameterValue(LaunchConfiguration('friction_scale'), value_type=float),
     }
+    posture_on = LaunchConfiguration('posture').perform(context).lower() in ('true', '1')
+    lc['post_kp'] = POSTURE_KP if posture_on else [0.0] * 7   # leader J3/J5 self-center
+    lc['post_kd'] = POSTURE_KD if posture_on else [0.0] * 7
+    lc['post_q']  = POSTURE_Q
     arm = LaunchConfiguration('arm').perform(context).lower()
     sides = ['left', 'right'] if arm.startswith('b') else (['right'] if arm.startswith('r') else ['left'])
     actions = []
@@ -127,6 +139,7 @@ def generate_launch_description():
         DeclareLaunchArgument('vel_ff', default_value='false'),
         DeclareLaunchArgument('friction', default_value='false'),
         DeclareLaunchArgument('friction_scale', default_value='0.7'),
+        DeclareLaunchArgument('posture', default_value='false'),  # J3/J5 self-center (leader)
         DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on LEFT; verify RIGHT
         DeclareLaunchArgument('leader_kp', default_value='0.0'),
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
