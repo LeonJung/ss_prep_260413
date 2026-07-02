@@ -1,60 +1,68 @@
 # openarmx_bilateral — OpenArmX bilateral force-feedback teleop
 
-Topic-only cross-relay built on the official **ros2_control MIT** stack (the
-standard openarmx control method — the HW interface does CAN/MIT; this node only
-moves joint positions between the two robots). References the unilateral teleop
-(`openarmx_teleop_bimanual`) one-way relay and generalizes it to bidirectional.
+두 openarmx 양팔로봇(leader+follower)의 **위치-위치(P-P) bilateral force-feedback** teleop.
+전부 **ros2_control MIT** 인터페이스로 제어(raw CAN 아님). relay가 두 팔의 관절 위치/속도를
+서로에게 중계하고, 반력은 HW MIT kp 커플링에서 발생. + 중력보상/속도FF/마찰보상/그리퍼/posture.
 
-- `bilateral:=false` (default) → **UNILATERAL (step b)**: follower-left tracks
-  leader-left. Leader is gravity-float (its bringup runs gravity_comp + soft kp).
-- `bilateral:=true` → also follower→leader → **force feedback** from the leader
-  HW MIT kp (set leader kp soft via the kp_joint param service).
+> 전체 배경·이유는 **history.md**, 현 상태·튜닝노브는 **STATUS.md**, 보류 부채(transparency/
+> USB-CAN)는 **tech_debt.md** 참조.
 
-Defaults are **LEFT arm only** (no arm_side typing needed).
+---
+## Quick start (실사용 명령)
 
-## Architecture (all ros2_control)
-```
-Leader robot bringup (can1=left)             Follower robot bringup (can3=left)
-  forward_position_controller  <--leader_cmd-- relay --follower_cmd--> forward_position_controller
-  forward_effort_controller (gravity_comp)                            (+ optional gravity_comp)
-        ▲ kp soft (force fb, bilateral only)        ▲ kp normal (tracking)
-```
-Force feedback = the HW MIT kp coupling on each arm toward the relayed peer
-position (no DOB / energy tank — none exist upstream either).
-
-## Step (b): left UNILATERAL — bring-up
-1. Leader-left bringup (can1), gravity comp on, kp soft so it's hand-movable.
-2. Follower-left bringup (can3), forward_position_controller.
-   (Bring up the two robots in namespaces /leader and /follower — see openarmx
-   bringup `arm_prefix`/namespacing; right arm can be left unpowered for now.)
-3. URDF for gravity_comp if used: `/tmp/v10_bimanual.urdf` (xacro v10 bimanual).
-4. Relay (unilateral):
+**0) CAN 인터페이스** (한 번):
 ```bash
-ros2 launch openarmx_bilateral relay.launch.py        # left, bilateral:=false
+for i in 0 1 2 3; do sudo ip link set can$i down 2>/dev/null; sudo ip link set can$i type can bitrate 1000000; sudo ip link set can$i up; done
 ```
-Verify: move leader-left by hand → follower-left tracks smoothly (q1-q7). Check
-the topic names with `ros2 topic list` and override leader_states/follower_states
-/leader_cmd/follower_cmd to match your bringup namespaces.
 
-## Step (c): bilateral force feedback
+**Terminal 1 — leader 브링업** (non-namespaced):
 ```bash
-ros2 launch openarmx_bilateral relay.launch.py bilateral:=true
-# leader kp soft for force feel, e.g.:
-ros2 param set /leader/openarmx_left_hardware_params kp_joint1 15.0   # ...joint2..7
+ros2 launch openarmx_bringup openarmx.bimanual.launch.py \
+  right_can_interface:=can0 left_can_interface:=can1 \
+  control_mode:=mit robot_controller:=forward_position_controller
 ```
-Block the follower by hand → the leader should resist (force feedback). Tune the
-leader kp_joint* (soft = lighter + weaker FF; higher = stronger FF).
 
-## Params
-| param | default | meaning |
-|-------|---------|---------|
-| arm_side | left_arm | left_arm / right_arm (sets joint prefix + default topics) |
-| bilateral | false | false=unilateral, true=add follower→leader (force fb) |
-| couple_sign | -1.0 | leader↔follower position sign (openarmx relay convention) |
-| leader_states / follower_states | /leader//follower /joint_states | state topics |
-| leader_cmd / follower_cmd | …/left_forward_position_controller/commands | command topics |
-| rate_hz | 200 | relay publish rate |
+**Terminal 2 — follower 브링업** (`/follower`):
+```bash
+ros2 launch openarmx_bringup openarmx.bimanual.launch.py \
+  arm_prefix:=follower right_can_interface:=can2 left_can_interface:=can3 \
+  control_mode:=mit robot_controller:=forward_position_controller
+```
 
-Notes: relay has NO openarmx_can dependency (pure ROS topics) — builds anywhere;
-needs the official openarmx bringup running at runtime. couple_sign / topic names
-may need to match your exact bringup namespacing — verify with `ros2 topic list`.
+**Terminal 3 — bilateral (이 패키지)**:
+```bash
+ros2 launch openarmx_bilateral bilateral.launch.py \
+  arm:=both vel_ff:=true friction:=true posture:=true bilateral:=true \
+  leader_kp:=10.0 leader_kd:=0.5 posture_scale:=2.0
+```
+
+### ⚠️ 브링업 필수/금지
+- **`robot_controller:=forward_position_controller` 필수** — 없으면 기본값 joint_trajectory_controller가 떠서 relay 명령을 무시함(follower 안 움직임).
+- **`enable_forward_effort` 주지 말 것** — 중력/마찰/effort는 이 패키지가 담당(안 그러면 leader 오염).
+- follower는 **`arm_prefix:=follower`** (=/follower 네임스페이스; joint 이름은 그대로 openarmx_<side>_joint).
+- CAN 매핑: leader R/L=can0/can1, follower R/L=can2/can3.
+
+---
+## bilateral.launch.py 인자
+| 인자 | 기본 | 의미 |
+|---|---|---|
+| `arm` | left | **left / right / both** (제어할 팔 쌍) |
+| `bilateral` | false | true=양방향 커플링(반력). false=unilateral(follower만 추종) |
+| `vel_ff` | false | Phase 2 속도 피드포워드 (동적 추종 개선) |
+| `friction` | false | Phase 3 마찰보상 (가벼워짐) |
+| `friction_scale` | 0.7 | 마찰보상 배율 (↑ 가벼움, 과하면 limit cycle) |
+| `posture` | false | J3 영점 자가복원 스프링 (leader) |
+| `posture_scale` | 1.0 | posture 세기 배율 (bilateral에선 ↑ 필요, 예 2.0) |
+| `leader_kp` / `leader_kd` | 0/0 | 반력 세기/댐핑 (bilateral 시 예 10~60 / 0.5) |
+| `follower_kp` / `follower_kd` | ''(HW기본) | follower 추종 게인 (전 관절 일괄) |
+| `couple_sign` | 1.0 | leader↔follower 위치 부호 (좌·우 HW 검증 +1) |
+| `g_scale` | 0.93 | 중력보상 배율 (1.0 과보상→붕뜸, 0.93에서 정지) |
+| `urdf_path` | /tmp/v10_bimanual.urdf | gravity_comp용 URDF |
+
+leader 그리퍼(joint8) 게인은 relay.launch에서 자동 `kp0.3/kd0.03` (인자 `leader_gripper_kp/kd`).
+
+## 참고
+- 단일 팔: `arm:=left` 또는 `arm:=right`. `both`는 CAN 부하 2배(rate 저하 가능 — tech_debt.md).
+- 오른팔이 반대로 움직이면 `couple_sign:=-1` (좌우 동일 +1로 검증됨).
+- RViz 끄기: 브링업 후 `pkill -f rviz2`.
+- 진단/측정 노드: `log_node`(추종), `friction_log_node`(effort 분해), `chirp_node`(대역폭), `friction_id_node`(마찰식별), `joint_echo_node`(관절각).
