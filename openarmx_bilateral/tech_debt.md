@@ -80,8 +80,9 @@ chirp_node로 follower 한 관절 사인 스윕(0.2→3Hz) cmd/act 로깅. gener
 RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경로**가 문제.
 
 ## 8. 해결 로드맵 (debt 갚을 때 우선순위)
-1. **[최우선] 비-USB CAN (PCIe-CAN 또는 SPI-CAN)** — USB 왕복지연 제거 → 루프 rate↑ +
-   PC N 팡팡 해소 + RT 이득 실현 가능. MIT도 USB 안 씀(PCB→CAN 직결, CAN 3kHz).
+1. **[최우선] USB 왕복지연 제거** — (a) **비-USB CAN(PCIe/SPI-CAN)** 또는 (b) **HS-USB(480M)
+   어댑터**(현물은 full-speed 12M — §8b). USB 왕복지연 제거 → 루프 rate↑ + PC N 팡팡 해소 +
+   RT 이득 실현. MIT도 USB 안 씀(PCB→CAN 직결, CAN 3kHz). **CAN-FD는 여기 해당 안 됨(§8b 기각).**
    **이거 하나가 rate·팡팡·RT 세 개를 동시에 풀 1순위.**
 2. **[싸고 빠른 확정 테스트] PC N 허브 직결**: 중간 4p허브 제거, 7p PCAN허브를 NUC 포트
    직결(PC M처럼 1단) → 팡팡 사라지나? = 토폴로지 확정.
@@ -94,6 +95,22 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
    제거) 후 어깨 Kp↑. (h의 "살".)
 6. **DDS/구조**: 양팔 단일 controller_manager + 커스텀 bilateral 컨트롤러(in-process), 또는
    intra-process/shared-mem RMW(Iceoryx/Zenoh). (e/i)
+
+## 8b. CAN-FD 검토 결과 — 기각 (2026-07)
+사양서·lsusb·제조사 답변으로 CAN-FD가 89Hz 캡을 깨는지 검토 → **기각**.
+- **lsusb -t 확정:** 허브(Dev61)는 480M(HS)이지만 그 아래 **peak_usb 동글 6개는 각각 `12M`
+  = full-speed** 로 enumerate. 즉 **동글 자체가 full-speed USB 장치**(허브가 HS여도 링크는 FS).
+- 사양서의 "4/6채널 단일 480M HS 장치"는 **현물과 불일치**(현물=단채널 PCAN-USB FD ×6).
+- 제조사: "baud rate 변경 가능, CAN-FD는 보통 5M."
+- **그래도 캡 못 깸. 이유 2:**
+  1. 프레임이 작음(MIT 8B). CAN-FD 이득은 큰 페이로드 데이터구간 → 8B는 arb(1Mbps) 지배,
+     5M로 올려도 와이어 시간 거의 불변. (CAN 와이어는 11ms 중 ~2ms뿐.)
+  2. 진짜 병목 = **full-speed USB 폴링(1ms 단위) × 채널당 8모터 순차 왕복 ≈ 8~11ms/사이클.**
+     CAN-FD는 USB 트랜잭션 수·지연을 못 줄임.
+- **결론:** CAN-FD는 레버 아님(11ms→~9.5ms marginal, 그나마 드라이버+모터 펌웨어 FD 필요).
+  → 로드맵 1번(비-USB) 또는 **HS-USB(480M) 어댑터**가 정답.
+- **미완 확정:** `latency_capture.launch.py`(candump 타임스탬프)로 8모터 피드백이 ~1ms 순차면
+  FS-USB 폴링 확정, <0.2ms 뭉치면 다른 원인. ← 최종 결정타, 아직 캡처 안 함.
 
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
