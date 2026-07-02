@@ -105,7 +105,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('target', default_value='follower'),  # follower | leader
         DeclareLaunchArgument('urdf_path', default_value='/tmp/v10_bimanual.urdf'),
-        DeclareLaunchArgument('g_scale', default_value='0.95'),  # match bilateral
+        DeclareLaunchArgument('g_scale', default_value='0.93'),  # match bilateral
         DeclareLaunchArgument('csv', default_value='/tmp/friction_id.csv'),
         DeclareLaunchArgument('range', default_value='0.45'),   # fallback half-range [rad]
         DeclareLaunchArgument('dwell', default_value='5.0'),    # s per speed level
