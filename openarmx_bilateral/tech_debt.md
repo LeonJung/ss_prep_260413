@@ -112,6 +112,12 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
      CAN-FD는 USB 트랜잭션 수·지연을 못 줄임.
 - **결론:** CAN-FD는 레버 아님(11ms→~9.5ms marginal, 그나마 드라이버+모터 펌웨어 FD 필요).
   → 로드맵 1번(비-USB) 또는 **HS-USB(480M) 어댑터**가 정답.
+- **[2026-07 실증 확인 — 이론 확정]** 실제로 실험함:
+  1. `can_fd:=true` 브링업 → **모터 안 움직임**(토크는 걸리나 leader 밀어도 follower 무반응).
+     = DM 모터 펌웨어가 classic 모드라 FD 프레임을 버림. FD 쓰려면 모터 16개 펌웨어 재설정 필요.
+  2. 인터페이스만 FD(bitrate 1M/dbitrate 5M) + `can_fd` 미지정(classic 프레임) → candump
+     **rate 완전 동일**(can0/1 154.5Hz, can2/3 175.6Hz — classic 1M 대비 변화 0).
+     classic 프레임은 dbitrate 무시(nominal 1M). → **CAN-FD dead end, 재검토 불필요.**
 - **미완 확정:** `latency_capture.launch.py`(candump 타임스탬프)로 8모터 피드백이 ~1ms 순차면
   FS-USB 폴링 확정, <0.2ms 뭉치면 다른 원인. ← 최종 결정타, 아직 캡처 안 함.
 
