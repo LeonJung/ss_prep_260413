@@ -40,8 +40,12 @@ ament_target_dependencies(friction_log_node rclcpp sensor_msgs std_msgs)
 add_executable(chirp_node src/chirp_node.cpp)
 ament_target_dependencies(chirp_node rclcpp sensor_msgs std_msgs)
 
+# Latency/rate diagnostics: zero-arg probe of the ROS-side (software) loop rate+jitter
+add_executable(rate_probe_node src/rate_probe_node.cpp)
+ament_target_dependencies(rate_probe_node rclcpp)
+
 install(TARGETS relay_node log_node friction_id_node joint_echo_node
-        friction_comp_node friction_log_node chirp_node
+        friction_comp_node friction_log_node chirp_node rate_probe_node
         DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
