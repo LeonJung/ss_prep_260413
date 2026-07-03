@@ -32,12 +32,12 @@ from launch_ros.parameter_descriptions import ParameterValue
 # placeholder ("대충"); tune by feel. Requires the driver to feed the gripper effort iface
 # (v10_simple_hardware.cpp write(): gripper_param.torque = tau_commands_[ARM_DOF]).
 N_JOINTS    = 8
-GRIP_FC     = 0.10   # gripper Coulomb [Nm], rough
-GRIP_K      = 40.0   # gripper tanh sharpness, rough
-LEADER_FC   = [1.21, 0.63, 0.31, 0.39, 0.14, 0.17, 0.13, GRIP_FC]
-LEADER_K    = [81.0, 51.0, 40.0, 52.0, 36.0, 20.0, 48.0, GRIP_K]
-FOLLOWER_FC = [1.04, 1.06, 0.35, 0.36, 0.16, 0.15, 0.12, GRIP_FC]
-FOLLOWER_K  = [68.0, 60.0, 26.0, 87.0, 62.0, 57.0, 39.0, GRIP_K]
+# Arm joints 1-7 (identified). Gripper (8th) Fc/K come from launch args grip_fc/grip_k
+# (rough, tune by feel live — no rebuild). Max gripper effort = friction_scale * grip_fc.
+LEADER_FC_ARM   = [1.21, 0.63, 0.31, 0.39, 0.14, 0.17, 0.13]
+LEADER_K_ARM    = [81.0, 51.0, 40.0, 52.0, 36.0, 20.0, 48.0]
+FOLLOWER_FC_ARM = [1.04, 1.06, 0.35, 0.36, 0.16, 0.15, 0.12]
+FOLLOWER_K_ARM  = [68.0, 60.0, 26.0, 87.0, 62.0, 57.0, 39.0]
 
 # Posture spring: J3 self-center toward q_ref=0 (J5 removed per operator). LEADER only,
 # enabled with posture:=true. Weak PC-side FF (watch for chatter over CAN delay).
@@ -80,7 +80,7 @@ def build_side(side, pkg, lc):
         parameters=[{'grav_in': grav_only_f, 'states': '/follower/joint_states',
                      'effort_out': eff_f, 'joint_prefix': jp,
                      'n_joints': N_JOINTS, 'gripper_joint': f'openarmx_{side}_finger_joint1',
-                     'fc': FOLLOWER_FC, 'k': FOLLOWER_K,
+                     'fc': lc['follower_fc'], 'k': lc['follower_k'],
                      'enable': lc['fric'], 'scale': lc['fric_scale']}])
 
     # --- leader (root CM): effort ctrl + gravity -> grav_only_<side> + friction ---
@@ -101,7 +101,7 @@ def build_side(side, pkg, lc):
         parameters=[{'grav_in': grav_only_l, 'states': '/joint_states',
                      'effort_out': eff_l, 'joint_prefix': jp,
                      'n_joints': N_JOINTS, 'gripper_joint': f'openarmx_{side}_finger_joint1',
-                     'fc': LEADER_FC, 'k': LEADER_K,
+                     'fc': lc['leader_fc'], 'k': lc['leader_k'],
                      'enable': lc['fric'], 'scale': lc['fric_scale'],
                      'kp_post': lc['post_kp'], 'kd_post': lc['post_kd'],
                      'q_ref': lc['post_q']}])
@@ -129,6 +129,12 @@ def launch_setup(context, *args, **kwargs):
         'fric': ParameterValue(LaunchConfiguration('friction'), value_type=bool),
         'fric_scale': ParameterValue(LaunchConfiguration('friction_scale'), value_type=float),
     }
+    grip_fc = float(LaunchConfiguration('grip_fc').perform(context))  # gripper Coulomb [Nm], tune by feel
+    grip_k  = float(LaunchConfiguration('grip_k').perform(context))   # gripper tanh sharpness
+    lc['leader_fc']   = LEADER_FC_ARM   + [grip_fc]
+    lc['leader_k']    = LEADER_K_ARM    + [grip_k]
+    lc['follower_fc'] = FOLLOWER_FC_ARM + [grip_fc]
+    lc['follower_k']  = FOLLOWER_K_ARM  + [grip_k]
     posture_on = LaunchConfiguration('posture').perform(context).lower() in ('true', '1')
     pscale = float(LaunchConfiguration('posture_scale').perform(context))  # boost vs coupling kp
     lc['post_kp'] = [v * pscale for v in POSTURE_KP] if posture_on else [0.0] * N_JOINTS  # leader J3 self-center
@@ -149,6 +155,8 @@ def generate_launch_description():
         DeclareLaunchArgument('vel_ff', default_value='false'),
         DeclareLaunchArgument('friction', default_value='false'),
         DeclareLaunchArgument('friction_scale', default_value='0.7'),
+        DeclareLaunchArgument('grip_fc', default_value='0.10'),   # gripper Coulomb [Nm]; ↑ if still stiff
+        DeclareLaunchArgument('grip_k', default_value='40.0'),    # gripper tanh sharpness
         DeclareLaunchArgument('posture', default_value='false'),  # J3/J5 self-center (leader)
         DeclareLaunchArgument('posture_scale', default_value='1.0'),  # ↑ to overcome coupling kp in bilateral
         DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on LEFT; verify RIGHT
