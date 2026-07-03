@@ -30,6 +30,9 @@ public:
             "/follower/left_forward_effort_controller/commands");
         declare_parameter<std::string>("joint_prefix", "openarmx_left_joint");
         declare_parameter<int>("n_joints", 7);
+        // Gripper (last joint) has a different state name (…finger_joint1, not …joint8).
+        // If set, it overrides names_.back() for velocity/position lookup. "" => joint_prefix+N.
+        declare_parameter<std::string>("gripper_joint", "");
         declare_parameter<std::vector<double>>("fc", std::vector<double>{});  // Coulomb [Nm]
         declare_parameter<std::vector<double>>("k", std::vector<double>{});   // tanh sharpness
         declare_parameter<double>("scale", 0.7);          // conservative; tune by feel
@@ -47,6 +50,8 @@ public:
         nj_ = get_parameter("n_joints").as_int();
         std::string jp = get_parameter("joint_prefix").as_string();
         for (int i = 0; i < nj_; ++i) names_.push_back(jp + std::to_string(i + 1));
+        std::string gj = get_parameter("gripper_joint").as_string();
+        if (!gj.empty() && !names_.empty()) names_.back() = gj;  // last joint = gripper's real state name
         fc_ = get_parameter("fc").as_double_array();
         k_  = get_parameter("k").as_double_array();
         scale_ = get_parameter("scale").as_double();
@@ -94,9 +99,12 @@ public:
 private:
     void onGrav(const std_msgs::msg::Float64MultiArray::SharedPtr& g) {
         std_msgs::msg::Float64MultiArray out;
-        out.data.resize(g->data.size());
-        for (size_t j = 0; j < g->data.size(); ++j) {
-            double tau = g->data[j];
+        // Output nj_ commands even if gravity is shorter (e.g. gravity is 7-DOF but we
+        // also compensate the gripper as an 8th joint -> gripper gravity = 0, friction only).
+        const size_t n = std::max(static_cast<size_t>(nj_), g->data.size());
+        out.data.resize(n);
+        for (size_t j = 0; j < n; ++j) {
+            double tau = (j < g->data.size()) ? g->data[j] : 0.0;
             if (enable_ && (int)j < nj_) {
                 double w = vel_[j];
                 if (std::abs(w) >= vel_eps_) {

@@ -11,6 +11,7 @@
       - openarmx_right_joint5
       - openarmx_right_joint6
       - openarmx_right_joint7
+      - openarmx_right_finger_joint1   # gripper (joint8): friction-comp effort FF (must stay LAST)
     interface_name: effort
     command_interfaces:
       - effort
