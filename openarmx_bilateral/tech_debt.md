@@ -158,19 +158,25 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
 FEEDBACK `028xxxFD` 142Hz. **host→motor 프레임마다 피드백 1개** ⇒ MIT 명령이 이미 위치/속도/
 토크 피드백을 돌려줌 ⇒ **read()의 별도 상태요청은 중복.**
 
-**근본원인 (v10_simple_hardware.cpp):** CM update 1사이클 = CAN blocking 왕복 **2회 + 1ms sleep**:
-- `read()` (473행): `refresh_all()`[상태요청 전송] + `recv_all()`[대기] = 왕복①
-- `write()` (566행): `send_motion_control_commands()`[MIT] + **`sleep_for(1000us)`(699행 직전)** +
-  `recv_all()` = 왕복② + 1ms
-- 합 ≈ 11~13ms > 10ms 목표 → 오버런 75~89Hz.
+**근본원인 (v10_simple_hardware.cpp) — [2026-07 정정]:** CM update 1사이클 = CAN 왕복 **2회**.
+(이전 초안의 "write() 1ms sleep"은 오독 — 그 sleep_for는 shutdown용 `return_to_zero()`에 있고
+per-cycle 아님. recv_all(int first_timeout_us)는 첫 프레임을 최대 timeout까지 select 대기 후
+나머지는 0us 드레인.)
+- `read()` (473행): `refresh_all()`[상태요청 0200FDxx 전송] + `recv_all(500us)` = 왕복①
+- `write()` (566행): `send_motion_control_commands()`[MIT] + `recv_all(1000us)` = 왕복②
+- MIT 명령이 이미 피드백을 돌려주므로 read()의 refresh 왕복은 **중복** → 합 ≈ 11~13ms > 10ms → 오버런.
 
-**하드웨어 없이 89→~150Hz 레버 (upstream openarmx_hardware 수정, 제어PC서 실험 필요):**
-1. write() `sleep_for(1000us)` 축소/제거(예 200us) — −1ms/사이클. 위험 낮음(recv 타이밍 확인).
-2. **read()의 `refresh_all()+recv_all()` 제거 → write() 피드백 재사용** — 왕복 2→1 → **CM ~2배
-   (75→~150Hz).** 위험 중(1사이클 stale·init 주의). ← **최대 ROI.**
-3. read/write 별도 스레드 비동기화(CAN free-run+최신값 캐시) → CM을 CAN서 분리 → 200Hz+. 위험 높음.
+**레버 (upstream openarmx_hardware 수정, 제어PC서 실험 필요) — LATENCY_LEVER_DRIVER_PATCH.md 참조:**
+1. **[적용함, 실험 대기] 파이프라인화: 왕복 2→1.** read()=recv_all()만(직전 write의 MIT 피드백
+   드레인, refresh_all 주석), write()=전송만(recv_all 주석). 사이클당 전송 절반 + recv 1회 →
+   **CM ~2배(75→~150Hz) 기대.** 위험 중(상태 1사이클 stale). ← **최대 ROI, 현재 여기.**
+2. (후속) read/write 별도 스레드 비동기화(CAN free-run+최신값 캐시) → CM을 CAN서 분리 → 200Hz+. 위험 높음.
 → **로드맵 재정렬: 이 SW 레버(무료)가 비-USB CAN 하드웨어보다 우선.** 팡팡/tail은 여전히 USB(§8c)지만
   rate·오버런은 여기서 대부분 해결 가능.
+
+**테스트 프로토콜 (A/B, rate_probe):** ① 레버 전 baseline rate_probe(=leader75/follower86 확인) →
+② 드라이버 패치+빌드 후 **먼저 teleop 동작·부드러움 확인**(stale 1사이클 이상 없나) → ③ rate_probe
+재측정, joint_states rate가 75/86 → ~130-150 오르나 + 지터(std) 확인. 이상하면 2줄 주석해제로 즉시 롤백.
 
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
