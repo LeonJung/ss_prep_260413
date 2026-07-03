@@ -6,9 +6,12 @@
 
 ## 0. 한 줄 요약
 bilateral force-feedback의 **transparency(투명도)** 를 MIT Sangbae Kim 데모 수준으로
-올리려 했으나, **공통 병목 = USB-CAN(PEAK PCAN-USB FD) 왕복지연**으로 막힘. 제어루프가
-**~89Hz로 캡**되고, PC N(NUC)에선 USB 허브 캐스케이드로 **관절 팡팡**. PreemptRT 커널은
-**transparency 개선 0(데이터 확인)**. 근본 해결 = **비-USB CAN(PCIe/SPI)** 으로 추정.
+올리려 했으나 막힘. **[2026-07 실측 정정 §8c]** 예전엔 "USB-CAN이 89Hz로 캡"이라 봤으나,
+candump 실측 결과 **CAN 루프는 154~173Hz**로 돌고 **`joint_states` 89Hz는 CM/broadcaster/DDS
+소프트웨어 천장**임이 드러남. 두 축으로 분리: (1) **rate**는 소프트웨어(in-process CM/RT)로
+하드웨어 없이 개선 가능(최우선·무료), (2) **팡팡/지터**는 USB 왕복 **tail(13~29ms 스톨)** 이
+범인 → non-USB/HS-USB. PreemptRT 커널은 **transparency 개선 0(데이터 확인)**. CAN-FD는
+modest(+23%, §8b).
 
 ## 1. 목표 (operator 기준)
 MIT Kim 랩 3-DOF leader/follower 데모 느낌: follower가 벽에 막히면 leader도 거의 안 움직임
@@ -111,6 +114,26 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
   → 로드맵 1번(비-USB) 또는 **HS-USB(480M) 어댑터**가 정답.
 - **미완 확정:** `latency_capture.launch.py`(candump 타임스탬프)로 8모터 피드백이 ~1ms 순차면
   FS-USB 폴링 확정, <0.2ms 뭉치면 다른 원인. ← 최종 결정타, 아직 캡처 안 함.
+
+## 8c. latency_capture 실측 결과 (2026-07) — 89Hz 진단 정정
+`latency_capture.launch.py` candump 29s / 269k 프레임 분석. **기존 "USB-CAN이 89Hz로 캡"
+서술을 정정한다.**
+- **CAN 루프 = 154~173Hz (채널당 6ms), NOT 89Hz.** can0/1(leader)=154Hz, can2/3(follower)
+  =173Hz. 주기 p50 5.8~6.5ms, p95 8~11ms, **max 14~16ms.**
+- → **`ros2 topic hz /joint_states`=89Hz는 CAN이 아니라 controller_manager/broadcaster/DDS
+  (소프트웨어) 천장.** CAN은 154Hz 주는데 ROS 레이어가 89으로 깎음.
+- **프레임당 0.44ms = CAN 와이어 ~0.13ms + USB/드라이버 오버헤드 ~0.31ms.** 사이클 ~15프레임.
+  USB 오버헤드가 사이클의 2/3(~4.6ms), CAN 와이어 1/3(~2ms).
+- **요청(0200FDxx)→피드백(028xxxFD) 왕복 median 0.2ms (빠름).** 그러나 꼬리 p90 6ms,
+  **max 13~29ms 스톨** → **이 tail이 팡팡·지터·transparency 저하의 실제 범인**(평균 아님).
+- **함의 (우선순위 재정렬):**
+  1. **[신규 최우선·무료] 소프트웨어 rate 천장 제거** — CAN이 154Hz 주는데 ROS 89Hz.
+     in-process 단일-CM bilateral 컨트롤러 + update_rate + RT로 **하드웨어 없이 89→~150Hz 가능성.**
+     CAN-FD·PCIe보다 ROI 높음. (검증: CM update_rate/오버런 카운터 확인.)
+  2. **USB tail(13~29ms 스톨)** = smoothness/팡팡 → non-USB/HS-USB 정당화(단 평균 rate 아님).
+  3. **CAN-FD = modest(+23%, 6→5.3ms), 변혁적 아님**(§8b). 바닥은 USB 오버헤드 4.6ms.
+- 프레임 스킴: `0200FDxx`=모터xx 상태요청(77Hz), `028xxxFD`=피드백(154Hz), `017E../0180..`
+  =MIT 토크명령(write).
 
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
