@@ -118,6 +118,8 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
   2. 인터페이스만 FD(bitrate 1M/dbitrate 5M) + `can_fd` 미지정(classic 프레임) → candump
      **rate 완전 동일**(can0/1 154.5Hz, can2/3 175.6Hz — classic 1M 대비 변화 0).
      classic 프레임은 dbitrate 무시(nominal 1M). → **CAN-FD dead end, 재검토 불필요.**
+  3. **[2026-07 제조사 확인 — 최종 종결]** 제조사 답변: **Robstride 모터는 CAN-FD unavailable.**
+     모터가 애초에 FD를 지원 안 함 → 펌웨어 재설정 여지도 없음. **CAN-FD 라인 영구 종료.**
 - **미완 확정:** `latency_capture.launch.py`(candump 타임스탬프)로 8모터 피드백이 ~1ms 순차면
   FS-USB 폴링 확정, <0.2ms 뭉치면 다른 원인. ← 최종 결정타, 아직 캡처 안 함.
 
@@ -195,3 +197,17 @@ FEEDBACK `028xxxFD` 142Hz. **host→motor 프레임마다 피드백 1개** ⇒ M
   `scale_joints`[7] 존재(참고).
 - **posture spring (#2, oa_fd_cpp 컨셉) 보류 중** — J3/J5 영점 복원. friction_comp에 per-joint
   posture FF 추가 예정. PC측 spring은 CAN 지연 chatter 위험(oa_fd 교훈) → 약한 게인+deadband.
+
+- **[TODO] 그리퍼(joint8) 조종단 뻑뻑함 미해결.** (2026-07)
+  - **완료된 것 (파이프라인 정상):** joint8 friction comp 배관 전부 연결됨 — friction_comp_node
+    8관절 출력(`gripper_joint` param=finger_joint1, 출력 `max(nj,grav)`), effort yaml에 finger 추가,
+    launch `grip_fc`/`grip_k` 인자화. **드라이버 2줄 패치 필수**(`GRIPPER_FRICTION_DRIVER_PATCH.md`):
+    read() 그리퍼 속도(하드코딩 0 → `get_velocity()`), write() 그리퍼 토크(0 → `tau_commands_[ARM_DOF]`).
+  - **실측:** effort = fric_scale(0.7)·grip_fc → 부호 정상(조일때−/풀때+), 근데 grip_fc=0.10이면 max
+    ±0.07Nm로 **너무 약해 뻑뻑함 안 풀림.** grip_fc↑ 스윕 미완(0.5/1.0 등 시도 예정).
+  - **미검증 가설 (다음에 볼 것):** 뻑뻑함이 (a) 기계 마찰인지 (b) **bilateral 위치 커플링 스프링**인지
+    분리 안 됨. leader 그리퍼 kp=0.3(relay gain_loop) + **follower 그리퍼 kp**(HW기본, 값 미확인)로
+    당겨져 뻑뻑할 수 있음. → **follower 그리퍼 kp가 0이 아니면 낮춰보기**(단 반력↓ 트레이드오프).
+    먼저 확인: `ros2 param get`으로 follower `/…hardware_params` 의 `kp_joint8` 현재값. 0이면 이 가설 기각.
+  - 그 외: grip_fc 과다→과보상 limit cycle(손 떼도 스르륵); grip_k↑는 저속 포화 개선. 정밀화하려면
+    그리퍼 전용 friction_id 필요(현재 Fc/K는 대충값).
