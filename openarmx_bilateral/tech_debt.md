@@ -141,6 +141,35 @@ RT 커널은 무관(스케줄 avg 1µs로 충분). 즉 **하드웨어 통신 경
 - 프레임 스킴: `0200FDxx`=모터xx 상태요청(77Hz), `028xxxFD`=피드백(154Hz), `017E../0180..`
   =MIT 토크명령(write).
 
+## 8d. rate_probe 실측 — 89Hz 근본원인 = 드라이버 소프트웨어 (하드웨어 아님!)
+`rate_probe.launch.py` + candump 프레임분류로 89Hz를 **완전 근본원인**까지 규명. **"PCIe 필요"
+가정을 뒤집음 — 89Hz는 CAN 대역이 아니라 openarmx_hardware 드라이버의 중복 왕복 + 1ms sleep.**
+
+**rate_probe 실측 (update_rate=100 설정):**
+- **명령(write) 경로 = 200Hz, 지터 std 0.05ms (완벽).** relay_node·forward controllers 결백.
+- **상태(read) 경로 = joint_state_broadcaster(=CM update 루프):**
+  - leader CM **75Hz**, follower CM **86Hz** → **설정 100 미달 = 오버런.**
+  - 지터 **std ~5ms, max ~25ms** → follower로 전파되어 팡팡의 SW측 원인.
+- update_rate 올려도 무의미(이미 오버런).
+
+**candump 프레임분류 (can0, 모터당):** STATUS_REQ `0200FDxx` 71Hz + MIT_CMD `017/018` 71Hz →
+FEEDBACK `028xxxFD` 142Hz. **host→motor 프레임마다 피드백 1개** ⇒ MIT 명령이 이미 위치/속도/
+토크 피드백을 돌려줌 ⇒ **read()의 별도 상태요청은 중복.**
+
+**근본원인 (v10_simple_hardware.cpp):** CM update 1사이클 = CAN blocking 왕복 **2회 + 1ms sleep**:
+- `read()` (473행): `refresh_all()`[상태요청 전송] + `recv_all()`[대기] = 왕복①
+- `write()` (566행): `send_motion_control_commands()`[MIT] + **`sleep_for(1000us)`(699행 직전)** +
+  `recv_all()` = 왕복② + 1ms
+- 합 ≈ 11~13ms > 10ms 목표 → 오버런 75~89Hz.
+
+**하드웨어 없이 89→~150Hz 레버 (upstream openarmx_hardware 수정, 제어PC서 실험 필요):**
+1. write() `sleep_for(1000us)` 축소/제거(예 200us) — −1ms/사이클. 위험 낮음(recv 타이밍 확인).
+2. **read()의 `refresh_all()+recv_all()` 제거 → write() 피드백 재사용** — 왕복 2→1 → **CM ~2배
+   (75→~150Hz).** 위험 중(1사이클 stale·init 주의). ← **최대 ROI.**
+3. read/write 별도 스레드 비동기화(CAN free-run+최신값 캐시) → CM을 CAN서 분리 → 200Hz+. 위험 높음.
+→ **로드맵 재정렬: 이 SW 레버(무료)가 비-USB CAN 하드웨어보다 우선.** 팡팡/tail은 여전히 USB(§8c)지만
+  rate·오버런은 여기서 대부분 해결 가능.
+
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
   cmd-vs-act), `friction_log_node`(effort 분해), `friction_id_node`(마찰 식별).
