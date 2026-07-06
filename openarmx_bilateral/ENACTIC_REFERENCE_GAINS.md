@@ -21,6 +21,23 @@ Friction model (theirs): `τ_fric(ω) = Fo + Fv·ω + Fc·tanh(k·ω)`
 (NB: no 0.1 factor inside tanh, unlike our `Fc·tanh(0.1·k·ω)` — so their k ≈ 10× ours in scale.
 Also they include a viscous term Fv and offset Fo; we identified Fv≈0 and used Coulomb only.)
 
+## ⚠️ Scale 비교 — enactic(DM) vs 우리(Robstride). 부분적으로만 같음
+kp는 MIT 프레임에 `[kpMin,kpMax]`로 packing되어 모터에서 그대로 round-trip → **kp 값 = 실제 강성
+Nm/rad**(범위는 표현 최대치만 정함). 우리 v10 관절별 모터타입(v10_simple_hardware.hpp)과 범위
+(openarmx-can rs_motor_constants.hpp MOTION_CONTROL_LIMITS):
+| 관절 | 우리 모터 | 우리 KP/KD 범위 | enactic(DM) 범위 | scale |
+|---|---|---|---|---|
+| J1–J2 | RS04(=DM8009) | **KP[0,5000] KD[0,100]** | KP[0,500] KD[0,5] | 범위 10×/20× |
+| J3–J4 | RS03(=DM4340) | **KP[0,5000] KD[0,100]** | KP[0,500] KD[0,5] | 범위 10×/20× |
+| J5–J7,그리퍼 | RS00(=DM4310) | KP[0,500] KD[0,5] | KP[0,500] KD[0,5] | **동일** |
+- **RS00(손목/그리퍼): enactic과 범위 동일 → Kp[24,31,25,16]/Kd0.2 그대로 이식 가능(高신뢰).**
+- **RS04/RS03(어깨/팔꿈치): 범위 10배 넓음** = 더 센 모터라 최대 강성 5000까지 가능. 240 Nm/rad은
+  물리적으로 같지만 우리는 더 세게도 감. **240을 시작점으로 100→160→240 점진 상향(펌웨어 kp 컨벤션이
+  10배 다를 가능성 배제 못하니 급투입 금지).**
+- **현재 우리 relay는 leader_kp를 전 관절 UNIFORM(~10-60)로 줌** → 어깨(enactic 240 대비 ~1/4)가
+  물러서 "벽 아닌 스프링" 느낌의 원인으로 추정. **관절별 kp 차등 도입이 벽느낌의 핵심.** (launch에
+  관절별 배열 인자 추가 필요 — 현재 미구현.)
+
 ## 배움 / 우리 세팅과의 차이
 - **Kp가 관절별로 크게 차등**: 근위 4관절(어깨·팔꿈치) **240**, 손목 3관절 **24~31**, 그리퍼 **16**.
   → 어깨는 딱딱한 벽(고 Kp), 손목은 가볍게(저 Kp). "벽 느낌 + 손목 가벼움"의 핵심으로 보임.
