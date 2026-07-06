@@ -190,8 +190,15 @@ per-cycle 아님. recv_all(int first_timeout_us)는 첫 프레임을 최대 time
   느린 CAN 프레임이 CM 루프를 안 멈춤 → tail 25→3.5ms. **"팡팡=USB tail" 결론은 틀렸고, 실제 범인은
   CM 이중왕복.** → non-USB CAN 하드웨어 없이 transparency 개선 가능성 큼(팡팡 PC N 재검증 필요).
 - stale: 1사이클=2ms(전 13ms), 무시 가능.
-- **미확인:** 실제 CAN 와이어 rate(candump). ROS 500Hz가 USB 캡으로 버퍼링인지, 진짜 와이어 500Hz인지.
-  물리 transparency는 와이어 rate가 좌우 → latency_capture로 확인 예정. 체감(벽 느낌) 보고 대기.
+- **[candump 정정] "500Hz 6배"는 착시.** After candump(can0 모터별 피드백): 500/459/215/32/4/2/3/6Hz
+  = **모터 1-2만 빠르고 3-8은 굶음.** Before는 균일(154→124Hz). 원인: `refresh_all()`(균일 라운드로빈
+  폴링) 제거 + update_rate=500 폭주 → write()가 8모터에 4000cmd/s 쏘는데 **full-speed USB 상한
+  ~1222프레임/s/채널** → CAN TX 큐 오버플로우로 send 루프 뒷 모터 드롭. **joint_states 500Hz는
+  broadcaster만 500, 모터 3-8 실제 상태는 2-32Hz stale.**
+- **올바른 처방:** 파이프라인 변경은 유지(왕복 절반=옳음), **update_rate를 USB 상한에 맞춰 ~150으로**
+  (yaml 2개 16행, 현재 500). → 8모터 균일 ~150Hz = **진짜 2배(75→150), 저지터.** 이 HW의 8모터/채널
+  물리 상한 ≈150Hz(1222프레임/s ÷ 8). 그 이상은 HS-USB 필요(§8c USB cap이 rate 상한으로 재등장 —
+  단 blocking 지터는 파이프라인으로 이미 해결). **update_rate 130~180 스윕해 "8모터 균일 최대"를 찾을 것.**
 
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
