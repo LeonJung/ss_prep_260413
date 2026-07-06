@@ -65,6 +65,7 @@ def build_side(side, pkg, lc):
             'arm_side': f'{side}_arm',
             'bilateral': lc['bilateral'], 'vel_ff': lc['vel_ff'],
             'couple_sign': lc['couple_sign'],
+            'kp': lc['kp'], 'kd': lc['kd'],   # per-joint arrays -> leader+follower
             'leader_kp': lc['leader_kp'], 'leader_kd': lc['leader_kd'],
             'follower_kp': lc['follower_kp'], 'follower_kd': lc['follower_kd'],
         }.items())
@@ -123,6 +124,7 @@ def launch_setup(context, *args, **kwargs):
         'bilateral': LaunchConfiguration('bilateral'),
         'vel_ff': LaunchConfiguration('vel_ff'),
         'couple_sign': LaunchConfiguration('couple_sign'),
+        'kp': LaunchConfiguration('kp'), 'kd': LaunchConfiguration('kd'),
         'leader_kp': LaunchConfiguration('leader_kp'), 'leader_kd': LaunchConfiguration('leader_kd'),
         'follower_kp': LaunchConfiguration('follower_kp'), 'follower_kd': LaunchConfiguration('follower_kd'),
         'urdf': LaunchConfiguration('urdf_path'), 'g_scale': LaunchConfiguration('g_scale'),
@@ -160,6 +162,10 @@ def generate_launch_description():
         DeclareLaunchArgument('posture', default_value='false'),  # J3/J5 self-center (leader)
         DeclareLaunchArgument('posture_scale', default_value='1.0'),  # ↑ to overcome coupling kp in bilateral
         DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on LEFT; verify RIGHT
+        # per-joint MIT gains (8 vals incl gripper), SAME for leader/follower & left/right.
+        # e.g. kp:=240,240,240,240,24,31,25,16 kd:=3,3,3,3,0.2,0.2,0.2,0.2  ('' => uniform leader_kp path)
+        DeclareLaunchArgument('kp', default_value=''),
+        DeclareLaunchArgument('kd', default_value=''),
         DeclareLaunchArgument('leader_kp', default_value='0.0'),
         DeclareLaunchArgument('leader_kd', default_value='0.0'),
         DeclareLaunchArgument('follower_kp', default_value=''),

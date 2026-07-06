@@ -53,8 +53,9 @@ ros2 launch openarmx_bilateral bilateral.launch.py \
 | `friction_scale` | 0.7 | 마찰보상 배율 (↑ 가벼움, 과하면 limit cycle) |
 | `posture` | false | J3 영점 자가복원 스프링 (leader) |
 | `posture_scale` | 1.0 | posture 세기 배율 (bilateral에선 ↑ 필요, 예 2.0) |
-| `leader_kp` / `leader_kd` | 0/0 | 반력 세기/댐핑 (bilateral 시 예 10~60 / 0.5) |
-| `follower_kp` / `follower_kd` | ''(HW기본) | follower 추종 게인 (전 관절 일괄) |
+| `kp` / `kd` | ''(미사용) | **관절별 MIT 게인 8값**(그리퍼 포함), leader+follower·좌우 동일 적용. 예 `kp:=240,240,240,240,24,31,25,16 kd:=3,3,3,3,0.2,0.2,0.2,0.2`. 설정 시 아래 leader_kp/follower_kp 대체 |
+| `leader_kp` / `leader_kd` | 0/0 | (kp 미설정 시) 반력 세기/댐핑 일괄 (bilateral 예 10~60 / 0.5) |
+| `follower_kp` / `follower_kd` | ''(HW기본) | (kp 미설정 시) follower 추종 게인 (전 관절 일괄) |
 | `couple_sign` | 1.0 | leader↔follower 위치 부호 (좌·우 HW 검증 +1) |
 | `g_scale` | 0.93 | 중력보상 배율 (1.0 과보상→붕뜸, 0.93에서 정지) |
 | `urdf_path` | /tmp/v10_bimanual.urdf | gravity_comp용 URDF |

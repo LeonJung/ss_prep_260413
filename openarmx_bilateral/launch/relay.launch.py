@@ -54,6 +54,35 @@ def launch_setup(context, *args, **kwargs):
 
     n = int(LaunchConfiguration('n_joints').perform(context))
 
+    # --- NEW: per-joint kp/kd arrays -> applied to leader AND follower (this side) ---
+    # kp:=n1,...,n8 kd:=m1,...,m8 (comma/space separated; braces optional). Same values
+    # for leader & follower; both sides covered because build_side runs per side.
+    kp_s = LaunchConfiguration('kp').perform(context).strip()
+    kd_s = LaunchConfiguration('kd').perform(context).strip()
+    if kp_s and kd_s:
+        import re
+        def parse_arr(s):
+            return [v for v in re.split(r'[,\s]+', s.strip().strip('{}[]')) if v]
+        kps, kds = parse_arr(kp_s), parse_arr(kd_s)
+        load_cmds = []
+        for role, node in (('leader',   '/openarmx_%s_hardware_params' % sp),
+                           ('follower', '/follower/openarmx_%s_hardware_params' % sp)):
+            path = '/tmp/oax_gains_%s_%s.yaml' % (sp, role)
+            lines = ['%s:' % node, '  ros__parameters:']
+            # force float (params are double-typed; int would be rejected by param load)
+            lines += ['    kp_joint%d: %s' % (i, float(v)) for i, v in enumerate(kps, 1)]
+            lines += ['    kd_joint%d: %s' % (i, float(v)) for i, v in enumerate(kds, 1)]
+            with open(path, 'w') as f:
+                f.write('\n'.join(lines) + '\n')
+            load_cmds.append('ros2 param load %s %s' % (node, path))
+        cmd = ('; '.join(load_cmds) +
+               '; echo "[openarmx_bilateral] %s per-joint gains -> leader+follower  kp=%s kd=%s"'
+               % (sp, ','.join(kps), ','.join(kds)))
+        # delay so the HW param nodes are up (bring up the robots first)
+        actions.append(TimerAction(period=4.0, actions=[
+            ExecuteProcess(cmd=['bash', '-lc', cmd], output='screen')]))
+        return actions   # per-joint mode replaces the uniform leader_kp/follower_kp path
+
     def gain_loop(label, node, kp, kd):
         # set kp_joint1..n and kd_joint1..n in ONE shot (no hand-tuning per joint)
         cmd = ('for j in $(seq 1 %d); do '
@@ -98,6 +127,10 @@ def generate_launch_description():
         DeclareLaunchArgument('vel_ff', default_value='false'),     # Phase 2 velocity FF
         DeclareLaunchArgument('couple_sign', default_value='1.0'),  # +1 verified on HW
         DeclareLaunchArgument('rate_hz', default_value='200'),
+        # per-joint gains (8 vals incl gripper). '' => fall back to uniform leader_kp path.
+        # Same values applied to leader AND follower (this side).
+        DeclareLaunchArgument('kp', default_value=''),
+        DeclareLaunchArgument('kd', default_value=''),
         # leader gains auto-set (no manual param-set loop). unilateral: 0/0.
         DeclareLaunchArgument('set_leader_gains', default_value='true'),
         DeclareLaunchArgument('leader_kp', default_value='0.0'),   # bilateral: ~15 (soft)
