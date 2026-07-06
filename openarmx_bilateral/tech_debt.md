@@ -204,7 +204,9 @@ per-cycle 아님. recv_all(int first_timeout_us)는 첫 프레임을 최대 time
 - **posture spring (#2, oa_fd_cpp 컨셉) 보류 중** — J3/J5 영점 복원. friction_comp에 per-joint
   posture FF 추가 예정. PC측 spring은 CAN 지연 chatter 위험(oa_fd 교훈) → 약한 게인+deadband.
 
-- **[TODO] 그리퍼(joint8) 조종단 뻑뻑함 미해결.** (2026-07)
+- **[TODO — 파킹됨 2026-07] 그리퍼(joint8) 조종단 뻑뻑함 미해결.** 패키지 배관은 커밋됨(main에
+  포함), 단 **드라이버 편집 A①②(GRIPPER_FRICTION_DRIVER_PATCH.md)는 현재 미적용** — 재개 시 적용.
+  (latency 레버 B③④와는 별개.)
   - **완료된 것 (파이프라인 정상):** joint8 friction comp 배관 전부 연결됨 — friction_comp_node
     8관절 출력(`gripper_joint` param=finger_joint1, 출력 `max(nj,grav)`), effort yaml에 finger 추가,
     launch `grip_fc`/`grip_k` 인자화. **드라이버 2줄 패치 필수**(`GRIPPER_FRICTION_DRIVER_PATCH.md`):
