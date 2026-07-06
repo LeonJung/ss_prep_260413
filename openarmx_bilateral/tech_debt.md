@@ -178,6 +178,21 @@ per-cycle 아님. recv_all(int first_timeout_us)는 첫 프레임을 최대 time
 ② 드라이버 패치+빌드 후 **먼저 teleop 동작·부드러움 확인**(stale 1사이클 이상 없나) → ③ rate_probe
 재측정, joint_states rate가 75/86 → ~130-150 오르나 + 지터(std) 확인. 이상하면 2줄 주석해제로 즉시 롤백.
 
+**[2026-07 실측 결과 — 대성공, 예상 초과]**
+| 지표 | Before(L/F) | After | 개선 |
+|---|---|---|---|
+| joint_states rate | 74/87 Hz | **500/500 Hz** | ~6× |
+| dt 평균 | 13.5/11.5 ms | 2.0 ms | ~6× |
+| dt 지터 std | 5.0/4.5 ms | **0.40 ms** | ~12× |
+| dt 최대 tail | 25/24 ms | **3.4 ms** | ~7× |
+- CM이 설정 update_rate(제어PC=500)에 **완전 도달**. 오버런은 이중 blocking 왕복이 원인이었음 확정.
+- **§8c 정정:** 지터/tail(25ms)의 대부분은 USB가 아니라 **CM blocking**이었다. non-blocking 드레인으로
+  느린 CAN 프레임이 CM 루프를 안 멈춤 → tail 25→3.5ms. **"팡팡=USB tail" 결론은 틀렸고, 실제 범인은
+  CM 이중왕복.** → non-USB CAN 하드웨어 없이 transparency 개선 가능성 큼(팡팡 PC N 재검증 필요).
+- stale: 1사이클=2ms(전 13ms), 무시 가능.
+- **미확인:** 실제 CAN 와이어 rate(candump). ROS 500Hz가 USB 캡으로 버퍼링인지, 진짜 와이어 500Hz인지.
+  물리 transparency는 와이어 rate가 좌우 → latency_capture로 확인 예정. 체감(벽 느낌) 보고 대기.
+
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
   cmd-vs-act), `friction_log_node`(effort 분해), `friction_id_node`(마찰 식별).
