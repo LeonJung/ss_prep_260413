@@ -215,6 +215,17 @@ candump(모터별 피드백)로 150/200/250 스윕:
 - **병목 = USB2CAN(PCAN-USB FD) full-speed USB 전송 오버헤드**(프레임당 ~0.28ms). CAN 버스(1Mbps,
   31%만 사용, 이론 ~475Hz)도 모터(kHz, 왕복 median 0.2ms)도 아님. 150↑ 균일은 **HS-USB(480M) 또는
   PCIe/SPI CAN** 필요(=A-1). 상세 `LATENCY_INVESTIGATION.md` 병목 분석.
+
+**[2026-07 제어주기 상한 원인 확정] = USB2CAN 동글이 full-speed로 동작 (하드웨어 상한)**
+- 근거: `lsusb -t`에서 **허브(QinHeng)는 480M HS로 정상**인데 그 아래 **peak_usb 동글 6개 전부 12M
+  full-speed.** 즉 허브·케이블이 아니라 **동글 자체가 full-speed.**
+- 모순: 정품 PCAN-USB FD(0c72:0012)는 PEAK 공식상 **Hi-Speed(480M)** 인데 현물은 FS. 6/6이 FS +
+  운영자 보유 사양서 "USB Full-speed mode" → **full-speed 클론(PEAK VID/PID만 보고) 가능성 유력**
+  (정품이 6개 다 협상실패로 FS일 확률은 낮음).
+- **확정 테스트(동글 1개 마더보드 직결→lsusb -t)는 물리적 form factor상 불가** → 케이블/커넥터 교체로
+  올라갈 가능성은 **낮다고 보고 종결.** (혹시 나중에 직결 가능해지면 5분 테스트로 확인 가치는 있음.)
+- **∴ 제어주기 150Hz 상한의 확정 원인 = full-speed USB2CAN 전송.** 해결책은 **HS-USB(480M) 어댑터
+  또는 PCIe/SPI CAN 교체**(=A-1)뿐. 케이블/커넥터 교체·CAN-FD·update_rate↑ 모두 불가/무효 확인됨.
 - **결론: "89Hz=하드웨어 병목, PCIe 필요" 가설 기각.** 드라이버 2줄(파이프라인)로 하드웨어 없이 rate
   2배(75→150 균일, 또는 200 front-loaded) + 지터 12배 개선. 팡팡=USB tail 아니라 (a)CM blocking
   (b)update_rate>상한 시 손목 starve. **스레드 분리 레버(§8d-2)는 USB가 이미 상한→불필요.**
