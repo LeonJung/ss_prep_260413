@@ -5,13 +5,14 @@
 > 상태: **HOLD (보류).** 운영은 PC M(일반 커널)에서 정상. 아래는 "더 좋게" 만들려다 막힌 것들.
 
 ## 0. 한 줄 요약
-bilateral force-feedback의 **transparency(투명도)** 를 MIT Sangbae Kim 데모 수준으로
-올리려 했으나 막힘. **[2026-07 실측 정정 §8c]** 예전엔 "USB-CAN이 89Hz로 캡"이라 봤으나,
-candump 실측 결과 **CAN 루프는 154~173Hz**로 돌고 **`joint_states` 89Hz는 CM/broadcaster/DDS
-소프트웨어 천장**임이 드러남. 두 축으로 분리: (1) **rate**는 소프트웨어(in-process CM/RT)로
-하드웨어 없이 개선 가능(최우선·무료), (2) **팡팡/지터**는 USB 왕복 **tail(13~29ms 스톨)** 이
-범인 → non-USB/HS-USB. PreemptRT 커널은 **transparency 개선 0(데이터 확인)**. CAN-FD는
-modest(+23%, §8b).
+bilateral force-feedback의 **transparency(투명도)** 개선. **[2026-07 대부분 해결 — §8d]**
+예전 "USB-CAN이 89Hz 하드웨어 병목, PCIe 필요" 가설은 **기각**됨. 실제 원인은 openarmx 드라이버가
+CM 사이클마다 **중복 CAN 왕복 2회**(read의 refresh_all + write의 recv)를 blocking으로 돌던 것.
+**드라이버 2줄 파이프라인화(왕복 2→1) + update_rate=200**으로 **하드웨어 없이 joint_states
+75/86→200Hz(2.5배), 지터 std 5→0.42ms(12배), max 25→6.5ms** 달성. 팡팡도 USB tail이 아니라
+(a)CM blocking, (b)update_rate 과다에 의한 손목모터 starve였음(§8c 정정). 200이 이 full-speed
+USB의 8모터 균일 상한(≈210Hz); 그 이상 rate만 HS-USB 필요. 패치: LATENCY_LEVER_DRIVER_PATCH.md.
+PreemptRT는 transparency 개선 0(데이터). CAN-FD는 Robstride 미지원으로 종결(§8b).
 
 ## 1. 목표 (operator 기준)
 MIT Kim 랩 3-DOF leader/follower 데모 느낌: follower가 벽에 막히면 leader도 거의 안 움직임
@@ -195,10 +196,24 @@ per-cycle 아님. recv_all(int first_timeout_us)는 첫 프레임을 최대 time
   폴링) 제거 + update_rate=500 폭주 → write()가 8모터에 4000cmd/s 쏘는데 **full-speed USB 상한
   ~1222프레임/s/채널** → CAN TX 큐 오버플로우로 send 루프 뒷 모터 드롭. **joint_states 500Hz는
   broadcaster만 500, 모터 3-8 실제 상태는 2-32Hz stale.**
-- **올바른 처방:** 파이프라인 변경은 유지(왕복 절반=옳음), **update_rate를 USB 상한에 맞춰 ~150으로**
-  (yaml 2개 16행, 현재 500). → 8모터 균일 ~150Hz = **진짜 2배(75→150), 저지터.** 이 HW의 8모터/채널
-  물리 상한 ≈150Hz(1222프레임/s ÷ 8). 그 이상은 HS-USB 필요(§8c USB cap이 rate 상한으로 재등장 —
-  단 blocking 지터는 파이프라인으로 이미 해결). **update_rate 130~180 스윕해 "8모터 균일 최대"를 찾을 것.**
+- **올바른 처방:** 파이프라인 변경은 유지(왕복 절반=옳음), **update_rate를 USB 상한에 맞춤**.
+
+**[2026-07 최종 확정 — 패치 + update_rate 스윕]** rate_probe로 150/200/250 스윕:
+| update_rate | joint_states | dt std | dt max | 손목 |
+|---|---|---|---|---|
+| 150 | 150Hz | 0.41ms | 8.0ms | OK |
+| **200 (채택)** | **200Hz** | **0.42ms** | **6.5ms** | **OK** |
+| 250 | 250Hz | 0.43ms | 5.6ms | **팡팡(손목 starve)** |
+| (원본) | 75/86Hz | ~5ms | ~25ms | — |
+- **채택: patch + update_rate=200.** joint_states 75/86→**200Hz**(2.3~2.7배), 지터 std 5→0.42ms
+  (~12배), max 25→6.5ms(~4배). 전 모터 균일, 팡팡 없음.
+- **200이 상한인 물리 근거:** 패치로 status 요청 제거 → USB MIT 전송예산 전부 MIT에 사용(원본 status
+  570+MIT 1134≈1700 sends/s). 8모터 균일 = 1700÷8 ≈ **210Hz 상한.** **210↑부터 send 루프 뒤쪽
+  모터(손목 5-8)부터 굶어 팡팡**(500Hz에서 본 4-6Hz starvation). 운영자 체감("200 좋음/210부터 팡팡")과
+  정확히 일치. 그 이상 rate는 HS-USB 필요(§8c USB cap이 rate 상한으로만 재등장 — blocking 지터는 해결됨).
+- **결론: "89Hz=하드웨어 병목, PCIe 필요" 가설 기각.** 드라이버 2줄(파이프라인) + update_rate=200으로
+  하드웨어 없이 rate 2.5배 + 지터 12배 개선. 팡팡도 USB tail이 아니라 (a)CM blocking (b)update_rate
+  과다로 인한 손목 starve 였음. **다음 스레드 분리 레버(§8d-2)는 USB가 이미 상한이라 ROI 낮음 → 불필요.**
 
 ## 9. 자산 (도구·명령·위치)
 - 측정 도구: `chirp_node`(반복 사인스윕+cmd/act/t 로깅, 전관절 순차), `log_node`(teleop
