@@ -234,6 +234,70 @@ in-process 커플링(지연). 단 **v1.0의 목표 정의**가 먼저 필요(아
 
 ---
 
-## §2. (예정) …
-> 다음 공부 주제: (택1) in-process 단일-CM 커플링 컨트롤러 설계 / friction Fv·Fo 적합 확장 설계 /
-> HW 업그레이드(HS-USB·PCIe) 조사. **v1.0 정의 후 진행.**
+## §2. 포팅 시 파일/폴더 구조 (옵션1 = enactic식 단일프로세스 전제)
+
+> ⚠️ 이 구조는 **옵션1(통째 포팅)** 용. 옵션2(ros2_control in-process 컨트롤러)면 구조가 완전히 다름
+> (ros2_controller 플러그인). v1.0 정의 후 확정.
+
+### 원칙: "로봇/라이브러리 종속"은 port 레이어로 격리, 나머지는 upstream 최대 보존
+enactic이 이미 `src/openarm_port/`로 하드웨어 종속을 격리해둠 → 우리는 **그 레이어만 openarmx-can으로
+바꾸고, 나머지 로직(control/robot_state/timer)은 namespace·struct명 치환 수준으로 복사.**
+
+### 제안: 새 패키지 `openarmx_teleop` (ss_prep_260413 안, openarmx_bilateral와 별개로 공존)
+```
+openarmx_teleop/
+├── CMakeLists.txt          # ament_cmake, link: libopenarmx_can, orocos-kdl, eigen, urdfdom
+├── package.xml
+├── config/
+│   ├── leader.yaml         ← 우리 파라미터 (kp=35,20,15,8,8,3,1,1 / kd=... / Fc/k/Fv/Fo / g_scale=0.93)
+│   └── follower.yaml
+├── control/                # 실행파일 main (= enactic control/)
+│   ├── openarmx_bilateral_control.cpp    # 3스레드(leader/follower/admin), FREQUENCY=150
+│   ├── openarmx_unilateral_control.cpp
+│   └── openarmx_comm_test.cpp
+├── src/
+│   ├── controller/         # ★ 로직 — enactic에서 거의 그대로 복사
+│   │   ├── control.{hpp,cpp}    # bilateral_step: MITParam→MotionControlParam, mit_control_all→send_motion_control_commands
+│   │   ├── dynamics.{hpp,cpp}   # KDL 중력/coriolis — 우리 URDF/링크명 주입
+│   │   └── diff.hpp             # 미분기 (그대로)
+│   ├── robot_state.hpp          # 공유메모리 커플링 (그대로 — 이게 DDS relay 대체)
+│   ├── periodic_timer_thread.hpp# RT 주기 루프 (그대로)
+│   ├── joint_state_converter.hpp# (그대로/약간)
+│   ├── yamlloader.hpp           # (그대로)
+│   ├── openarmx_port/      # ★★ 치환 핵심 (= enactic src/openarm_port/)
+│   │   ├── openarmx_init.{hpp,cpp}   # OpenArmX init: RS04(J1-2)/RS03(J3-4)/RS00(J5-7,그리퍼) + CAN ID 1~8, 그리퍼 0x08
+│   │   └── joint_mapper.{hpp,cpp}    # 우리 부호(−1 전부) + 그리퍼 joint↔motor(≈23.8배) 스케일
+│   └── openarmx_constants.hpp   # 모터타입맵/DOF/CAN ID/KP·KD 범위
+├── urdf/
+│   └── v10_arm.urdf             # KDL용 우리 로봇 URDF (좌/우 체인)
+└── script/
+    ├── launch_bilateral.sh      # CAN up(classic 1M) + 실행 (leader can1 / follower can3 등)
+    ├── launch_unilateral.sh
+    └── launch_grav_comp.sh
+```
+
+### 파일별 작업 유형 (포팅 부담 한눈에)
+| 유형 | 파일 | 작업 |
+|---|---|---|
+| **거의 그대로 복사**(framework) | robot_state.hpp, periodic_timer_thread.hpp, yamlloader.hpp, controller/diff.hpp | 복사 |
+| **치환 복사**(namespace/struct명) | controller/control.{hpp,cpp}, controller/dynamics.{hpp,cpp}, joint_state_converter.hpp, control/*_control.cpp | MITParam→MotionControlParam, OpenArm→OpenArmX, mit_control_all→send_motion_control_commands, FREQUENCY 500→150 |
+| **우리 로봇용 새로/재작성**(port) | openarmx_port/openarmx_init, openarmx_port/joint_mapper, openarmx_constants.hpp, config/*.yaml, urdf/ | RS 타입맵·CAN ID·부호·그리퍼스케일·파라미터·URDF |
+
+### 매핑 요약 (enactic → 우리)
+- `src/openarm_port/openarm_init` → `src/openarmx_port/openarmx_init` (OpenArmX + RS 타입)
+- `src/openarm_port/joint_mapper` → `src/openarmx_port/joint_mapper` (우리 부호+그리퍼)
+- `src/openarm_constants.hpp` → `src/openarmx_constants.hpp`
+- `control/openarm_bilateral_control.cpp` → `control/openarmx_bilateral_control.cpp` (Hz 150)
+- `config/{leader,follower}.yaml` → 우리 파라미터
+- controller/·framework → 복사(치환)
+
+### 결정 의존성 / 주의
+- **이 구조는 옵션1 전제.** 채택 전 §1.8의 v1.0 정의 필요.
+- ros2_control 편의(그리퍼 stall 감지·bimanual·RViz·로깅·안전정지)는 **이 패키지에 재구현** 필요 → 위
+  구조에 향후 `src/safety/`, bimanual용 스레드쌍 확장 여지 있음.
+- **openarmx_bilateral(현 ros2_control판)은 남겨둠** — 폴백·비교·운영 지속.
+
+---
+
+## §3. (예정) …
+> v1.0 정의 후: (옵션1) 위 구조로 스켈레톤 / (옵션2) ros2_control in-process 컨트롤러 설계.
