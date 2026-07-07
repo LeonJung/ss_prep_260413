@@ -1,5 +1,21 @@
 # Enactic OpenArm bilateral — reference gains (per joint)
 
+## ⭐ 우리 채택 실용값 (operator-preferred, 2026-07) — 지금은 이걸 씀
+가장 쓰기 편했던 관절별 게인. bilateral.launch 인자로 그대로:
+```
+kp:=35,20,15,8,8,3,1,1   kd:=3.5,5.0,2.5,0.8,0.8,0.3,0.1,0.1
+```
+| | J1 | J2 | J3 | J4 | J5 | J6 | J7 | 그리퍼 |
+|---|---|---|---|---|---|---|---|---|
+| Kp | 35 | 20 | 15 | 8 | 8 | 3 | 1 | 1 |
+| Kd | 3.5 | 5.0 | 2.5 | 0.8 | 0.8 | 0.3 | 0.1 | 0.1 |
+- enactic(240 proximal)보다 훨씬 낮음 — 실사용 체감상 이 정도가 편했음(가벼움 우선). 벽 강성 더
+  원하면 근위 kp를 올려가며 조정. Kd는 근위(J1,J2) 상대적으로 높게 둬 안정화.
+- 전달: leader+follower·좌우 동일 (relay가 4개 hardware_params 노드에 param load).
+
+---
+
+
 Source: `~/ext_ref/openarm_teleop/config/{leader,follower}.yaml` (Enactic, Inc. 2025, Apache-2.0).
 Enactic's official bilateral teleop config. Comment in-file: **"Kp/Kd are shared between
 bilateral and unilateral control"** → these ARE the bilateral force-feedback gains.

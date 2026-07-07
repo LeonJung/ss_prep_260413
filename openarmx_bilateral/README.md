@@ -32,9 +32,11 @@ ros2 launch openarmx_bringup openarmx.bimanual.launch.py \
 **Terminal 3 — bilateral (이 패키지)**:
 ```bash
 ros2 launch openarmx_bilateral bilateral.launch.py \
-  arm:=both vel_ff:=true friction:=true posture:=true bilateral:=true \
-  leader_kp:=10.0 leader_kd:=0.5 posture_scale:=2.0
+  arm:=both vel_ff:=true friction:=true posture:=true bilateral:=true posture_scale:=2.0 \
+  kp:=35,20,15,8,8,3,1,1 kd:=3.5,5.0,2.5,0.8,0.8,0.3,0.1,0.1
 ```
+> `kp`/`kd` = 관절별 8값(그리퍼 포함), leader+follower·좌우 동일 적용(채택 실용값 — `ENACTIC_REFERENCE_GAINS.md`).
+> 안 주면 `leader_kp`(일괄) 방식으로 폴백.
 
 ### ⚠️ 브링업 필수/금지
 - **`robot_controller:=forward_position_controller` 필수** — 없으면 기본값 joint_trajectory_controller가 떠서 relay 명령을 무시함(follower 안 움직임).
