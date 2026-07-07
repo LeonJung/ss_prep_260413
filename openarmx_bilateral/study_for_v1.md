@@ -297,6 +297,53 @@ openarmx_teleop/
   구조에 향후 `src/safety/`, bimanual용 스레드쌍 확장 여지 있음.
 - **openarmx_bilateral(현 ros2_control판)은 남겨둠** — 폴백·비교·운영 지속.
 
+## §2.1 확정된 포팅 입력값 (운영자 지시 반영)
+
+### (a) 실행 = enactic `launch_bilateral.sh` 기준으로 포팅
+enactic 스크립트 흐름: `ARM_SIDE(left/right)` + CAN 인자 → **xacro로 URDF 생성** → 바이너리에
+`(leader_urdf, follower_urdf, arm_side, leader_can, follower_can)` 전달 → 실행 → temp 정리.
+우리 포팅판 `launch_bilateral.sh` 치환:
+| enactic | 우리 |
+|---|---|
+| `WS_DIR=~/openarm_ros2_ws` | `~/openarmx_ws` |
+| `XACRO=openarm_description/urdf/robot/v10.urdf.xacro` | **`openarmx_description/urdf/robot/v10.urdf.xacro`** |
+| `xacro ... bimanual:=true -o leader.urdf` | 동일(우리 xacro) |
+| `BIN=~/openarm_teleop_tmp/build/bilateral_control` | 우리 빌드 산출물 `.../openarmx_teleop .../bilateral_control` |
+| CAN 기본: right→leader can0/follower can2, left→leader can1/follower can3 | **동일**(우리 매핑과 일치) |
+| 실행: `./launch_bilateral.sh right_arm can0 can2` | 동일 인터페이스 유지 |
+
+### (b) URDF = openarmx_bilateral가 쓰는 것 (우리 모델/물성치)
+- **`openarmx_ws/src/openarmx_description/urdf/robot/v10.urdf.xacro`** (bimanual:=true로 생성).
+  enactic openarm과 **모델·관성·질량이 다르므로 enactic URDF 금지, 반드시 우리 것.** KDL Dynamics가
+  이 URDF로 중력/coriolis 계산 → 우리 로봇 물성치 반영.
+- (openarmx_bilateral의 gravity_comp도 이 xacro 유래 URDF 사용 → 일관.)
+
+### (c) 관절 방향(부호) — 드라이버와 동일하게
+- **`direction_multipliers = {−1,−1,−1,−1,−1,−1,−1}`** (7관절 전부 −1, **양팔 공통**). motor↔joint 변환:
+  `joint = −1 × motor` (pos/vel/tau 모두). 그리퍼(J8)는 `motor_radians_to_joint`(≈−23.8배 스케일) 별도.
+- **좌우 미러는 방향계수가 아니라 URDF 조인트축이 담당** → port의 joint_mapper는 −1 균일 적용, 미러는
+  URDF에 맡김. (openarmx_port/joint_mapper에 이 규칙 이식.)
+
+### (d) 관절 제한각 [출처: openarmx_angle_limit_for_friction_test.txt] → port 안전 soft-limit
+⚠️ **원래 "friction 테스트용" 값**(운영자 과거 지시: 제어부 하드코딩 금지). 이번 지시로 **port에 적용**하되
+**소프트 안전한계(명령 clamp)** 로 사용 — 하드 물리한계가 아니라 보호용. (운영 시 좁으면 넓혀야 할 수 있음.)
+좌우가 **미러**(부호 반대). deg→rad:
+| 관절 | **LEFT [lo, hi] rad** (deg) | **RIGHT [lo, hi] rad** (deg) |
+|---|---|---|
+| J1 | [−2.356, 0.785] (−135~45) | [−0.785, 2.356] (−45~135) |
+| J2 | [−2.356, 0.000] (−135~0) | [0.000, 2.356] (0~135) |
+| J3 | [−0.785, 1.571] (−45~90) | [−1.571, 0.785] (−90~45) |
+| J4 | [0.000, 1.745] (0~100) | [0.000, 1.745] (0~100) |
+| J5 | [−0.785, 1.571] (−45~90) | [−1.571, 0.785] (−90~45) |
+| J6 | [0.000, 0.785] (0~45) | [−0.785, 0.000] (−45~0) |
+| J7 | [−1.571, 1.396] (−90~80) | [−1.396, 1.571] (−80~90) |
+→ config(leader/follower.yaml)에 `joint_limit_lo/hi` [rad] per arm으로 넣고, Control이 q_des(peer)
+  또는 최종 명령을 이 범위로 clamp. (friction-test 유래이므로 "안전 보호"용, 필요 시 조정.)
+
+### 미해결(운영자 확인)
+- 제한각을 **소프트 안전한계로 clamp**하는 게 맞나? (아니면 참고용/로깅만?) — 과거 "하드코딩 금지"와의
+  절충. 기본안 = clamp(보호), 좁으면 조정.
+
 ---
 
 ## §3. (예정) …
