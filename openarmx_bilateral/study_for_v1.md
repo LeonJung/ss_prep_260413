@@ -62,5 +62,55 @@ DDS relay 커플링 + 150Hz.
 
 ---
 
+## §1.3 모터에 무엇을 쏘고/받는지 + 알고리즘이 그걸 어떻게 쓰는지
+
+### 핵심: 제어 루프는 "모터 안"에서 돈다
+bilateral의 실제 힘 계산 `τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_ff` 는 **모터 온보드 MIT 펌웨어**가
+수행. **호스트는 관절당 숫자 5개(kp, kd, q_des, q̇_des, τ_ff)만 CAN으로 쏜다.** 우리든 enactic이든
+이 구조는 동일(DM/Robstride 둘 다 MIT 운동제어 모드).
+
+### 송신(host→motor): MIT 명령 5필드, 각 필드의 출처
+| MIT 필드 | 의미 | **우리(openarmx)** 출처 | **enactic** 출처 |
+|---|---|---|---|
+| `kp` | 커플링 강성 | `kp_values_[i]` (relay가 param 설정) | `Kp_[i]` (yaml) |
+| `kd` | 커플링 댐핑 | `kd_values_[i]` | `Kd_[i]` (yaml) |
+| `q_des`(position) | **peer 위치** | `pos_commands_[i]` ← relay→forward_position_controller (DDS) | `ref.position` ← AdminThread가 peer 응답을 shared-mem에 복사 |
+| `q̇_des`(velocity) | **peer 속도** | `vel_commands_[i]` ← relay→forward_velocity_controller **(vel_ff=true일 때만; 아니면 0)** | `ref.velocity` ← peer 속도 **(항상)** |
+| `τ_ff`(torque) | 중력+마찰 FF | `tau_commands_[i]` ← gravity_comp_node + friction_comp_node (DDS→forward_effort_controller) | `gravity[i] + friction[i]` (bilateral_step 내부 계산) |
+
+- **동일**: 둘 다 q_des=peer 위치, τ_ff=중력+마찰. 힘 계산식·모터 역할 같음.
+- **차이 ① peer 데이터 경로**: 우리=DDS 다단(motor→read→broadcaster→DDS→relay→DDS→pos_controller→
+  cmd iface→write). enactic=AdminThread의 shared-mem 복사 1회(~0지연). **transparency 지연축의 핵심.**
+- **차이 ② 속도항**: enactic은 bilateral에서 **peer 속도를 항상** q̇_des로 → `kd(q̇_peer−q̇)`(속도추종).
+  우리는 **vel_ff=false면 q̇_des=0** → `kd(0−q̇) = −kd·q̇`(순수 댐핑). **vel_ff=true라야 enactic과 동일.**
+  → v1.0에선 vel_ff 기본 ON 고려(현재 우리 채택 명령엔 vel_ff:=true 있음, OK).
+
+### 수신(motor→host): 무엇을 읽고 무엇을 쓰나
+| 읽는 값 | 우리 사용처 | enactic 사용처 |
+|---|---|---|
+| position | relay(커플링), gravity_comp, friction 상태 | joint 변환→응답→AdminThread가 peer로 전파 |
+| velocity | relay(vel_ff), friction_comp(τ_fric=f(ω)) | friction, (q̇_des로 peer에 전파) |
+| **torque(측정)** | read함(`tau_states_`)→joint_states.effort로 publish하나 **제어법칙엔 미사용** | **아예 안 읽음**(`{pos,vel,0}`) |
+- **결론: 둘 다 "측정 토크"를 힘피드백에 안 쓴다.** 힘반력 = 순수 위치오차×kp (SPBT). 즉 **힘센서/토크
+  피드백 없는 position-position** 방식. (그래서 kp가 곧 벽강성.)
+
+## §1.4 Coriolis(원심·코리올리) 계산부 비교
+| 항목 | 우리(openarmx gravity_comp) | enactic(Dynamics) |
+|---|---|---|
+| 동역학 라이브러리 | **KDL** `ChainDynParam`(URDF→chain) | **KDL** `ChainDynParam`(동일) |
+| 중력 | `JntToGravity` → τ_g (중력 (0,0,−9.81)) | `JntToGravity` (동일) |
+| **Coriolis** | **계산 안 함** (GetGravity만 호출) | `GetCoriolis` = `JntToCoriolis(q,q̇)` → **C(q,q̇)q̇ 계산함** |
+| 질량행렬 | 없음 | `JntToMass`(있으나 미사용) |
+| **bilateral에서 coriolis 적용?** | 해당없음(계산 안 함) | **미적용!** effort = gravity+friction만. coriolis는 계산만 하고 버림 |
+| unilateral에선? | — | `effort = gravity + friction×0.3 + coriolis×0.1` (약하게 적용) |
+- **핵심 시사점: enactic조차 bilateral에선 coriolis를 안 쓴다**(훅만 남겨둠). 저속에선 C(q,q̇)q̇ 작아
+  무시 가능. 고속 동작 transparency엔 이론상 도움되나 enactic도 채택 안 함 → **v1.0에서 coriolis FF는
+  저우선.** 필요하면 우리도 KDL `JntToCoriolis` 한 줄 추가로 동일하게 얹을 수 있음(이미 KDL 씀).
+- (Q: enactic이 unilateral엔 ×0.1로 넣은 이유 = 고속 시 관성/원심 보상해 조작감↑, 단 노이즈 증폭 위험이라
+  스케일 낮춤으로 추정.)
+
+---
+
 ## §2. (예정) …
-> 다음 공부 주제가 생기면 여기에 계속 추가.
+> 다음 공부 주제가 생기면 여기에 계속 추가. (열린 질문: enactic 500Hz 실현 하드웨어, 마찰 Fv/Fo 식별
+> 절차, in-process 단일-CM 커플링 설계, v1.0 정의.)
