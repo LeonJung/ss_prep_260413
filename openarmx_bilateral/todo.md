@@ -7,8 +7,8 @@
       (실질 정보는 설치된 openarmx-can 헤더에서 이미 확보; docs는 보완용.)
 
 ## 결정 대기 (운영자)
-- [ ] **v1.0 정의** (Q5): "transparency 체감 개선" vs "아키텍처 enactic식 전환" vs "마찰·게인 완성".
-      → study_for_v1.md §1.8 옵션 선택을 좌우.
+- [x] **v1.0 정의 [확정]**: enactic bilateral 코드/알고리즘 그대로 포팅(옵션1) + openarmx 파라미터·
+      기구·좌표 튜닝으로 근본적 transparency 향상. → 새 패키지 openarmx_teleop. (study_for_v1.md ★/§4)
 - [ ] **HW 투자 의향**: HS-USB(480M)/PCIe + FD지원 모터로 150Hz 상한 돌파할지. (있으면 500Hz급 가능.)
 
 ## 저비용 개선 카드 (포팅 무관, 언제든)

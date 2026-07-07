@@ -4,6 +4,18 @@
 > 코드 변경 없음. 공부한 핵심은 여기에 빠짐없이 기록.
 > 현재 코드 = v0.3 (백업 `~/backup_ws/openarmx_bilateral_v0.3_69368a7`).
 
+## ★ v1.0 정의 [확정 2026-07]
+> **이상적 bilateral을 하는 enactic openarm의 bilateral 코드·알고리즘 형태를 "그대로" 가져오되,
+> openarmx에 맞는 파라미터 + 기구·좌표 튜닝을 통해 근본적으로 bilateral control transparency를
+> 향상시키는 것** = v1.0 feature.
+- = §1.8의 **옵션1(통째 포팅)** 채택 확정. 새 패키지 `openarmx_teleop`(§2 구조).
+- **알고리즘 형태는 enactic 그대로**(SPBT + 중력/마찰 FF + 공유메모리 커플링). 손대는 것 = **파라미터
+  (게인/마찰) + 기구·좌표 튜닝(부호·그리퍼·URDF·좌표계)**.
+- **transparency 향상의 출처(우리 분석과 정합, §E/§1.8):** (1) 커플링 DDS→공유메모리(지연·지터↓),
+  (2) enactic식 풀 마찰모델(Fv/Fo)로 자유공간 추종오차↓, (3) 관절별 게인+좌표/기구 정합.
+  **⚠️ rate는 150Hz 유지**(CAN-FD 불가) — 향상은 위 3개에서 나오고 rate 상향은 HW 교체 별건.
+- 포팅 입력값 확정: §2(구조), §2.1(bilateral.sh·URDF·방향−1·부호검증), §3(재사용 자산).
+
 ---
 
 ## §1. 제어 방식 비교 — openarmx_bilateral(우리) vs enactic openarm_teleop
@@ -407,5 +419,31 @@ enactic 스크립트 흐름: `ARM_SIDE(left/right)` + CAN 인자 → **xacro로 
 
 ---
 
-## §4. (예정) …
-> v1.0 정의 후: (옵션1) 위 구조로 스켈레톤 / (옵션2) ros2_control in-process 컨트롤러 설계.
+## §4. 개발 로드맵 (v1.0 = 옵션1 포팅) — 계획, 개발 지시 대기
+
+> dev 박스는 HW 빌드/실행 불가 → 각 단계 **commit→push→제어 PC에서 빌드·검증**.
+
+- **P0 사전:** 150Hz 수용 확정(또는 HW 업글 결정). `openarmx_teleop` 패키지 골격(CMakeLists:
+  libopenarmx_can+KDL+eigen+urdfdom, package.xml).
+- **P1 framework 복사:** robot_state.hpp / periodic_timer_thread.hpp / yamlloader.hpp /
+  controller/diff.hpp — enactic에서 거의 그대로.
+- **P2 port 레이어(핵심 작업):** openarmx_port/openarmx_init(RS04/03/00 타입맵+CAN ID 1~8·그리퍼0x08),
+  openarmx_port/joint_mapper(부호−1 균일+그리퍼 23.8배), openarmx_constants.hpp.
+- **P3 controller 포팅:** control.{hpp,cpp}(MITParam→MotionControlParam, mit_control_all→
+  send_motion_control_commands, recv 패턴), dynamics.{hpp,cpp}(우리 URDF/링크), main
+  openarmx_bilateral_control.cpp(**FREQUENCY=150**, 3스레드).
+- **P4 config/URDF/launch:** config/{leader,follower}.yaml(우리 kp/kd·Fc/k·**Fv/Fo 초기0**·g_scale),
+  launch_bilateral.sh(우리 xacro/워크스페이스/바이너리/CAN).
+- **P5 bring-up & 부호검증:** 빌드→comm_test→**각 관절 + 방향이 angle-limit 파일과 일치하는지 확인
+  (부호반전=날뜀 방지, §2.1d)**→중력보상 확인→보수적 게인으로 bilateral→점진 상향.
+- **P6 transparency 튜닝(= v1.0 목표):** (a) 좌표·기구 정합(부호·그리퍼·zero pose), (b) **마찰 Fv/Fo
+  식별**(friction_id 4파라미터 확장) + friction_scale, (c) 관절별 kp(어깨↑ 벽·손목↓) + follower 강성,
+  (d) **자유공간 leader↔follower 위치오차 로깅으로 정량 검증**(오차↓=뻑뻑↓=목표달성).
+
+### 개발 착수 전 남은 확인
+- [ ] "개발 시작" 지시. (지금은 study 모드.)
+- [ ] 150Hz 수용 vs HW 투자(HS-USB/PCIe+FD). 기본안 = **150 수용**하고 위 3개 레버로 transparency 향상.
+
+---
+
+## §5. (예정) 개발 단계 산출물 로그 (착수 후).
