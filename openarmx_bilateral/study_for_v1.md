@@ -341,5 +341,71 @@ enactic 스크립트 흐름: `ARM_SIDE(left/right)` + CAN 인자 → **xacro로 
 
 ---
 
-## §3. (예정) …
+## §3. openarmx_bilateral(v0.3)에서 v1.0/포팅에 가져올 참고자산 리스팅
+
+### A. 재사용 파라미터 (검증된 값 — 그대로 이식)
+- **마찰 Fc/k (관절별, tanh(0.1·k·ω) — enactic 코드와 동일 모델):**
+  - LEADER Fc `[1.21,0.63,0.31,0.39,0.14,0.17,0.13]` k `[81,51,40,52,36,20,48]`
+  - FOLLOWER Fc `[1.04,1.06,0.35,0.36,0.16,0.15,0.12]` k `[68,60,26,87,62,57,39]`
+- **채택 게인** kp `[35,20,15,8,8,3,1,1]` kd `[3.5,5,2.5,0.8,0.8,0.3,0.1,0.1]` (관절별, leader=follower).
+- **g_scale=0.93**(중력 과보상 붕뜸 보정), **friction_scale=0.7**, **couple_sign=+1**(좌우 HW검증).
+- 그리퍼(J8) 게인 0.3/0.03(leader). posture J3 kp1.8/kd0.18(참고, 옵션).
+- (벽강성 상한 참고: enactic 근위 240 — ENACTIC_REFERENCE_GAINS.md.)
+
+### B. 로봇 하드 사실 (port config/constants로 이식)
+- 모터타입: RS04(J1-2)/RS03(J3-4)/RS00(J5-7,그리퍼), CAN ID 1~8, 그리퍼 0x08.
+- MIT 범위: RS04/03 KP[0,5000]KD[0,100], RS00 KP[0,500]KD[0,5].
+- 방향계수 **−1 균일(7관절)**, 그리퍼 motor_radians_to_joint(≈−23.8배). 좌우미러=URDF.
+- 관절 방향/한계 파일(부호 검증용, §2.1d). URDF=openarmx_description v10.urdf.xacro.
+
+### C. 알고리즘/로직 자산 (개념·코드 재사용)
+- **friction_id_node**: 등속 셔틀(kp=0,중력ON) + **odd 대칭화 피팅** → Fc/k. **Fv/Fo 4파라미터로 확장** 시 재사용.
+- **friction_comp 모델**: `grav + scale·Fc·tanh(0.1k·ω) (+posture)`.
+- **relay cross-coupling**: peer pos(+vel) 중계 로직(= enactic AdminThread 개념).
+- **gravity_comp**: KDL JntToGravity(우리 URDF). posture 스프링(oa_fd_cpp 유래, J3).
+
+### D. 측정/진단 도구 (그대로 유용 — v1.0 검증 인프라)
+- **rate_probe**(ROS rate/지터), **latency_capture**(candump), **chirp_node**(대역폭/지연),
+  **friction_log_node**(effort 분해), **log_node**(cmd-vs-act), **joint_echo_node**(관절각).
+- 분석 패턴: chirp CSV → FFT 대역폭/상호상관 지연/dt std 지터.
+
+### E. 핵심 통찰 = v1.0 설계 지침 (★ FORCE_FEEDBACK_NOTES.md 필독)
+- **"벽 = 아주 뻣뻣한 스프링"** — P-P엔 wall-detection 없음. 반력=Kp×위치오차.
+- **★ 뻑뻑함의 원인 = 자유공간 추종오차이지 게인 아님.** 자유공간 추종 완벽하면 오차≈0→힘≈0(고Kp라도).
+  enactic이 Kp240에도 가벼운 이유 = 추종오차≈0(마찰보상+속도FF+중력+경량HW+고속루프).
+  **우리 Kp60에도 뻑뻑 = 추종충실도가 병목.**
+- **방향(합의)**: "Kp 낮춰 가볍게"가 아니라 **follower 추종오차→0**을 올리면 가벼움+벽 동시 해결.
+  → 객관지표 = **자유공간 leader↔follower 위치오차 로깅**(크면 그게 뻑뻑).
+- **P-P 투명도 천장**: force-sensing/DOB/4ch 없이는 rigid wall 불가(→ 매우 뻣뻣한 스프링이 최선). 단 그것들은 BANNED.
+- **MIT Kim 데모의 정체 = QDD 하드웨어 투명도 + 고대역폭 + 단순 P-P.** 알고리즘 아님 →
+  **inertia/coriolis FF 저우선.** 우리 약점 = Robstride 마찰↑·관성↑·토크추정치 품질(블랙박스 FOC).
+- 미해결: **대칭(enactic) vs 비대칭(follower를 leader보다 뻣뻣하게)** 게인 — v1.0에서 실험.
+
+### F. 하드웨어/병목 지식 (LATENCY_INVESTIGATION.md, tech_debt.md)
+- **150Hz USB2CAN 균일상한**(full-speed 동글), CAN-FD 불가(Robstride). 500Hz=CAN-FD 필요(enactic).
+- 파이프라인 패치(§8d) — **포팅판엔 불필요**(enactic 루프 이미 1왕복). rate 상한은 그대로 150.
+- 팡팡/지터 원인 = CM blocking + update_rate>상한 손목starve(USB tail 아님).
+
+### G. 드라이버 패치/주의 (driver_patches/)
+- 그리퍼 velocity·torque 하드코딩 → **포팅판은 우리가 직접 send_motion_control_commands라 우회됨**(이점).
+- **그리퍼 stall 감지**(위치오차 큰데 안움직이면 lock) — 포팅판에 안전장치로 재구현 고려.
+
+### H. 함정/교훈 (반복 방지 — history §13)
+- 중력 과보상(g_scale>1)→관절 붕뜸. posture가 커플링 kp에 33배 압도됨.
+- 마찰 시작 떨림(steep tanh×정지노이즈, J1 최악) → **vel_eps deadband/속도 LPF** 준비됨.
+- couple_sign 부호 잘못→미러 반대. friction-test 각도한계 **제어부 하드코딩 금지**(부호검증만).
+
+### I. BANNED (절대 금지 — UR10e 실패작)
+- DOB/RTOB/RFOB, energy tank, 4-channel, wave variable. (enactic 고급판도 DOB/4ch=여기 해당.)
+
+### J. 문서 인덱스 (읽는 순서)
+1. **FORCE_FEEDBACK_NOTES.md** — v1.0 설계 지침(벽/뻑뻑/MIT 분석) ★최우선
+2. **history.md** — 전체 서사 + 하드-원 교훈 §13
+3. **ENACTIC_REFERENCE_GAINS.md** — 게인 scale 비교
+4. **LATENCY_INVESTIGATION.md** / **tech_debt.md** — rate·병목·부채
+5. **STATUS.md** — phase별 A/B 결과
+
+---
+
+## §4. (예정) …
 > v1.0 정의 후: (옵션1) 위 구조로 스켈레톤 / (옵션2) ros2_control in-process 컨트롤러 설계.
