@@ -111,6 +111,65 @@ bilateral의 실제 힘 계산 `τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_
 
 ---
 
+## §1.5 포팅 분석 — enactic bilateral을 우리 로봇으로 가져올 때 무엇이 무엇으로 치환되나
+
+전제: enactic `Control`(bilateral_step) + main(3스레드) + Dynamics를 **그대로 가져와**, ①드라이버 API를
+우리 openarmx-can으로, ②파라미터를 우리 현재 bilateral값으로 치환.
+
+### 큰 그림 — 아키텍처가 통째로 바뀐다
+포팅하면 **우리 ros2_control 스택 전체(2 브링업 + relay + gravity/friction 노드 + CM + 컨트롤러들)를
+"단일 프로세스 제어루프"가 대체**한다. enactic처럼 한 프로세스가 leader·follower CAN을 둘 다 열고,
+3스레드(leader/follower/admin)로 돌린다.
+
+### 핵심 발견: 드라이버 API가 거의 1:1 (openarmx-can = openarm_can 포크)
+| enactic (openarm_can) | 우리 (openarmx-can) | 치환 난이도 |
+|---|---|---|
+| `openarm::can::socket::OpenArm` | `openarmx::can::socket::OpenArmX` | 이름만 |
+| `MITParam{kp,kd,q,dq,tau}` | `MotionControlParam{kp,kd,position,velocity,torque}` | **필드 동일, 이름만** |
+| `get_arm().mit_control_all(cmds)` | `get_arm().send_motion_control_commands(params)` | 메서드명만 |
+| `recv_all(220)` | `recv_all(220)` | **동일 시그니처(timeout_us)** |
+| `get_arm()/get_gripper()/get_motors()` | 동일 이름 | 그대로 |
+| `get_position()/get_velocity()` | 동일 | 그대로 |
+| `initialize_openarm(iface,true)` | `init_arm_motors(motor_types,...)` | **모터타입/CAN ID 주입 필요(아래)** |
+→ **Control 클래스 본체(bilateral_step)는 namespace+struct명 치환 수준의 기계적 포팅.** 힘계산은 어차피
+모터 펌웨어가 하므로 로직 변경 없음.
+
+### 진짜 손봐야 할 치환(로봇 종속) — 여기가 실제 작업
+| enactic 요소 | 하는 일 | 우리 것으로 치환 | 주의점 |
+|---|---|---|---|
+| 모터 init (DM, `initialize_openarm`) | 모터 등록 | **모터타입맵 RS04(J1-2)/RS03(J3-4)/RS00(J5-7,그리퍼) + CAN ID 1~8, 그리퍼 0x08** (v10_simple_hardware의 DEFAULT_MOTOR_TYPES) | 필수 |
+| `OpenArmJointConverter`(motor↔joint) | DM 기어/부호 변환 | 우리 **direction_multipliers(−1 전부) + 그리퍼 `joint_to_motor_radians`(≈−23.8배 스케일)** | 부호·그리퍼 스케일 우리것 |
+| `Dynamics`(KDL ChainDynParam)+URDF | 중력/coriolis | **동일 KDL**, 단 **우리 v10 URDF + 체인 링크명(openarmx_left_jointN, base~link7)** 주입 | URDF만 갈면 됨 |
+| `ComputeFriction`(Fo+Fv·ω+Fc·tanh(k·ω)) | 마찰 | 모델 유지, **파라미터=우리 식별 Fc/k** | ⚠️ **k-scale: 우리 tanh(0.1·k) ↔ enactic tanh(k) → 우리 k를 ×10 하거나 식에 0.1 삽입** |
+| Kp/Kd (yaml, [0,500]) | 게인 | **우리값 kp={35,20,15,8,8,3,1,1} kd={3.5,5,2.5,0.8,0.8,0.3,0.1,0.1}** | openarmx-can이 모터타입별 범위(RS04 [0,5000] 등) 패킹 처리 |
+| 중력 scale | 없음(raw) | 우리 **g_scale=0.93** 곱 추가 | 우리 붕뜸 보정 유지하려면 |
+| posture spring(J3) | 없음 | 우리 것 추가할지 선택 | enactic엔 없는 기능 |
+| FREQUENCY=500Hz | 제어주기 | **150으로** (우리 USB2CAN 균일상한; 500이면 손목 starve — §LATENCY) | 필수 |
+| leader can0 / follower can2 | CAN 매핑 | 우리 매핑(좌팔: leader can1 / follower can3 등) | |
+| 단일 arm 쌍 | 구성 | 우리 bimanual 원하면 스레드/객체 2쌍으로 확장 | 선택 |
+
+### 우리 스택에서 사라지는 것 (포팅 시 제거)
+- `relay_node`(DDS 커플링) → **enactic AdminThread 공유메모리 커플링**으로 대체
+- `gravity_comp_node`, `friction_comp_node` → **Control 내부 계산**으로 흡수
+- `forward_{position,velocity,effort}_controller` + 2×`controller_manager` + 브링업 2개 → **직접 CAN 단일 프로세스**
+- 우리 **드라이버 파이프라인 패치(latency lever)도 불필요** — enactic 루프는 이미 `send+sleep200us+recv_all`
+  1왕복(별도 status 요청 없음) = 우리 패치와 같은 효율. (그래서 rate도 우리 150 상한에 그대로 걸림.)
+
+### 우리 쪽에서 재사용되는 것 (그대로 남음)
+- **openarmx-can 라이브러리**(저수준 CAN/모터) — 그대로 링크
+- 우리 **URDF, 모터타입맵, CAN ID, 그리퍼 스케일, 부호(−1), 식별 파라미터**
+- KDL 동역학(중력)은 enactic Dynamics가 우리 URDF로 그대로 씀
+
+### 요약 판정
+- **코드 포팅 자체는 쉽다**(API 1:1, 힘계산은 모터가 함). 로직 재검증 부담 낮음.
+- **실제 작업 = 로봇 종속 치환 6개**: (1)모터 init 타입맵 (2)joint↔motor 변환(부호·그리퍼) (3)URDF
+  (4)마찰 k-scale 정합 (5)게인/그리퍼 그대로 (6)rate 500→150.
+- **가장 큰 이득 = 커플링이 DDS→공유메모리**(지연·지터 감소, transparency↑). 이게 포팅의 주된 명분.
+- 리스크: 우리 안전장치(그리퍼 stall 감지 등 ros2_control 드라이버에 있던 것)를 이 프로세스에 다시
+  구현해야 함. bimanual·RViz·로깅 등 ros2 편의도 재구성 필요.
+
+---
+
 ## §2. (예정) …
 > 다음 공부 주제가 생기면 여기에 계속 추가. (열린 질문: enactic 500Hz 실현 하드웨어, 마찰 Fv/Fo 식별
 > 절차, in-process 단일-CM 커플링 설계, v1.0 정의.)
