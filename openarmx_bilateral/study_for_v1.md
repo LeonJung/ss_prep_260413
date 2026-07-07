@@ -446,4 +446,17 @@ enactic 스크립트 흐름: `ARM_SIDE(left/right)` + CAN 인자 → **xacro로 
 
 ---
 
-## §5. (예정) 개발 단계 산출물 로그 (착수 후).
+## §5. 개발 산출물 로그
+### 2026-07 P0~P4 완료 (패키지 `openarmx_teleop`, 커밋 예정)
+- enactic openarm_teleop 트리 통째 복사 후 openarmx 치환.
+- **P1 framework**: robot_state/timer/yamlloader/diff 복사(+robot_state include 보강).
+- **P2 port**: 라이브러리 openarm_can→openarmx_can(전역 치환), OpenArm→OpenArmX(2번째 인자 can_fd=false),
+  MITParam→MotionControlParam, mit_control_all→send_motion_control_commands. 모터 RS04/03/00+CAN ID.
+- **P3 controller**: control.cpp G_SCALE=0.93 중력, FREQUENCY=150. dynamics는 URDF만 교체.
+  **좌표부호: joint_state_converter OpenArmJointConverter ARM_SIGN=−1** (트레이스로 관절식 정합 검증).
+  링크명 openarmx_body_link0→openarmx_<side>_hand.
+- **P4 config/launch**: leader/follower.yaml 우리 kp/kd·Fc/k(Fv/Fo=0), launch_bilateral.sh 우리 워크스페이스.
+- **검증**: dev박스 문법체크 openarm_init.cpp **OK**(openarmx API 정합 확인). 전체 빌드는 제어PC(kdl_parser 등 ROS 의존).
+- **clamp 없음**(운영자 지시). 그리퍼 변환기 identity(P6 스케일 정밀화 대상).
+### 남은 것
+- P5 제어PC 빌드 + **부호검증**(angle-limit 파일 대조). P6 튜닝(Fv/Fo·관절별 kp·자유공간 오차 로깅).
