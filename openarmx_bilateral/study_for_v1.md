@@ -140,7 +140,7 @@ bilateral의 실제 힘 계산 `τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_
 | 모터 init (DM, `initialize_openarm`) | 모터 등록 | **모터타입맵 RS04(J1-2)/RS03(J3-4)/RS00(J5-7,그리퍼) + CAN ID 1~8, 그리퍼 0x08** (v10_simple_hardware의 DEFAULT_MOTOR_TYPES) | 필수 |
 | `OpenArmJointConverter`(motor↔joint) | DM 기어/부호 변환 | 우리 **direction_multipliers(−1 전부) + 그리퍼 `joint_to_motor_radians`(≈−23.8배 스케일)** | 부호·그리퍼 스케일 우리것 |
 | `Dynamics`(KDL ChainDynParam)+URDF | 중력/coriolis | **동일 KDL**, 단 **우리 v10 URDF + 체인 링크명(openarmx_left_jointN, base~link7)** 주입 | URDF만 갈면 됨 |
-| `ComputeFriction`(Fo+Fv·ω+Fc·tanh(k·ω)) | 마찰 | 모델 유지, **파라미터=우리 식별 Fc/k** | ⚠️ **k-scale: 우리 tanh(0.1·k) ↔ enactic tanh(k) → 우리 k를 ×10 하거나 식에 0.1 삽입** |
+| `ComputeFriction`(Fc·tanh(0.1·k·ω)+Fv·ω+Fo) | 마찰 | 모델 유지, **파라미터=우리 식별 Fc/k** | ✅ **[교정] enactic 실제 코드도 tanh(0.1·k) — 우리와 동일 계수.** k-scale 정합 불필요. 차이는 우리가 **Fv·ω+Fo 항을 뺀 것**뿐(0으로 두면 동일) |
 | Kp/Kd (yaml, [0,500]) | 게인 | **우리값 kp={35,20,15,8,8,3,1,1} kd={3.5,5,2.5,0.8,0.8,0.3,0.1,0.1}** | openarmx-can이 모터타입별 범위(RS04 [0,5000] 등) 패킹 처리 |
 | 중력 scale | 없음(raw) | 우리 **g_scale=0.93** 곱 추가 | 우리 붕뜸 보정 유지하려면 |
 | posture spring(J3) | 없음 | 우리 것 추가할지 선택 | enactic엔 없는 기능 |
@@ -170,6 +170,70 @@ bilateral의 실제 힘 계산 `τ = kp·(q_des−q) + kd·(q̇_des−q̇) + τ_
 
 ---
 
+## §1.6 심화 분석 ① enactic은 500Hz를 어떻게 내나 (하드웨어)
+- 공식 문서(docs.openarm.dev/teleop): **"bilateral은 500Hz 이상 필요"**. CAN 설정 명령이
+  `openarm-can-configure-socketcan can0 -fd` / `-4-arms -fd` → **enactic은 CAN-FD를 씀.**
+- enactic 모터 = **DM(Damiao)**, CAN-FD 지원. CAN-FD(데이터구간 최대 ~5-8Mbit)로 **프레임당 CAN
+  와이어 시간이 classic 1Mbps 대비 급감** → 8모터를 2ms(500Hz)에 송수신 가능.
+- enactic 루프도 우리 패치와 같은 **1왕복**(mit_control_all + sleep200us + recv_all(220us), 별도
+  status 요청 없음). 즉 rate 차이는 **알고리즘/루프가 아니라 CAN-FD + 어댑터**에서 나옴.
+- **⚠️ 결정적: 우리는 500Hz 재현 불가.** (1) Robstride 모터 **CAN-FD 미지원**(제조사 확인), (2) 우리
+  USB2CAN 동글 **full-speed**. → 코드를 포팅해도 **우리 rate 상한은 그대로 150Hz.** enactic의 500은
+  하드웨어(CAN-FD) 덕이고, 그건 우리 HW를 바꿔야(HS-USB/PCIe+FD지원 모터) 가능.
+
+## §1.6 심화 분석 ② 마찰 Fv/Fo 식별 절차
+- **enactic 저장소·문서에 마찰 식별 스크립트/절차 없음.** Fc/k/Fv/Fo는 yaml에 **이미 튜닝된 상수**로만
+  제공(찾음: friction/identif 관련 코드 0개). 즉 "그들의 식별법"은 공개돼 있지 않음.
+- 모델은 `Fc·tanh(0.1·k·ω) + Fv·ω + Fo` (§1.5 교정). 우리는 Fc·tanh만 씀(Fv≈0, Fo=0).
+- **우리가 Fv/Fo를 얻는 법(포팅 불필요, 우리 friction_id 확장):** 기존 등속 셔틀(friction_id_node)로
+  관절별 여러 속도에서 `effort−gravity=friction` 측정 → **4파라미터 최소자승 적합**(Fc·tanh 홀함수 +
+  Fv·ω 선형기울기 + Fo 오프셋). 현재 Coulomb만 적합하는 걸 4파라미터 적합으로 확장하면 끝. **저비용.**
+- 시사점: 자유공간 가벼움(transparency)을 올릴 **가장 싸고 독립적인 카드**. 포팅과 무관하게 우리
+  friction_comp에 Fv·ω+Fo만 추가하면 됨.
+
+## §1.7 공식문서 정독 비교 (docs.openarm.dev vs openarmx.com)
+- **docs.openarm.dev/teleop** 정독함: setup-guide / unilateral / bilateral / vr.
+  - bilateral: 500Hz+, 6파라미터(Kp,Kd,Fc,k,Fv,Fo), 3스레드(leader/follower/admin), CAN-FD,
+    zero=팔 아래로 내림, leader can0/1·follower can2/3, KDL/eigen/urdfdom 의존. 실행
+    `./script/launch_bilateral.sh right_arm can0 can2`.
+  - **공개 bilateral = "classical position–force"(=우리가 분석한 SPBT).**
+  - **고급판 = DOB(외란관측기) 가속도제어 + sensorless force + 4채널** → **비공개(연구파트너 한정),
+    미공개.** ⇒ 우리가 가져올 수 있는 "더 나은 것"은 없음. 게다가 **DOB/4채널은 우리 BANNED 목록**(UR10e
+    실패작). 즉 방향도 우리가 이미 배제한 것.
+- **openarmx.com(=Chengdu Changshu Robot, Robstride OEM)**: **docs.openarmx.com TLS 인증서 오류로
+  전 경로 접근 불가.** 대신 설치된 **openarmx-can 헤더가 authoritative** — 모터타입(RS00/RS03/RS04),
+  KP범위(RS04/03 [0,5000], RS00 [0,500]), API(§1.5)를 이미 확보. openarmx는 **openarm의 하드웨어
+  변형(DM→Robstride)이고 소프트웨어(openarmx-can)는 openarm_can 포크**임이 API 평행성으로 확인됨.
+  즉 openarmx 고유의 별도 bilateral 제어법은 없음(같은 openarm 계열).
+
+## §1.8 ⭐ 의사결정 프레임 (한 판 요약)
+**사실 정리:**
+1. 제어 **법칙은 이미 동일**(SPBT position-force). 공개 enactic에서 베낄 알고리즘 이득 = **없음**.
+2. enactic 고급판(DOB/4ch)은 **비공개 + 우리 BANNED** → 방향 자체 제외.
+3. 포팅의 **유일 실이득 = 커플링 DDS→공유메모리**(지연·지터↓). rate는 **CAN-FD 의존이라 우리 못 올림
+   (150 고정)**.
+4. 마찰 정교화(Fv/Fo)·게인 관절별은 **포팅과 무관하게 우리 스택에서 가능**(저비용).
+5. 포팅 비용 = 코드는 쉬움(API 1:1)이나 ros2_control 편의(그리퍼 stall·bimanual·RViz·안전) 재구현.
+
+**선택지:**
+| 옵션 | 내용 | 얻는 것 | 잃는 것/비용 |
+|---|---|---|---|
+| **1. enactic 통째 포팅** | 단일프로세스+공유메모리로 전환 | 커플링 지연↓ | ros2_control 생태계·안전장치 재구현, rate는 그대로 150 |
+| **2. ros2_control 유지 + 체리픽** | (a) in-process 단일-CM 커플링 컨트롤러 (b) friction Fv/Fo (c) 관절별 kp | 커플링 지연↓ + 자유공간 가벼움, 생태계 유지 | 커스텀 컨트롤러 개발 |
+| **3. 현상 + 튜닝만** | 관절별 kp + friction Fv/Fo만 | 저비용 개선 | 커플링 지연은 남음 |
+
+**분석자 의견(참고):** 포팅(1)의 유일 이득(공유메모리 커플링)은 **옵션2의 (a)로 ros2_control 안에서도
+얻을 수 있고**, rate·알고리즘 이득은 어차피 없음 → **통째 포팅의 ROI는 낮아 보임.** v1.0을 "transparency
+개선"으로 정의한다면 **옵션2(친화적·점진적)**가 유력: friction Fv/Fo(자유공간) + 관절별 kp(벽강성) +
+in-process 커플링(지연). 단 **v1.0의 목표 정의**가 먼저 필요(아래 Q5).
+
+**미해결/운영자 결정 필요:**
+- Q5. **v1.0의 정의는?** (예: "transparency를 체감 개선" / "아키텍처를 enactic식으로 전환" /
+  "마찰·게인 완성" 중 무엇). 이게 옵션 선택을 결정.
+- HW 투자(HS-USB/PCIe+FD모터)로 rate 상한을 깰 의향이 있나? (있으면 500Hz급 가능, 없으면 150 고정.)
+
+---
+
 ## §2. (예정) …
-> 다음 공부 주제가 생기면 여기에 계속 추가. (열린 질문: enactic 500Hz 실현 하드웨어, 마찰 Fv/Fo 식별
-> 절차, in-process 단일-CM 커플링 설계, v1.0 정의.)
+> 다음 공부 주제: (택1) in-process 단일-CM 커플링 컨트롤러 설계 / friction Fv·Fo 적합 확장 설계 /
+> HW 업그레이드(HS-USB·PCIe) 조사. **v1.0 정의 후 진행.**
