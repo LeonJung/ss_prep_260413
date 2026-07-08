@@ -95,7 +95,11 @@ fi
 cp "$LEADER_URDF_PATH" "$FOLLOWER_URDF_PATH"
 
 # Run binary
-echo "[INFO] Launching bilateral control..."
+# [openarmx port] the binary loads config/{leader,follower}.yaml via a RELATIVE path, so run
+# it from the package root (where config/ lives). URDF/BIN paths are absolute -> unaffected.
+PKG_DIR="$(cd "$(dirname "$BIN_PATH")/.." && pwd)"
+cd "$PKG_DIR" || { echo "[ERROR] cannot cd to package dir $PKG_DIR"; exit 1; }
+echo "[INFO] Launching bilateral control... (cwd=$PKG_DIR)"
 "$BIN_PATH" "$LEADER_URDF_PATH" "$FOLLOWER_URDF_PATH" "$ARM_SIDE" "$LEADER_CAN_IF" "$FOLLOWER_CAN_IF"
 
 # Cleanup

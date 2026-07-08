@@ -21,29 +21,29 @@ ARM_TYPE=${3:-v10}
 TMPDIR="/tmp/openarm_urdf_gen"
 URDF_NAME="${ARM_TYPE}_bimanual.urdf"
 XACRO_FILE="${ARM_TYPE}.urdf.xacro"
-WS_DIR=~/openarm_ros2_ws
-XACRO_PATH="$WS_DIR/src/openarm_description/urdf/robot/$XACRO_FILE"
+WS_DIR=~/openarmx_ws
+XACRO_PATH="$WS_DIR/src/openarmx_description/urdf/robot/$XACRO_FILE"
 URDF_OUT="$TMPDIR/$URDF_NAME"
-BIN_PATH=~/openarm_teleop/build/gravity_comp # adjust if needed
+BIN_PATH="$(cd "$(dirname "$0")/.." && pwd)/build/gravity_comp"
 # ===============================
 # Check workspace
 if [ ! -d "$WS_DIR" ]; then
     echo "[ERROR] Could not find workspace at: $WS_DIR" >&2
-    echo "We assume the default ROS 2 workspace is ~/openarm_ros2_ws." >&2
+    echo "We assume the default ROS 2 workspace is ~/openarmx_ws." >&2
     echo "If you are using a different workspace, please update WS_DIR in this launch script." >&2
     exit 1
 fi
 
-# Check openarm_description package
-if [ ! -d "$WS_DIR/src/openarm_description" ]; then
-    echo "[ERROR] Could not find package: $WS_DIR/src/openarm_description" >&2
-    echo "Please make sure to clone openarm_description into $WS_DIR/src/" >&2
+# Check openarmx_description package
+if [ ! -d "$WS_DIR/src/openarmx_description" ]; then
+    echo "[ERROR] Could not find package: $WS_DIR/src/openarmx_description" >&2
+    echo "Please make sure to clone openarmx_description into $WS_DIR/src/" >&2
     exit 1
 fi
 
 # Check xacro
 if [ ! -f "$XACRO_PATH" ]; then
-    echo "[ERROR] Could not find ${XACRO_FILE} under $WS_DIR/src/openarm_description/urdf/robot/" >&2
+    echo "[ERROR] Could not find ${XACRO_FILE} under $WS_DIR/src/openarmx_description/urdf/robot/" >&2
     exit 1
 fi
 
@@ -66,6 +66,7 @@ fi
 
 # Run gravity compensation binary
 echo "[INFO] Launching gravity compensation..."
+cd "$(dirname "$BIN_PATH")/.." || exit 1
 "$BIN_PATH" "$ARM_SIDE" "$CAN_IF" "$URDF_OUT"
 
 # Cleanup
