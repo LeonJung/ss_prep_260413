@@ -112,8 +112,8 @@ int main(int argc, char** argv) {
 
             auto motors = openarm->get_arm().get_motors();
             for (size_t i = 0; i < motors.size(); ++i) {
-                arm_joint_positions[i] = motors[i].get_position();
-                arm_joint_velocities[i] = motors[i].get_velocity();
+                arm_joint_positions[i] = motors[i]->get_position();
+                arm_joint_velocities[i] = motors[i]->get_velocity();
             }
 
             arm_dynamics.GetGravity(arm_joint_positions.data(), grav_torques.data());

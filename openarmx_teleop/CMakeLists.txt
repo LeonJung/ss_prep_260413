@@ -66,11 +66,13 @@ target_link_libraries(
 # Executables
 # -----------------------------
 add_executable(gravity_comp control/gravity_compasation.cpp)
-add_executable(comm_test control/openarm_communication_test.cpp)
+# [openarmx port] comm_test excluded: uses Damiao-specific API (RID enum, get_param) with no
+# openarmx_can equivalent. Not needed for bilateral; port later if a diagnostic is wanted.
+# add_executable(comm_test control/openarm_communication_test.cpp)
 add_executable(unilateral_control control/openarm_unilateral_control.cpp)
 add_executable(bilateral_control control/openarm_bilateral_control.cpp)
 
 target_link_libraries(gravity_comp PRIVATE openarm_teleop_lib)
-target_link_libraries(comm_test PRIVATE openarm_teleop_lib)
+# target_link_libraries(comm_test PRIVATE openarm_teleop_lib)
 target_link_libraries(unilateral_control PRIVATE openarm_teleop_lib)
 target_link_libraries(bilateral_control PRIVATE openarm_teleop_lib)
