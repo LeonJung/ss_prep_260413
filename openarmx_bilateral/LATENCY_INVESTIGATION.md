@@ -152,3 +152,33 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
 - **핵심 근거(논문/자료):** USB는 시간임계 폐루프에 지연 유발 → 온보드/직결 컨트롤러 권장; QDD 고속제어
   (1kHz+)는 USB 아닌 SPI/PCIe/FPGA-DMA로 구현됨. QDD는 1:10 저감속·고backdrivability·**저마찰**(→ §Fv/Fo와 연결).
 - **권장 순서: HS-USB(가성비) → PCIe(데스크톱이면) → SPI-CAN(끝까지 갈 때).**
+
+## E13. 구체 제품 후보 + 리서치 주의점 (2026-07)
+### ⚠ 리서치로 드러난 핵심 주의점 (제품 고르기 전 필독)
+- **gain은 rate지 jitter가 아님.** 리서치상 **Linux CAN 지연 바닥 ~0.1ms, max ~1ms(in-kernel)/~3ms(user-space RT).**
+  우리 현재 jitter 1.16ms는 **이미 이 바닥 근처.** 즉 하드웨어 바꿔도 **지터는 크게 안 줄 수 있음** — 얻는 건
+  주로 **처리량(rate) = 150Hz→더 높이**(full-speed→HS/PCIe로 프레임/s↑). CAN 1Mbps 상한 ~475Hz.
+- **싼 slcan(serial-line CAN)은 오히려 느림.** Waveshare USB-CAN-A(STM32, COM포트/slcan) 류는 고속제어에
+  부적합할 수 있음 → **네이티브 SocketCAN 커널드라이버 + Hi-Speed** 제품이라야 이득.
+- **SPI-CAN(MCP2518FD)도 지터 주의.** Jetson에서 **~6ms TX 지터 보고** 사례 → 자동으로 더 좋은 게 아님.
+- **결론: 확실히 빠른 건 PCIe/mini-PCIe(Kvaser 등, 1µs 타임스탬프) 또는 검증된 Hi-Speed USB(Kvaser). 후보는
+  반드시 우리 로깅([Leader ctrl] Hz)으로 실측 검증 후 채택.**
+
+### 제품 티어
+| 티어 | 제품 | 폼팩터 | 특징 | 대략가 | 유통 |
+|---|---|---|---|---|---|
+| **A 최고성능** | **Kvaser Mini PCIe 2xHS v2 / PCIEcan HS v2** | (mini)PCIe | 1µs 타임스탬프, 초저지연, 네이티브 SocketCAN | ~$300-500 | Kvaser 대리점, phytools |
+| A | **Cervoz MEC-CAN-2F02i** | **M.2 PCIe** | NUC M.2 슬롯 적합, 2ch CAN-FD, SocketCAN | 산업용 | Cervoz 대리점 |
+| A(저가) | 제네릭 **Mini-PCIe 2-CH CAN** | mini-PCIe | 1Mbps, SocketCAN, 격리 | ~$50-100 | alibaba, robotshop, thepihut |
+| **B 검증USB** | **Kvaser USBcan Pro 2xHS v2 / Leaf Light v2 / USBcan Light 4xHS** | USB(HS) | Hi-Speed, 네이티브 SocketCAN 드라이버, 저지연 | ~$150-600 | Kvaser 대리점 |
+| B(저가 실험) | **Innomaker USB2CAN-X2** | USB | STM32F0+DMA, SocketCAN, C/Py 데모 | ~$40 | alibaba, inno-maker.com, 아마존 |
+| ~~C 비추~~ | ~~Waveshare USB-CAN-A~~ | USB | slcan/COM포트, 고속제어 부적합 | ~$20 | devicemart/eleparts, aliexpress |
+| C(SBC) | **Waveshare 2-CH CAN FD HAT (MCP2518FD)** | SPI(Jetson/Pi) | MIT식 SPI-CAN, 단 **지터 6ms 사례** — 신중 | ~$20-30 | devicemart/eleparts, waveshare |
+
+### 한국 사이트 메모
+- **devicemart / eleparts**: Waveshare(USB-CAN-A/B/FD, CAN HAT) 다수 취급. Kvaser/PEAK는 산업용 대리점(예:
+  캔인터페이스 전문 유통사) 통해. → "CAN" "SocketCAN" "PCIe CAN" 키워드 검색.
+- **coupang**: 소비자용/Waveshare 일부. **alibaba**: Innomaker·제네릭 mini-PCIe/USB-CAN 다양(가성비 실험용).
+- **⚠ 우리 폼팩터 확인 필요**: 제어 PC가 데스크톱(PCIe 슬롯 有)인지 NUC(M.2/mini-PCIe만)인지에 따라 A티어 선택.
+  NUC면 M.2 CAN(Cervoz) 또는 검증 Hi-Speed USB(Kvaser). 데스크톱이면 PCIe(Kvaser) 최선.
+- **실측 필수**: 어떤 걸 사든 우리 rate 로깅으로 150Hz 초과·지터 확인 후 확정.

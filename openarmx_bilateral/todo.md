@@ -11,7 +11,17 @@
       기구·좌표 튜닝으로 근본적 transparency 향상. → 새 패키지 openarmx_teleop. (study_for_v1.md ★/§4)
 - [ ] **HW 투자 의향**: HS-USB(480M)/PCIe + FD지원 모터로 150Hz 상한 돌파할지. (있으면 500Hz급 가능.)
 
-## 저비용 개선 카드 (포팅 무관, 언제든)
-- [ ] friction Fv/Fo 도입 — friction_id를 4파라미터 적합으로 확장(자유공간 가벼움↑).
-- [ ] 관절별 kp 벽강성 스윕 (kp/kd 인자 이미 구현됨).
+## openarmx_teleop(공유메모리 포팅판) 뻑뻑함 남은 레버 = 딱 2개
+- [ ] **관절별 kp/kd 튜닝** — **운영자 직접 담당.** (config/{leader,follower}.yaml, 재빌드 불필요.
+      어깨↑ 벽강성 / 손목↓. 옛날 J4 유독 뻑뻑했던 것 참고.)
+- [ ] **USB/CAN 속도 하드웨어 교체** — 150Hz 상한 돌파용. 후보 = HS-USB(Kvaser) / PCIe·mini-PCIe·M.2
+      (Kvaser/Cervoz) / SPI-CAN(Jetson, 단 지터 주의). 상세·제품 = LATENCY_INVESTIGATION.md §E12/§E13.
+      ⚠ 싼 slcan(Waveshare USB-CAN-A 등)은 오히려 느릴 수 있음. gain은 rate(150↑)이지 지터 아님.
+
+## 마찰 (조사 완료, 결론)
+- [~] friction Fv/Fo — **미확정.** 옛 데이터 재적합=Fv 0/Fo 아티팩트(위험). back-EMF는 무전원 한정,
+      운전 중 드라이버가 보상. 확정하려면 넓은 속도범위 재식별 필요. (study §6) 우선순위 낮음.
 - [ ] 그리퍼 마찰보상 (파킹됨, GRIPPER_FRICTION_DRIVER_PATCH.md).
+
+## 옛 openarmx_bilateral(ros2_control) 관련 (참고용, 이제 openarmx_teleop이 주력)
+- [ ] 관절별 kp 벽강성 스윕 (bilateral.launch kp/kd 인자 이미 구현됨).
