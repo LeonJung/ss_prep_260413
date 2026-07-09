@@ -182,3 +182,15 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
 - **⚠ 우리 폼팩터 확인 필요**: 제어 PC가 데스크톱(PCIe 슬롯 有)인지 NUC(M.2/mini-PCIe만)인지에 따라 A티어 선택.
   NUC면 M.2 CAN(Cervoz) 또는 검증 Hi-Speed USB(Kvaser). 데스크톱이면 PCIe(Kvaser) 최선.
 - **실측 필수**: 어떤 걸 사든 우리 rate 로깅으로 150Hz 초과·지터 확인 후 확정.
+
+### E13a. 제어 PC = SK-M03 폼팩터 확정 (2026-07) → **Hi-Speed USB 확정**
+- 제어 PC = **SK-M03**(深圳市航柏科技/Shenzhen Hangbai 미니PC). 검색으로 스펙 안 나옴(저가 심천 벤더).
+- 실측 확인:
+  - `product_name = Default string` (BIOS 미기입 저가 보드).
+  - USB = **Intel Comet Lake PCH-LP xHCI 1개**(모바일 칩셋, 컨트롤러 단일) → 동글 분산 무의미.
+  - 저장장치 `TRAN=sata`, **NVMe 없음** (M.2 M-key 비었을 수도 있으나 2.5"/M.2 SATA 구분 불가).
+  - `dmidecode -t slot` = 5개 전부 `In Use`/`Opening is shared`, Bus Addr `00:01.0`(CPU PEG)+`00:1c.3~6`(PCH 루트포트).
+    → **물리 카드 슬롯 아님, BIOS 보일러플레이트.** 미니PC라 실제 꽂을 PCIe/mini-PCIe 슬롯 없음.
+- **결론: SK-M03엔 물리 확장슬롯 없음 → 데스크톱/mini-PCIe Kvaser 불가 → `Kvaser USBcan Pro 2xHS v2`(B티어) 확정.**
+  8모터를 2ch당 4모터 또는 2~3대 분산. M.2 CAN(Cervoz)은 빈 M.2 확인+내부배선/발열 감수 시에만 차선.
+  slcan(Waveshare) 금지. 설치 후 `[Leader ctrl] Hz` 로깅으로 150 초과 실측 후 확정.

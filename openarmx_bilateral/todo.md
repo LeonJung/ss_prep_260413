@@ -14,9 +14,10 @@
 ## openarmx_teleop(공유메모리 포팅판) 뻑뻑함 남은 레버 = 딱 2개
 - [ ] **관절별 kp/kd 튜닝** — **운영자 직접 담당.** (config/{leader,follower}.yaml, 재빌드 불필요.
       어깨↑ 벽강성 / 손목↓. 옛날 J4 유독 뻑뻑했던 것 참고.)
-- [ ] **USB/CAN 속도 하드웨어 교체** — 150Hz 상한 돌파용. 후보 = HS-USB(Kvaser) / PCIe·mini-PCIe·M.2
-      (Kvaser/Cervoz) / SPI-CAN(Jetson, 단 지터 주의). 상세·제품 = LATENCY_INVESTIGATION.md §E12/§E13.
-      ⚠ 싼 slcan(Waveshare USB-CAN-A 등)은 오히려 느릴 수 있음. gain은 rate(150↑)이지 지터 아님.
+- [ ] **USB/CAN 속도 하드웨어 교체** — 150Hz 상한 돌파용. **[확정] 제어 PC=SK-M03(심천 미니PC)은
+      물리 확장슬롯 없음(§E13a 확인) → `Kvaser USBcan Pro 2xHS v2`(Hi-Speed USB).** PCIe/mini-PCIe 불가.
+      상세 = LATENCY_INVESTIGATION.md §E12/§E13/§E13a. ⚠ 싼 slcan(Waveshare) 금지. gain은 rate(150↑)이지 지터 아님.
+      설치 후 `[Leader ctrl] Hz` 로깅으로 150 초과 실측 후 확정.
 
 ## 마찰 (조사 완료, 결론)
 - [~] friction Fv/Fo — **미확정.** 옛 데이터 재적합=Fv 0/Fo 아티팩트(위험). back-EMF는 무전원 한정,
