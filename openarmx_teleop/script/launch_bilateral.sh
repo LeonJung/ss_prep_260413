@@ -18,6 +18,7 @@
 ARM_SIDE=${1:-right_arm} # Required: left_arm or right_arm
 LEADER_CAN_IF=$2         # Optional: leader CAN interface
 FOLLOWER_CAN_IF=$3       # Optional: follower CAN interface
+CONTROL_HZ=${4:-150}     # Optional: control loop rate [Hz] (sweep >150 to test USB ceiling)
 ARM_TYPE="v10"           # Fixed for now
 TMPDIR="/tmp/openarm_urdf_gen"
 
@@ -99,8 +100,8 @@ cp "$LEADER_URDF_PATH" "$FOLLOWER_URDF_PATH"
 # it from the package root (where config/ lives). URDF/BIN paths are absolute -> unaffected.
 PKG_DIR="$(cd "$(dirname "$BIN_PATH")/.." && pwd)"
 cd "$PKG_DIR" || { echo "[ERROR] cannot cd to package dir $PKG_DIR"; exit 1; }
-echo "[INFO] Launching bilateral control... (cwd=$PKG_DIR)"
-"$BIN_PATH" "$LEADER_URDF_PATH" "$FOLLOWER_URDF_PATH" "$ARM_SIDE" "$LEADER_CAN_IF" "$FOLLOWER_CAN_IF"
+echo "[INFO] Launching bilateral control... (cwd=$PKG_DIR, rate=${CONTROL_HZ}Hz)"
+"$BIN_PATH" "$LEADER_URDF_PATH" "$FOLLOWER_URDF_PATH" "$ARM_SIDE" "$LEADER_CAN_IF" "$FOLLOWER_CAN_IF" "$CONTROL_HZ"
 
 # Cleanup
 echo "[INFO] Cleaning up temporary files..."

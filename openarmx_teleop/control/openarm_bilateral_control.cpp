@@ -50,27 +50,33 @@ protected:
     void on_timer() override {
         static auto prev_time = std::chrono::steady_clock::now();
 
+        auto t0 = std::chrono::steady_clock::now();
         control_l_->bilateral_step();
-
         auto now = std::chrono::steady_clock::now();
 
+        auto step_us = std::chrono::duration_cast<std::chrono::microseconds>(now - t0).count();
         auto elapsed_us =
             std::chrono::duration_cast<std::chrono::microseconds>(now - prev_time).count();
         prev_time = now;
 
-        // [openarmx] real-time control-period log: achieved Hz + jitter, printed ~every 1s.
+        // [openarmx] control-rate log ~every 1s: achieved Hz + period jitter + STEP exec time.
+        // If step_mean ~= period_mean, the loop is limited by the step (USB CAN I/O), i.e.
+        // USB-bound -> raising the rate arg won't increase achieved Hz.
         static auto last_print = now;
         static long cnt = 0;
-        static int64_t sum = 0, mn = 1000000000, mx = 0;
-        cnt++; sum += elapsed_us;
-        if (elapsed_us < mn) mn = elapsed_us;
-        if (elapsed_us > mx) mx = elapsed_us;
+        static int64_t psum = 0, pmn = 1000000000, pmx = 0, ssum = 0, smx = 0;
+        cnt++; psum += elapsed_us; ssum += step_us;
+        if (elapsed_us < pmn) pmn = elapsed_us;
+        if (elapsed_us > pmx) pmx = elapsed_us;
+        if (step_us > smx) smx = step_us;
         if (now - last_print >= std::chrono::seconds(1)) {
-            double mean = cnt ? static_cast<double>(sum) / cnt : 0.0;
-            std::cout << "[Leader ctrl] " << (mean > 0 ? 1e6 / mean : 0.0)
-                      << " Hz | period mean " << mean << "us min " << mn << " max " << mx
-                      << " jitter " << (mx - mn) << "us | " << cnt << " cyc" << std::endl;
-            cnt = 0; sum = 0; mn = 1000000000; mx = 0; last_print = now;
+            double pmean = cnt ? static_cast<double>(psum) / cnt : 0.0;
+            double smean = cnt ? static_cast<double>(ssum) / cnt : 0.0;
+            std::cout << "[Leader ctrl] " << (pmean > 0 ? 1e6 / pmean : 0.0)
+                      << " Hz | period mean " << pmean << " min " << pmn << " max " << pmx
+                      << " jitter " << (pmx - pmn) << "us | step mean " << smean
+                      << " max " << smx << "us | " << cnt << " cyc" << std::endl;
+            cnt = 0; psum = 0; pmn = 1000000000; pmx = 0; ssum = 0; smx = 0; last_print = now;
         }
     }
 
@@ -93,27 +99,31 @@ protected:
     void on_timer() override {
         static auto prev_time = std::chrono::steady_clock::now();
 
+        auto t0 = std::chrono::steady_clock::now();
         control_f_->bilateral_step();
-
         auto now = std::chrono::steady_clock::now();
 
+        auto step_us = std::chrono::duration_cast<std::chrono::microseconds>(now - t0).count();
         auto elapsed_us =
             std::chrono::duration_cast<std::chrono::microseconds>(now - prev_time).count();
         prev_time = now;
 
-        // [openarmx] real-time control-period log: achieved Hz + jitter, printed ~every 1s.
+        // [openarmx] control-rate log ~every 1s (see LeaderArmThread for the USB-bound test).
         static auto last_print = now;
         static long cnt = 0;
-        static int64_t sum = 0, mn = 1000000000, mx = 0;
-        cnt++; sum += elapsed_us;
-        if (elapsed_us < mn) mn = elapsed_us;
-        if (elapsed_us > mx) mx = elapsed_us;
+        static int64_t psum = 0, pmn = 1000000000, pmx = 0, ssum = 0, smx = 0;
+        cnt++; psum += elapsed_us; ssum += step_us;
+        if (elapsed_us < pmn) pmn = elapsed_us;
+        if (elapsed_us > pmx) pmx = elapsed_us;
+        if (step_us > smx) smx = step_us;
         if (now - last_print >= std::chrono::seconds(1)) {
-            double mean = cnt ? static_cast<double>(sum) / cnt : 0.0;
-            std::cout << "[Follower ctrl] " << (mean > 0 ? 1e6 / mean : 0.0)
-                      << " Hz | period mean " << mean << "us min " << mn << " max " << mx
-                      << " jitter " << (mx - mn) << "us | " << cnt << " cyc" << std::endl;
-            cnt = 0; sum = 0; mn = 1000000000; mx = 0; last_print = now;
+            double pmean = cnt ? static_cast<double>(psum) / cnt : 0.0;
+            double smean = cnt ? static_cast<double>(ssum) / cnt : 0.0;
+            std::cout << "[Follower ctrl] " << (pmean > 0 ? 1e6 / pmean : 0.0)
+                      << " Hz | period mean " << pmean << " min " << pmn << " max " << pmx
+                      << " jitter " << (pmx - pmn) << "us | step mean " << smean
+                      << " max " << smx << "us | " << cnt << " cyc" << std::endl;
+            cnt = 0; psum = 0; pmn = 1000000000; pmx = 0; ssum = 0; smx = 0; last_print = now;
         }
     }
 
@@ -208,6 +218,16 @@ int main(int argc, char **argv) {
             follower_can_interface = argv[5];
         }
 
+        // [openarmx] Optional: control loop rate [Hz] (argv[6]); default FREQUENCY (150).
+        // Sweep this above 150 to confirm the USB2CAN ceiling: if achieved Hz plateaus at
+        // ~150 while step_us stays ~= period, the loop is USB-bound (not timer-bound).
+        double control_hz = FREQUENCY;
+        if (argc >= 7) {
+            control_hz = std::atof(argv[6]);
+            if (control_hz <= 0.0) control_hz = FREQUENCY;
+        }
+        std::cout << "Control rate      : " << control_hz << " Hz" << std::endl;
+
         // URDF file existence check
         if (!std::filesystem::exists(leader_urdf_path)) {
             std::cerr << "[ERROR] Leader URDF not found: " << leader_urdf_path << std::endl;
@@ -287,10 +307,10 @@ int main(int argc, char **argv) {
 
         Control *control_leader = new Control(
             leader_openarm, leader_arm_dynamics, follower_arm_dynamics, leader_state,
-            1.0 / FREQUENCY, ROLE_LEADER, arm_side, leader_arm_motor_num, leader_hand_motor_num);
+            1.0 / control_hz, ROLE_LEADER, arm_side, leader_arm_motor_num, leader_hand_motor_num);
         Control *control_follower =
             new Control(follower_openarm, leader_arm_dynamics, follower_arm_dynamics,
-                        follower_state, 1.0 / FREQUENCY, ROLE_FOLLOWER, arm_side,
+                        follower_state, 1.0 / control_hz, ROLE_FOLLOWER, arm_side,
                         follower_arm_motor_num, follower_hand_motor_num);
 
         // set parameter
@@ -307,10 +327,10 @@ int main(int argc, char **argv) {
         thread_f.join();
 
         // Start control process
-        LeaderArmThread leader_thread(leader_state, control_leader, FREQUENCY);
-        FollowerArmThread follower_thread(follower_state, control_follower, FREQUENCY);
+        LeaderArmThread leader_thread(leader_state, control_leader, control_hz);
+        FollowerArmThread follower_thread(follower_state, control_follower, control_hz);
         AdminThread admin_thread(leader_state, follower_state, control_leader, control_follower,
-                                 FREQUENCY);
+                                 control_hz);
 
         // thread start in control
         leader_thread.start_thread();
