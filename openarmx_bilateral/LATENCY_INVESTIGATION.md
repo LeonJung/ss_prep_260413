@@ -118,3 +118,37 @@ can0 모터별 피드백(Hz):
 - **update_rate: 150 확정** (안전율 — 완전균일 상한 ~152 바로 아래, 8모터 전부 150Hz). yaml 2개 16행.
 - **다음 검증:** 벽 느낌(transparency) 체감 / PC N 팡팡 재검증(원인이 USB tail 아니었으니 이 패치로 될 수도).
 - **파킹:** 그리퍼 마찰보상(tech_debt §11), **HS-USB 조달(A-1)** — 150 이상 균일 rate 원할 때 유일한 길.
+
+---
+
+## E11. [2026-07] openarmx_teleop(공유메모리 포팅판)에서 150Hz 상한 **런타임 스윕으로 재확정**
+새 포팅판(openarmx_teleop)에 **제어주기 런타임 인자**(`launch_bilateral.sh <side> <lcan> <fcan> <Hz>`)
++ **주기/스텝시간 로깅**([Leader/Follower ctrl] Hz·jitter·step_us)을 넣고 rate를 스윕:
+| rate | 결과(운영자 체감) | 해석 |
+|---|---|---|
+| 100Hz | 150보다 **더 뻑뻑** | rate↓ = 지연↑ = 투명도↓ |
+| **150Hz** | **최적(쓸만)** | 8모터 균일 상한 |
+| 200Hz | **후방 관절(J5,6,7,8) 추종 느림** | send 루프 뒤쪽 모터 starvation 시작 |
+| 250Hz | **진동 + 팡** | starvation 심화 → 발산 |
+- **결론: full-speed USB2CAN의 8모터 균일 상한 = ~150Hz 재확정.** 위로 올리면 send 순서상 뒤쪽 모터
+  (손목·그리퍼)가 굶고(§E8/E9와 동일 메커니즘), 아래로 내리면 뻑뻑. **150이 이 하드웨어의 스윗스팟.**
+- 로그 기준(150Hz): period mean 6667us(=150Hz), min 6079 / max 7100, **jitter ~1.16ms.** 옛 ros2_control
+  (75/86Hz, jitter max 25ms) 대비 rate 2배·최대지연 ~3.5배 개선 → **이 저지터가 kp120 안정의 원인.**
+- **150 초과는 HW 교체만 가능**(HS-USB / PCIe-CAN / SPI-CAN). 옵션 상세 = 아래 §E12.
+
+## E12. 150Hz 초과 옵션 (조사 2026-07)
+CAN 1Mbps에서 8모터×1왕복 = 이론 **~475Hz**가 CAN 버스 상한(그 이상은 CAN-FD/고비트레이트 필요, 단
+Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임당 오버헤드**가 병목. 넘는 법:
+1. **HS-USB(480M) USB-CAN 어댑터** — full-speed(1ms 프레임)→Hi-Speed(125µs 마이크로프레임) ⇒ USB
+   트랜잭션/s ~8배 ⇒ CAN버스 상한(~475Hz)에 근접. **가장 저비용·최소침습**(어댑터만 교체, socketCAN 그대로).
+   단 "진짜 HS(480M) 명시" 제품이어야(현물 PCAN-USB FD는 FS로 동작). ⚠ 조달 시 lsusb -t로 480M 확인.
+2. **PCIe-CAN 카드** — CAN 컨트롤러가 PCIe 직결(USB 계층 제거). 전용 대역·초저지연·저지터. CAN버스
+   상한(~475Hz)까지, 지터는 USB보다 훨씬↓. 단 **데스크톱 PCIe 슬롯 필요**(NUC/노트북 불가), 통합 비용↑.
+3. **SPI-CAN (MCP2515/2518FD를 SBC SPI에 직결)** — USB 없이 SPI→CAN. **MIT Kim랩 플랫폼이 바로 이 방식**
+   (SPI 500Hz→커스텀PCB→CAN 최대 3kHz, arxiv 2208.04487). 최저지연·최고 상한이나 **커스텀 HW/배선 +
+   SBC(Jetson/Pi)** 필요 = 작업량 최대.
+4. (부차) **동글을 여러 USB 호스트 컨트롤러로 분산** — 허브 TT 경합↓로 지터 약간↓뿐, per-dongle
+   full-speed 상한은 그대로 → 근본 해결 아님.
+- **핵심 근거(논문/자료):** USB는 시간임계 폐루프에 지연 유발 → 온보드/직결 컨트롤러 권장; QDD 고속제어
+  (1kHz+)는 USB 아닌 SPI/PCIe/FPGA-DMA로 구현됨. QDD는 1:10 저감속·고backdrivability·**저마찰**(→ §Fv/Fo와 연결).
+- **권장 순서: HS-USB(가성비) → PCIe(데스크톱이면) → SPI-CAN(끝까지 갈 때).**
