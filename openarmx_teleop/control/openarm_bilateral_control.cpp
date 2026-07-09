@@ -58,7 +58,20 @@ protected:
             std::chrono::duration_cast<std::chrono::microseconds>(now - prev_time).count();
         prev_time = now;
 
-        // std::cout << "[Leader] Period: " << elapsed_us << " us" << std::endl;
+        // [openarmx] real-time control-period log: achieved Hz + jitter, printed ~every 1s.
+        static auto last_print = now;
+        static long cnt = 0;
+        static int64_t sum = 0, mn = 1000000000, mx = 0;
+        cnt++; sum += elapsed_us;
+        if (elapsed_us < mn) mn = elapsed_us;
+        if (elapsed_us > mx) mx = elapsed_us;
+        if (now - last_print >= std::chrono::seconds(1)) {
+            double mean = cnt ? static_cast<double>(sum) / cnt : 0.0;
+            std::cout << "[Leader ctrl] " << (mean > 0 ? 1e6 / mean : 0.0)
+                      << " Hz | period mean " << mean << "us min " << mn << " max " << mx
+                      << " jitter " << (mx - mn) << "us | " << cnt << " cyc" << std::endl;
+            cnt = 0; sum = 0; mn = 1000000000; mx = 0; last_print = now;
+        }
     }
 
 private:
@@ -88,7 +101,20 @@ protected:
             std::chrono::duration_cast<std::chrono::microseconds>(now - prev_time).count();
         prev_time = now;
 
-        // std::cout << "[Follower] Period: " << elapsed_us << " us" << std::endl;
+        // [openarmx] real-time control-period log: achieved Hz + jitter, printed ~every 1s.
+        static auto last_print = now;
+        static long cnt = 0;
+        static int64_t sum = 0, mn = 1000000000, mx = 0;
+        cnt++; sum += elapsed_us;
+        if (elapsed_us < mn) mn = elapsed_us;
+        if (elapsed_us > mx) mx = elapsed_us;
+        if (now - last_print >= std::chrono::seconds(1)) {
+            double mean = cnt ? static_cast<double>(sum) / cnt : 0.0;
+            std::cout << "[Follower ctrl] " << (mean > 0 ? 1e6 / mean : 0.0)
+                      << " Hz | period mean " << mean << "us min " << mn << " max " << mx
+                      << " jitter " << (mx - mn) << "us | " << cnt << " cyc" << std::endl;
+            cnt = 0; sum = 0; mn = 1000000000; mx = 0; last_print = now;
+        }
     }
 
 private:
