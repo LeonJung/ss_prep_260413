@@ -194,3 +194,16 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
 - **결론: SK-M03엔 물리 확장슬롯 없음 → 데스크톱/mini-PCIe Kvaser 불가 → `Kvaser USBcan Pro 2xHS v2`(B티어) 확정.**
   8모터를 2ch당 4모터 또는 2~3대 분산. M.2 CAN(Cervoz)은 빈 M.2 확인+내부배선/발열 감수 시에만 차선.
   slcan(Waveshare) 금지. 설치 후 `[Leader ctrl] Hz` 로깅으로 150 초과 실측 후 확정.
+
+### E13b. PEAK PCAN-USB Pro FD 검토 → **rate 목적이면 부적합** (2026-07)
+- 질문: 현 PCAN-USB FD(`0c72:0012`) 대신 PEAK **PCAN-USB Pro FD**(IPEH-004061)로 상한 돌파 되나?
+- **결론: 거의 못 깬다.** 근거:
+  - PEAK 포럼: PCAN-USB FD·Pro FD **둘 다 1Mbit에서 ~8000 msg/s** → 어댑터 CAN 처리량은 병목 아님
+    (우리 상한 ~1220 fr/s/ch는 그 1/6). 진짜 벽 = **USB 동기 왕복 지연(~0.8ms/트랜잭션)**.
+  - Pro FD도 **같은 PEAK USB 아키텍처** → 트랜잭션 지연 동일 → 채널당 상한 그대로. 이점은 2ch/box(통합)+
+    CAN-FD뿐인데 **FD는 Robstride 미지원(무용)**, 채널 수는 이미 부족치 않음(6 어댑터).
+- ⚠ **"IPEH-004061 호환 가능"으로 파는 제품 = 정품 아닌 클론.** `peak_usb` 드라이버 미바인딩·지연 미검증·
+  신뢰성 불명 리스크 → **금지**(slcan과 동급 경고).
+- **보정된 관점**: USB2.0인 이상 어떤 어댑터든 microframe(~0.125ms)+펌웨어 지연 바닥은 못 벗어남.
+  Kvaser도 "확실한 해결"이 아니라 "다른 USB 스택이라 지연 좀 낮을 수 있는 베팅"(150→잘해야 200~250, 실측 필수).
+  **확실한 상한 돌파 = PCIe(SK-M03 불가) 또는 소프트웨어 파이프라이닝(send/recv 비동기).** kp/kd가 여전히 최대 실효 레버.
