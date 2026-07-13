@@ -207,3 +207,13 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
 - **보정된 관점**: USB2.0인 이상 어떤 어댑터든 microframe(~0.125ms)+펌웨어 지연 바닥은 못 벗어남.
   Kvaser도 "확실한 해결"이 아니라 "다른 USB 스택이라 지연 좀 낮을 수 있는 베팅"(150→잘해야 200~250, 실측 필수).
   **확실한 상한 돌파 = PCIe(SK-M03 불가) 또는 소프트웨어 파이프라이닝(send/recv 비동기).** kp/kd가 여전히 최대 실효 레버.
+
+### E13c. IXXAT(HMS) USB-to-CAN V2 검토 → **비권장** (2026-07)
+- 질문: IXXAT USB-to-CAN V2로 갈아타면?
+- **결론: 우리 케이스엔 이득 없음. 두 이유:**
+  1. **rate 이득 없음** — 같은 USB2.0 어댑터 → 동기 왕복지연(~0.8ms) 벽 동일, 현 PEAK보다 낮다는 근거 없음
+     → 150Hz 못 깸(§E13b와 동일 논리).
+  2. **SocketCAN이 out-of-tree** — IXXAT V2의 SocketCAN은 HMS가 별도 배포하는 커널모듈(아키텍처별 컴파일).
+     mainline 아님 → 커널 업뎃마다 재컴파일/호환 확인 필요(Ubuntu 버그트래커에 HMS SocketCAN 이슈 다수).
+     현 PEAK `peak_usb` / Kvaser `kvaser_usb`는 mainline(in-tree)이라 이 부담 없음.
+- **교훈: USB 어댑터를 굳이 바꾼다면 mainline 드라이버 유지(PEAK 지속 or Kvaser). IXXAT처럼 스택 이탈 금지.**
