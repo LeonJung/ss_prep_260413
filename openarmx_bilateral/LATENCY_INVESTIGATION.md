@@ -217,3 +217,18 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
      mainline 아님 → 커널 업뎃마다 재컴파일/호환 확인 필요(Ubuntu 버그트래커에 HMS SocketCAN 이슈 다수).
      현 PEAK `peak_usb` / Kvaser `kvaser_usb`는 mainline(in-tree)이라 이 부담 없음.
 - **교훈: USB 어댑터를 굳이 바꾼다면 mainline 드라이버 유지(PEAK 지속 or Kvaser). IXXAT처럼 스택 이탈 금지.**
+
+### E13d. 기존 어댑터 정체 규명 + 정품 PEAK Pro FD 실측 (2026-07) — **§E13b 부분 정정**
+- **기존 = KH-UCANFDX6-Mini (Shenzhen Kunhong/鲲弘电子)** 6채널 CANFD USB 모듈. `lsusb -t`:
+  내부 480M 허브(Dev48) 뒤에 **6× `peak_usb` 12M**. 각 채널이 PEAK PCAN-USB FD id(`0c72:0012`)를
+  **클론**하며 **full-speed(12M)** 로 enumerate. → §E1의 "6× PEAK FD @12M / QinHeng 허브" 정체 = 이 KH 장치.
+- **새거 = 정품 PEAK PCAN-USB Pro FD (`0c72:0011`)**, `lsusb -t`에서 **480M Hi-Speed** 단독(Dev55).
+- **★ §E13b 정정:** 기존(full-speed 12M) vs 새거(Hi-Speed 480M)는 **USB quantum이 근본적으로 다름**
+  (FS=1ms 프레임 vs HS=125µs microframe, 8배). 우리 병목 ~0.8ms/트랜잭션이 FS quantum 언저리라
+  **정품 Hi-Speed Pro FD면 지연이 실제로 줄 여지 있음.** "같은 PEAK 스택이라 무의미"는 이 비교엔 틀림.
+  → 실측 가치 있음(단 rate 로깅으로 확인).
+- **첫 통신 실패 & 원인 = 종단저항.** Pro FD로 왼팔 붙였더니 TX 128B/**RX 0**, candump 침묵, 전 모터 무응답.
+  - PEAK 매뉴얼: **Pro FD 출고 시 종단 비활성**(솔더점퍼/외부 필요). CAN 양끝 120Ω 필수.
+  - KH-Mini는 채널별 120Ω 내장으로 추정 → 그동안 외부 종단 없이 동작. KH→PEAK 교체로 어댑터측 종단 소멸.
+  - 조치: DB9 pin7(CAN_H)–pin2(CAN_L) 저항 측정(∞=종단0 ★유력 / 120=1개 / 60=정상), 120Ω 추가,
+    `ip -s link`로 bus-off/err 확인, 핀아웃(7=H,2=L,3=GND) 검증. **[진행중]**
