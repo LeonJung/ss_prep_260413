@@ -231,4 +231,7 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
   - PEAK 매뉴얼: **Pro FD 출고 시 종단 비활성**(솔더점퍼/외부 필요). CAN 양끝 120Ω 필수.
   - KH-Mini는 채널별 120Ω 내장으로 추정 → 그동안 외부 종단 없이 동작. KH→PEAK 교체로 어댑터측 종단 소멸.
   - 조치: DB9 pin7(CAN_H)–pin2(CAN_L) 저항 측정(∞=종단0 ★유력 / 120=1개 / 60=정상), 120Ω 추가,
-    `ip -s link`로 bus-off/err 확인, 핀아웃(7=H,2=L,3=GND) 검증. **[진행중]**
+    `ip -s link`로 bus-off/err 확인, 핀아웃(7=H,2=L,3=GND) 검증.
+  - **[확정]** 루프백(`scripts/can_loopback_test.py`, 2채널 직결): **무종단 0/10 → 120Ω 10/10.**
+    → 어댑터·드라이버·양 채널 정상, 첫 실패는 순수 종단 문제로 확정(Pro FD 내장종단 OFF도 실증).
+    Linux mainline `peak_usb`는 종단 미제어(커널소스 확인) → 외부 120Ω 필요. 전 과정 = `PCAN_PROFD_MIGRATION.md`.
