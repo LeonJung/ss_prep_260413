@@ -235,3 +235,12 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
   - **[확정]** 루프백(`scripts/can_loopback_test.py`, 2채널 직결): **무종단 0/10 → 120Ω 10/10.**
     → 어댑터·드라이버·양 채널 정상, 첫 실패는 순수 종단 문제로 확정(Pro FD 내장종단 OFF도 실증).
     Linux mainline `peak_usb`는 종단 미제어(커널소스 확인) → 외부 120Ω 필요. 전 과정 = `PCAN_PROFD_MIGRATION.md`.
+
+### E13e. Pro FD 실측 — **500Hz 달성** (2026-07) ★도입 목적 검증
+- leader 스레드 로그: `period mean 1999.49us = 500.17Hz`, `step mean 816.7us / max 965us`, `jitter 700us`, 501 cyc.
+- **KH(FS 12M) 150Hz → Pro FD(HS 480M) 500Hz ≈ 3.3배.** §E13d 가설(FS 1ms→HS 125µs quantum) 실증.
+- **★ 개선 출처 = USB 전송속도(host↔어댑터 링크), CAN-FD 아님.** Robstride는 **classic CAN 1Mbps 전용**(FD 불가, §E2).
+  CAN 와이어는 그대로 1Mbps classic 유지. → 병목이 CAN 버스가 아니라 **USB 왕복 quantum**이었음이 이 결과로 확정.
+- step 816us → 이론상한 ≈ 1/816µs ≈ **1225Hz** → 500Hz는 왕복예산 41%만 사용, **여유 있음**(더 스윕 가능).
+- 시너지: rate↑ → 高 kp 안정. KH 150Hz에서 kp50 못 넘던 제약이 여기서 풀릴 여지(enactic 240 근위 재도전 가능).
+- **검증 대기**: candump로 8모터 실제 500Hz 응답(뒷joint 5~8 starvation 무) / 양 채널 다 Pro FD인지 / 실모션 안정성.

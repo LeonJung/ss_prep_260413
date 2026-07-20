@@ -62,9 +62,12 @@ Pro FD의 한 채널을 leader 왼팔 CAN 하네스에 물리고 1Mbps로 UP:
 - [x] 첫 통신 실패 원인 = 종단저항 확정 (루프백 0/10 → 10/10).
 - [ ] **로봇 버스에 120Ω 종단 넣고** Pro FD로 왼팔 8모터 통신 확인(`check_motor_status.py`).
       (로봇 반대쪽 끝에 종단 있으면 Pro FD측 1개로 60Ω 완성. 없으면 최소 KH 때처럼 1개 확보.)
-- [ ] **핵심 실측**: Pro FD(480M)로 bilateral 돌려 `[Leader ctrl] Hz` 로깅 → **150Hz 초과 여부** 확인.
-      HS quantum(125µs)이 FS(1ms) 대비 실제로 지연을 줄이는지 검증. (`script/launch_bilateral.sh ... [Hz]`)
-- [ ] 결과에 따라: 개선되면 8모터 전체를 Pro FD 계열로 확장 검토 / 미미하면 SW 파이프라이닝 or kp·kd로 회귀.
+- [x] **핵심 실측 [달성]**: Pro FD로 bilateral → **500Hz** (`period 1999us / step 816us / jitter 700us`).
+      KH 150Hz → 500Hz ≈ 3.3배. HS quantum 가설 실증. step 816us라 이론상한 ~1225Hz(여유 있음).
+      **★ 개선 출처 = USB 전송속도이지 CAN-FD 아님** — Robstride는 classic CAN 1Mbps 전용, CAN 와이어는 그대로.
+- [ ] **검증**: candump로 8모터 실제 500Hz 응답(뒷joint starvation 무) / follower도 Pro FD 채널인지 / 실모션 안정.
+- [ ] 500Hz에서 **enactic 근위 kp(240) 재도전** — 예전 KH 150Hz의 kp50 상한이 rate↑로 풀리는지.
+- [ ] 개선 확정되면 8모터 전체를 Pro FD 계열로 확장.
 
 ## 배운 것 (요약)
 1. **`lsusb -t`로 실제 enumerate 속도(12M vs 480M)를 봐야 한다** — 제품명·VID/PID만으론 KH가 PEAK id를
