@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/mman.h>
+
 #include <atomic>
 #include <chrono>
 #include <controller/control.hpp>
 #include <controller/dynamics.hpp>
+#include <cerrno>
 #include <csignal>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 #include <openarmx/can/socket/openarmx.hpp>
 #include <openarmx/robstride_motor/rs_motor_constants.hpp>
 #include <openarm_port/openarm_init.hpp>
@@ -28,6 +33,11 @@
 #include <yamlloader.hpp>
 
 std::atomic<bool> keep_running(true);
+
+// [openarmx] Serialize the Leader/Follower control-rate logs. Without this the two RT
+// threads printf into std::cout concurrently and the digits interleave into bogus numbers
+// (e.g. "16252353" = 1625+2353), which looked like phantom 200000us spikes. See LATENCY §E13f.
+std::mutex g_log_mtx;
 
 void signal_handler(int signal) {
     if (signal == SIGINT) {
@@ -72,10 +82,13 @@ protected:
         if (now - last_print >= std::chrono::seconds(1)) {
             double pmean = cnt ? static_cast<double>(psum) / cnt : 0.0;
             double smean = cnt ? static_cast<double>(ssum) / cnt : 0.0;
-            std::cout << "[Leader ctrl] " << (pmean > 0 ? 1e6 / pmean : 0.0)
-                      << " Hz | period mean " << pmean << " min " << pmn << " max " << pmx
-                      << " jitter " << (pmx - pmn) << "us | step mean " << smean
-                      << " max " << smx << "us | " << cnt << " cyc" << std::endl;
+            {
+                std::lock_guard<std::mutex> lk(g_log_mtx);
+                std::cout << "[Leader ctrl] " << (pmean > 0 ? 1e6 / pmean : 0.0)
+                          << " Hz | period mean " << pmean << " min " << pmn << " max " << pmx
+                          << " jitter " << (pmx - pmn) << "us | step mean " << smean
+                          << " max " << smx << "us | " << cnt << " cyc" << std::endl;
+            }
             cnt = 0; psum = 0; pmn = 1000000000; pmx = 0; ssum = 0; smx = 0; last_print = now;
         }
     }
@@ -119,10 +132,13 @@ protected:
         if (now - last_print >= std::chrono::seconds(1)) {
             double pmean = cnt ? static_cast<double>(psum) / cnt : 0.0;
             double smean = cnt ? static_cast<double>(ssum) / cnt : 0.0;
-            std::cout << "[Follower ctrl] " << (pmean > 0 ? 1e6 / pmean : 0.0)
-                      << " Hz | period mean " << pmean << " min " << pmn << " max " << pmx
-                      << " jitter " << (pmx - pmn) << "us | step mean " << smean
-                      << " max " << smx << "us | " << cnt << " cyc" << std::endl;
+            {
+                std::lock_guard<std::mutex> lk(g_log_mtx);
+                std::cout << "[Follower ctrl] " << (pmean > 0 ? 1e6 / pmean : 0.0)
+                          << " Hz | period mean " << pmean << " min " << pmn << " max " << pmx
+                          << " jitter " << (pmx - pmn) << "us | step mean " << smean
+                          << " max " << smx << "us | " << cnt << " cyc" << std::endl;
+            }
             cnt = 0; psum = 0; pmn = 1000000000; pmx = 0; ssum = 0; smx = 0; last_print = now;
         }
     }
@@ -183,6 +199,19 @@ private:
 int main(int argc, char **argv) {
     try {
         std::signal(SIGINT, signal_handler);
+
+        // [openarmx] Lock all memory to prevent page faults from stalling the RT loop.
+        // With RT priority set but memory unlocked (VmLck 0), residual ~2-3ms spikes every
+        // ~20s remained (page-fault path blocks even SCHED_FIFO). Needs cap_ipc_lock or sudo.
+        // See LATENCY_INVESTIGATION §E13f.
+        if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+            std::cerr << "[WARN] mlockall failed: " << std::strerror(errno)
+                      << " -> add cap_ipc_lock (setcap cap_sys_nice,cap_ipc_lock+ep <bin>) "
+                         "or raise RLIMIT_MEMLOCK. Continuing without locked memory."
+                      << std::endl;
+        } else {
+            std::cout << "[INFO] mlockall(MCL_CURRENT|MCL_FUTURE) OK (memory locked)" << std::endl;
+        }
 
         std::string arm_side = "right_arm";
         std::string leader_urdf_path;

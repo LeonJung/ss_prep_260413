@@ -46,27 +46,22 @@ public:
         }
     }
 
+    // [openarmx] RT priority is applied INSIDE the worker thread (see timer_thread()).
+    // Default 80 > PREEMPT_RT IRQ threads (50); the worker blocks on clock_nanosleep / USB
+    // read so the CAN IRQ still runs. Previously RT was NEVER applied: before_start() ran on
+    // the main thread (wrong pthread_self) AND the derived classes overrode it -> the loop
+    // ran as SCHED_OTHER and got preempted ~every 10-20s. See LATENCY_INVESTIGATION §E13f.
+    void set_rt_priority(int priority) { rt_priority_.store(priority); }
+
 protected:
     virtual void on_timer() = 0;
 
-    virtual void before_start() { set_thread_priority(50); }
+    virtual void before_start() {}
 
     virtual void after_stop() {}
 
-    void set_thread_priority(int priority) {
-        struct sched_param param;
-        param.sched_priority = priority;
-
-        int policy = SCHED_FIFO;
-
-        int result = pthread_setschedparam(pthread_self(), policy, &param);
-        if (result != 0) {
-            std::cerr << "[WARN] Failed to set real-time priority (errno: " << result
-                      << "). Try running with sudo or setcap." << std::endl;
-        } else {
-            std::cout << "[INFO] Real-time priority set to " << priority << std::endl;
-        }
-    }
+    // Kept for API compat; prefer set_rt_priority() so the policy is applied in-thread.
+    void set_thread_priority(int priority) { rt_priority_.store(priority); }
 
 private:
     void start_thread_base() {
@@ -89,7 +84,23 @@ private:
         return nullptr;
     }
 
+    void apply_rt_priority() {
+        struct sched_param param;
+        param.sched_priority = rt_priority_.load();
+        int result = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+        if (result != 0) {
+            std::cerr << "[WARN] Failed to set SCHED_FIFO prio " << param.sched_priority
+                      << " (err " << result << "). Need: setcap cap_sys_nice+ep <bin> or sudo."
+                      << std::endl;
+        } else {
+            std::cout << "[INFO] worker thread SCHED_FIFO prio " << param.sched_priority
+                      << std::endl;
+        }
+    }
+
     void timer_thread() {
+        apply_rt_priority();  // MUST run here: pthread_self() is now the worker thread.
+
         struct timespec next_time;
         clock_gettime(CLOCK_MONOTONIC, &next_time);
 
@@ -120,4 +131,5 @@ private:
     std::atomic<bool> is_running_;
     std::atomic<int> period_us_;
     std::atomic<int64_t> last_elapsed_us_{0};
+    std::atomic<int> rt_priority_{80};
 };
