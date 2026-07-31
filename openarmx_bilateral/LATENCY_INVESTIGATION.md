@@ -279,3 +279,14 @@ off 200~220). 진단: **step mean이 ~800µs → ~4000µs로 5배** = 스케줄�
   ② CMakeLists에 **BUILD_TYPE 미지정 시 Release 기본값** 추가(재발 방지).
 - **교훈: rate가 갑자기 정수배로 떨어지고 RT 무관 + step(연산) 팽창이면 최적화 빌드부터 의심.**
   (튐은 이 -O0 상태에서 잠시 사라졌지만, 500Hz Release 복귀 시 재발 가능 → §E13f 튐 가드는 별건.)
+
+### E13h. 함정2 — `mlockall`이 500Hz→240Hz로 떨어뜨림 (2026-07) ★§E13f 부분 롤백
+§E13g(Release) 확인했는데도 여전히 **240Hz**. 판별: **USB는 480M(Hi-Speed) 정상**, **push 이전 코드는
+같은 USB로 지금도 500Hz** → 원인은 순수하게 **내 코드 변경**. candump: 명령→응답 왕복이 **~1550µs**
+(정상 ~200µs)로 팽창, step ~4000µs, RT on/off 무관.
+- 후보 3개 중 로그 mutex(초당 1회)·`apply_rt_priority`(외부 chrt FF80은 이미 500Hz로 무죄) 소거 →
+  **범인 = `mlockall(MCL_CURRENT|MCL_FUTURE)`.** 프로세스 전체 메모리 잠금이 CAN/USB 드라이버의
+  per-transfer 버퍼(DMA) 경로를 느리게 만든 것으로 추정(왕복 8배↑).
+- 게다가 §E13f에서 넣은 mlockall은 **이득이 애초에 0**이었음(정상운전 중 minflt flat·majflt 0 = 막을 fault 없음).
+- **조치: mlockall 제거**(`openarm_bilateral_control.cpp`). RT(SCHED_FIFO)만 남김 — 그게 진짜 레버.
+- **교훈: RT 튜닝에서 mlockall은 만능 아님. page fault가 실측으로 있을 때만. 없는데 넣으면 순손해(여기선 USB 처리량 반토막).**

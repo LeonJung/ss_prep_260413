@@ -12,15 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <sys/mman.h>
-
 #include <atomic>
 #include <chrono>
 #include <controller/control.hpp>
 #include <controller/dynamics.hpp>
-#include <cerrno>
 #include <csignal>
-#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
@@ -200,18 +196,10 @@ int main(int argc, char **argv) {
     try {
         std::signal(SIGINT, signal_handler);
 
-        // [openarmx] Lock all memory to prevent page faults from stalling the RT loop.
-        // With RT priority set but memory unlocked (VmLck 0), residual ~2-3ms spikes every
-        // ~20s remained (page-fault path blocks even SCHED_FIFO). Needs cap_ipc_lock or sudo.
-        // See LATENCY_INVESTIGATION §E13f.
-        if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-            std::cerr << "[WARN] mlockall failed: " << std::strerror(errno)
-                      << " -> add cap_ipc_lock (setcap cap_sys_nice,cap_ipc_lock+ep <bin>) "
-                         "or raise RLIMIT_MEMLOCK. Continuing without locked memory."
-                      << std::endl;
-        } else {
-            std::cout << "[INFO] mlockall(MCL_CURRENT|MCL_FUTURE) OK (memory locked)" << std::endl;
-        }
+        // NOTE: mlockall(MCL_CURRENT|MCL_FUTURE) was tried here but REMOVED — it gave no benefit
+        // (steady-state page faults were already 0: minflt flat, majflt 0) AND MCL_FUTURE locking
+        // the whole process appeared to slow the CAN/USB transfer path, collapsing 500Hz -> ~240Hz.
+        // See LATENCY_INVESTIGATION §E13h. RT priority (SCHED_FIFO) is the real lever; keep that.
 
         std::string arm_side = "right_arm";
         std::string leader_urdf_path;
