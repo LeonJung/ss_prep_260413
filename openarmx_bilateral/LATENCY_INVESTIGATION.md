@@ -267,3 +267,15 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
   추가(`cap_sys_nice,cap_ipc_lock+ep`). 런타임 임시검증 = `chrt -f -p 80 <tid>`로 10초 스파이크 소멸 확인.
   ② 로그 두 스레드 printf에 mutex(또는 단일 라인). ③ late-cycle dt 가드(측정 dt>임계면 속도항 skip/직전값 재사용).
   IRQ 스레드 prio 50 < 80이지만 제어 스레드가 blocking read로 잠들어 USB IRQ 정상 동작 → 80 안전.
+
+### E13g. 함정 — `-O0` 빌드가 rate를 반토막 (2026-07)
+§E13f 수정 push 후 재빌드했더니 **500Hz → ~240Hz로 폭락**, RT 켜고 끄고 무관(RT on 230~250 /
+off 200~220). 진단: **step mean이 ~800µs → ~4000µs로 5배** = 스케줄링·USB가 아니라 **CPU 연산시간**.
+`bilateral_step` 안의 KDL 동역학(GetGravity/GetCoriolis, Eigen)이 **최적화 없이 빌드되면 5~10배 느림**.
+- 원인: `build/`는 git 미추적 → pull 후 `cmake --build`가 "could not load cache" → 사용자가 fresh
+  configure할 때 `-DCMAKE_BUILD_TYPE=Release`가 빠져 **`-O0`(Debug/none) 바이너리**가 나옴.
+  CMakeLists가 최적화를 강제 안 했음(`-Wall`만) → BUILD_TYPE에 100% 의존. Release=`-O3 -DNDEBUG`.
+- **조치:** ① 즉시 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j`로 복구.
+  ② CMakeLists에 **BUILD_TYPE 미지정 시 Release 기본값** 추가(재발 방지).
+- **교훈: rate가 갑자기 정수배로 떨어지고 RT 무관 + step(연산) 팽창이면 최적화 빌드부터 의심.**
+  (튐은 이 -O0 상태에서 잠시 사라졌지만, 500Hz Release 복귀 시 재발 가능 → §E13f 튐 가드는 별건.)

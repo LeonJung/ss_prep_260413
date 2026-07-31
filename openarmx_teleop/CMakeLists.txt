@@ -19,6 +19,14 @@ project(openarmx_teleop)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# [openarmx] Default to Release (-O3) when no build type is given. A -O0 build makes the
+# KDL/Eigen dynamics in bilateral_step ~5x slower -> control rate collapses (500Hz -> ~240Hz).
+# See LATENCY_INVESTIGATION §E13g. Override with -DCMAKE_BUILD_TYPE=Debug when debugging.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+  message(STATUS "[openarmx] CMAKE_BUILD_TYPE not set -> defaulting to Release (-O3)")
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
