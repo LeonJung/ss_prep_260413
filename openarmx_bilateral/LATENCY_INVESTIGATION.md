@@ -244,3 +244,26 @@ Robstride는 1Mbps classic 고정). 현재 150은 **full-speed USB의 프레임�
 - step 816us → 이론상한 ≈ 1/816µs ≈ **1225Hz** → 500Hz는 왕복예산 41%만 사용, **여유 있음**(더 스윕 가능).
 - 시너지: rate↑ → 高 kp 안정. KH 150Hz에서 kp50 못 넘던 제약이 여기서 풀릴 여지(enactic 240 근위 재도전 가능).
 - **검증 대기**: candump로 8모터 실제 500Hz 응답(뒷joint 5~8 starvation 무) / 양 채널 다 Pro FD인지 / 실모션 안정성.
+
+### E13f. 500Hz "간헐 발작" 원인 규명 — **제어 스레드가 비-RT(SCHED_OTHER)** (2026-07) ★확정
+증상: enactic kp를 8/9(≈210)까지 올려 반력 좋아졌으나, **~10초마다 로봇이 한 번 발작**. 운영자가 로그에서
+"200000µs 이상" 지연을 봤다고 함. can0=leader-left, can1=follower-left, 둘 다 **한 개 PCAN-USB Pro FD**
+(`parentdev 1-3:1.0` 공유). 데이터로 하나씩 배제:
+- **"200000µs"는 유령 = 로그 아티팩트.** `[Leader ctrl]`/`[Follower ctrl]` 두 스레드가 **락 없이 같은 stdout에
+  동시 printf** → 숫자 엉킴(증거: `16252353`=1625+2353, `7141682`=714+1682, 한 줄에 양 스레드 박힌 줄 8개).
+  **실제 최악 지표는 period max ~3.9ms / step max ~2.9ms.** 200ms짜리 진짜 지연은 로그에 없음.
+- **CAN 버스 무죄(하드 카운터).** 발작 전후 `ip -s`: bus-off 0, error-pass 0, bus-errors 0, RX/TX errors 0.
+  `restart-ms=0`(200ms 복구 메커니즘 자체가 없음). candump 지상검증: 와이어 최대 gap **can0 2246µs/can1 1700µs**,
+  >2.5ms 0건, 뒷joint 매 사이클 다 옴(starvation 무). → **종단·노이즈·starvation 전부 배제.**
+- **CPU 전원관리 무죄.** governor `powersave→performance` 바꿔도 스파이크 그대로(worst 3827→3934µs). C-state 무관.
+- **전역 커널 스톨 무죄.** bilateral 부하 중 `cyclictest -p99`: **max 315µs**(안 튐). THP 파일 부재 → **khugepaged
+  존재 안 함**. IRQ/SMI 계열 배제(hwlatdetect max 356µs).
+- **★ 진짜 원인:** `ps -T`로 실제 제어 프로세스(`bilateral_contr`, PID≠런처) 확인 → **스레드 4개 전부 `CLS=TS`
+  (SCHED_OTHER, 일반 우선순위), RTPRIO 없음, `VmLck 0`(mlock 없음).** 500Hz 하드 RT 루프가 **비-RT로 돌고 있었음.**
+  그래서 ~10초마다 일반 우선순위 백그라운드(DDS discovery/커널 워커 등)에 **2~3ms preempt** → stale dt → 高 kp·kd가
+  속도항 폭발로 증폭 → 발작. 스파이크가 **leader·follower 쌍으로 동시** 발생도 전역 preempt로 설명. cyclictest(RT)가
+  같은 부하서 315µs인 게 "RT만 주면 잡힌다"는 증거.
+- **해결(진행):** ① 제어 스레드 `SCHED_FIFO prio 80` + `mlockall(MCL_CURRENT|MCL_FUTURE)`, setcap에 `cap_ipc_lock`
+  추가(`cap_sys_nice,cap_ipc_lock+ep`). 런타임 임시검증 = `chrt -f -p 80 <tid>`로 10초 스파이크 소멸 확인.
+  ② 로그 두 스레드 printf에 mutex(또는 단일 라인). ③ late-cycle dt 가드(측정 dt>임계면 속도항 skip/직전값 재사용).
+  IRQ 스레드 prio 50 < 80이지만 제어 스레드가 blocking read로 잠들어 USB IRQ 정상 동작 → 80 안전.
