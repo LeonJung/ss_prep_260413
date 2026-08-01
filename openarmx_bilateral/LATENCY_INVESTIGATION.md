@@ -290,3 +290,43 @@ off 200~220). 진단: **step mean이 ~800µs → ~4000µs로 5배** = 스케줄�
 - 게다가 §E13f에서 넣은 mlockall은 **이득이 애초에 0**이었음(정상운전 중 minflt flat·majflt 0 = 막을 fault 없음).
 - **조치: mlockall 제거**(`openarm_bilateral_control.cpp`). RT(SCHED_FIFO)만 남김 — 그게 진짜 레버.
 - **교훈: RT 튜닝에서 mlockall은 만능 아님. page fault가 실측으로 있을 때만. 없는데 넣으면 순손해(여기선 USB 처리량 반토막).**
+
+### E13i. 외부 문헌 조사 — mlockall 성능저하 선례와 문서화된 메커니즘 (2026-08-01, 로봇 접근 불가 중 원격조사)
+운영자 오더: "mlockall/pthread RT 적용으로 이런 문제가 생긴 사례가 외부에 있는지 조사". 결과 = **선례 있음,
+메커니즘도 문서화되어 있음, 우리 코드가 정확히 그 패턴에 해당. §E13h 의 제거 결정은 문헌상으로도 정답.**
+
+**1) 직접 선례 (mlockall 이 오히려 느리게 만든 보고들)**
+- LKML 2000 "why does mlockall appear to make memcpy slower?" — mlockall 프로세스가 page fault **3배**
+  (261 major+522 minor vs 88+266), 실행시간 **1.5배** (1.81s vs 1.19s). 스레드 결론: "curiosity, if not an
+  actual bug" — mlockall'd 프로세스가 fault 를 더 많이 내는 역설이 20년 전부터 보고됨.
+- LKML 2021 "Very slow unlockall()" — munlockall 이 30초+ 걸리는 보고 (cryptsetup + hardened allocator).
+  **lock/unlock 북키핑(unevictable LRU 페이지 워크) 자체가 극도로 비쌀 수 있음**의 증거.
+
+**2) 문서화된 메커니즘 (우리 240Hz 폭락과 연결)**
+- **MCL_FUTURE = 이후 모든 mmap/heap 성장이 생성 시점에 populate+lock** (LWN 647728). 이 페이지 단위
+  populate 오버헤드가 "significant performance penalty" 라서 커널이 **MCL_ONFAULT** 를 따로 만들었을 정도.
+- **RT 표준 가이드 (linuxfoundation realtime wiki): mlockall 은 반드시
+  `mallopt(M_MMAP_MAX=0, M_TRIM_THRESHOLD=-1, M_ARENA_MAX=1)` + 사전할당(pre-allocation, RT 경로에서
+  malloc/free 금지) 와 세트**로 쓰라고 명시. 안 그러면 alloc/free churn 마다 heap 이 커널로 반납→재성장→
+  populate+lock 이 반복되는 fault churn 발생.
+- glibc 는 non-main(per-thread) arena 의 free 에서 `madvise(MADV_DONTNEED)` 로 페이지 teardown → 다음
+  할당에서 refault. **스레드별 arena + 매 사이클 alloc/free = teardown/refault 순환**이 문서화된 함정.
+  (MADV_DONTNEED 가 mlocked range 를 historically 거부하는 코너까지 있어 allocator 가정과 충돌.)
+
+**3) 우리 코드가 이 패턴에 해당하는 근거 (코드 확인, 2026-08-01)**
+제어 루프가 **매 사이클 heap 할당/해제**를 함: `joint_state_converter.hpp` 의 `motor_to_joint`/
+`joint_to_motor` 가 호출마다 `std::vector` 생성, `robot_state.hpp` 의 `get_all_references/responses` 가
+벡터 **복사 반환**, cmds `push_back`. 스레드 4개 = glibc arena 4개에서 churn. → 문헌의
+"mlockall + 동적할당 churn" 저격 패턴 그대로.
+
+**4) §E13h 추정 부분 정정**
+"CAN/USB 드라이버의 per-transfer DMA 버퍼 경로가 느려짐" 가설은 **외부 근거 없음** — peak_usb 드라이버의
+URB/DMA 버퍼는 커널 소유라 유저스페이스 mlockall 영향권 밖. 문헌이 지지하는 병목은 **유저스페이스
+(allocator fault/lock churn) 경로**. candump 왕복 팽창 (200→1550µs) 은 "응답 수신 후 다음 명령 송신까지의
+호스트 처리시간 팽창" 으로 해석하는 게 정합.
+
+**5) 결론 & 향후 지침**
+- mlockall 제거 (`ef6992c`) 유지 = 정답. Red Hat RT 문서도 "실측 fault 없으면 이득 없음, 앱 전체 잠금 대신
+  RT 부분만 잠그라" — 우리 관측 (minflt flat·majflt 0) 이 정확히 '이득 0' 조건.
+- 나중에 mlockall 이 다시 필요해지면 (콜드스타트 fault 등) 반드시 세트로: **MCL_ONFAULT** + mallopt 3종 +
+  **per-cycle 벡터 할당 제거 (버퍼 재사용)**. per-cycle 할당 제거는 mlockall 무관하게 지터 레버이기도 함 (선택 TODO).
