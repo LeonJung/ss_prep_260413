@@ -330,3 +330,66 @@ URB/DMA 버퍼는 커널 소유라 유저스페이스 mlockall 영향권 밖. �
   RT 부분만 잠그라" — 우리 관측 (minflt flat·majflt 0) 이 정확히 '이득 0' 조건.
 - 나중에 mlockall 이 다시 필요해지면 (콜드스타트 fault 등) 반드시 세트로: **MCL_ONFAULT** + mallopt 3종 +
   **per-cycle 벡터 할당 제거 (버퍼 재사용)**. per-cycle 할당 제거는 mlockall 무관하게 지터 레버이기도 함 (선택 TODO).
+
+## E14. 500Hz에서 J7 팡팡 / J8(그리퍼) 무반응 — 원인 추정 (2026-08-01, 로봇 접근 불가 중 원격 분석)
+
+증상 (운영자 보고): 500Hz 운전 시 (1) **J7 이 팡팡 튐**, (2) **J8(그리퍼) 는 leader 를 움직여도 follower 가
+어쩌다 한 번만 따라오고 대부분 무반응**, (3) J1~J6 은 정상. 150Hz 에서는 문제 없(었)음.
+
+### ★ 주 가설 — classic CAN 1Mbps 물리 대역폭 초과 (busload >100%), 희생자는 폴링 꼬리의 응답 프레임
+
+산수 (검증 방법은 아래 — 실측으로 확정할 것):
+- Robstride 확장(29-bit) 8B 프레임 ≈ **130~155µs @ 1Mbps** (stuffing 포함 추정).
+- `bilateral_step` 은 매 사이클 **arm 7 + gripper 1 = 8 명령**, 각 명령이 STATE 응답 유발 → **16 프레임/사이클**.
+- 16 × 130~155µs ≈ **2.08~2.48ms** vs 500Hz 예산 **2.00ms** → **busload 104~124%**. 8모터 cmd+resp 의
+  이론 상한 rate ≈ **400~430Hz**. **USB 병목(§E13e 해결) 다음 병목이 CAN 와이어 자체.**
+- enactic 이 같은 루프 구조로 500Hz 가능했던 이유: **enactic 은 CAN-FD** (`openarm-can-configure-socketcan
+  can0 -fd`, study_for_v1.md §1.7) — data phase 고속. Robstride 는 classic 1Mbps 전용이라 같은 패턴이 안 담김.
+
+왜 하필 J7/J8 인가 (증상 gradient 설명):
+- CAN arbitration 은 **낮은 ID 우선**. Robstride 명령(type 1)이 응답(type 2)보다 ID 낮아 명령이 항상 이김
+  → 초과분은 **응답 쪽에서 탈락**, 그중에서도 **폴링 순서 마지막 = J7, J8 의 응답**이 다음 사이클 명령 버스트와
+  충돌해 만성 탈락/지연.
+- leader 측 J7/J8 응답 탈락 → leader 상태 동결 → follower 의 J7/J8 **참조(reference)가 동결**:
+  - **J8 = 꼬리 끝** → 참조가 거의 항상 동결 = follower 무반응. 어쩌다 응답이 뚫리면 참조가 누적분만큼 점프
+    → "어쩌다 한 번 따라움직임". ✓
+  - **J7 = 꼬리 둘째** → J8 보단 자주 뚫림 → 뚫릴 때마다 pos/vel 참조 step → kp·kd 킥 = **"팡팡"**. ✓
+  - J1~J6 응답은 버스트 앞쪽 시간창에 전송 완료 → 무사. ✓
+  - 150Hz 는 busload ≈ 31% → 전 프레임 전달 → 무사. ✓ (rate 의존성 일치)
+- 참고: §E8 (구 어댑터에서 "motors 3-8 starved") 와 같은 계열의 꼬리-starvation — 그땐 USB quantum, 지금은 와이어.
+- ⚠ §E13f 의 candump 스팟체크 ("뒷joint 매 사이클 다 옴") 와 상충 — 그 체크가 **gripper ID 를 필터에
+  포함했는지 불명** + 짧은 창 관측이었을 가능성. §E13e 의 "검증 대기: 뒷joint 5~8 starvation 무" 가 정확히
+  이 검증이었고 아직 미실시. 아래 실측으로 판가름.
+
+### 소거된 후보 (코드 확인, 2026-08-01)
+- config 인덱싱: leader/follower.yaml 의 Kp/Kd/Fc/k/Fv/Fo 모두 **8원소** ("8th = gripper") — 배열 범위 문제 없음.
+- rate 무관 버그였다면 150Hz 에서도 재현됐어야 함 → 코드 로직 단독 원인 아님.
+
+### 🟡 보조 후보 (J8 한정, rate 무관 성분이 섞였을 수 있음)
+- J8 게인이 **kp=1.0 / kd=0.1** 로 극약 — 그리퍼 정지마찰을 못 이겨 참조 오차가 커질 때만 훅 움직이는
+  패턴도 "어쩌다 한 번" 에 기여 가능. **분별법: 150Hz 에서 J8 추종이 멀쩡했는지 기억/재확인.** 150Hz 에서도
+  뻑뻑했다면 kp_hand 상향 or 그리퍼 마찰보상 재개 (GRIPPER_FRICTION_DRIVER_PATCH.md, 파킹 중) 병행.
+
+### 실측 계획 (월요일 로봇 접근 시, [제어 PC])
+```bash
+# [제어 PC] 1) 500Hz 운전 중 per-ID 프레임 카운트 (10초) — 핵심 판정
+candump -ta can0 -n 100000 > /tmp/candump_500.log   # 별도 셸에서 10s 후 Ctrl-C
+# ID 별 count: 명령 8종 각각 ~5000, 응답 J1~J6 ~5000 나오는데
+# ★ J7/J8 응답이 유의미하게 적으면 (예: <4000) 주 가설 확정
+awk '{print $3}' /tmp/candump_500.log | sort | uniq -c | sort -rn
+
+# [제어 PC] 2) 같은 방법으로 150Hz 대조군 → 전 ID 균일 ~1500 확인
+
+# [제어 PC] 3) 실제 프레임 길이 실측 (back-to-back 타임스탬프 델타) → busload 정밀 계산
+# 4) TX 드랍 여부: ip -s -d link show can0  (dropped / error 카운터, 운전 전후 비교)
+```
+
+### Fix 후보 (실측 확정 후 적용 순)
+1. **rate 를 400Hz 이하로** — 가장 빠른 검증 겸 fix. 500→450→400 스윕에서 J7/J8 이 ~430 부근에서
+   낫는지 확인 (낫는 경계 = busload 100% 지점 → 가설 실증).
+2. **그리퍼 decimation** — J8 명령을 N 사이클에 1회 (예: 4:1 → 그리퍼 125Hz, 팔은 500Hz 유지).
+   16 → 평균 14.5 프레임/사이클. 그리퍼는 500Hz 불필요하므로 부작용 없음. 팔 7모터만으로도
+   14 × 130~155µs ≈ 1.82~2.17ms 로 **여전히 경계선** — 1번과 병행 필요할 수 있음.
+3. **버스 분할 (HW)** — 채널 추가 (Pro FD 1대 더 or Kvaser 2xHS) 로 팔당 2버스 (4+4 모터)
+   → 버스당 8프레임/사이클 ≈ 52~62% → 500Hz 여유. §E12/E13 의 HW 논의와 합류.
+4. (해당 시) J8 kp_hand 상향 / 그리퍼 마찰보상 재개 — 보조 후보가 실증되면.
